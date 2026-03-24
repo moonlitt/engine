@@ -1,0 +1,11 @@
+[package]
+name = "moonlitt-vst3"
+description = "Pure Rust VST3 plugin hosting — load, play, and render VST3 instruments and effects"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+vst3 = "0.3"
+libc = "0.2"

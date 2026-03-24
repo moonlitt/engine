@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/moonlitt-vst3",
+    "crates/moonlitt-clap",
+    "crates/moonlitt-engine",
+    "crates/moonlitt-ffi",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/moonlitt/engine"

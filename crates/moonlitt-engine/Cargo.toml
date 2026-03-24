@@ -1,0 +1,18 @@
+[package]
+name = "moonlitt-engine"
+description = "Unified audio engine — SF2/SFZ samplers + VST3/CLAP plugin hosting"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["sf2"]
+sf2 = ["dep:fluidlite"]
+vst3 = ["dep:moonlitt-vst3"]
+clap = ["dep:moonlitt-clap"]
+
+[dependencies]
+moonlitt-vst3 = { path = "../moonlitt-vst3", optional = true }
+moonlitt-clap = { path = "../moonlitt-clap", optional = true }
+fluidlite = { version = "0.2", optional = true, features = ["bindgen"] }
