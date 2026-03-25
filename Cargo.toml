@@ -5,6 +5,8 @@ members = [
     "crates/moonlitt-clap",
     "crates/moonlitt-engine",
     "crates/moonlitt-ffi",
+    "crates/moonlitt-runtime",
+    "crates/moonlitt-cli",
 ]
 
 [workspace.package]

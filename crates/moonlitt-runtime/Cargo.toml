@@ -1,0 +1,17 @@
+[package]
+name = "moonlitt-runtime"
+description = "Real-time audio runtime — audio output, MIDI input, sequencer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+moonlitt-engine = { path = "../moonlitt-engine", features = ["sf2", "vst3"] }
+cpal = "0.15"
+midir = "0.10"
+midly = "0.5"
+rtrb = "0.3"
+
+[dev-dependencies]
+rtrb = "0.3"

@@ -133,6 +133,14 @@ impl Engine {
         }
     }
 
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    pub fn buffer_size(&self) -> u32 {
+        self.buffer_size
+    }
+
     pub fn set_volume(&mut self, volume: f32) {
         self.volume = volume;
         if let Some(ref mut backend) = self.backend {
