@@ -26,11 +26,26 @@ fn transport_play_pause_stop() {
 }
 
 #[test]
-fn transport_tempo() {
+fn transport_tempo_default_is_none() {
     let t = Transport::new();
-    assert!((t.tempo() - 120.0).abs() < 0.001); // default 120 BPM
+    assert_eq!(t.tempo(), None, "default should be None (use MIDI file tempo)");
+}
+
+#[test]
+fn transport_tempo_override() {
+    let t = Transport::new();
     t.set_tempo(140.0);
-    assert!((t.tempo() - 140.0).abs() < 0.001);
+    let bpm = t.tempo().expect("should be Some after set_tempo");
+    assert!((bpm - 140.0).abs() < 0.001);
+}
+
+#[test]
+fn transport_clear_tempo() {
+    let t = Transport::new();
+    t.set_tempo(140.0);
+    assert!(t.tempo().is_some());
+    t.clear_tempo();
+    assert_eq!(t.tempo(), None);
 }
 
 #[test]
@@ -60,7 +75,7 @@ fn transport_is_thread_safe() {
 
     for _ in 0..1000 {
         let _ = t.state();
-        let _ = t.tempo();
+        let _ = t.tempo(); // now returns Option<f64>
         let _ = t.is_playing();
     }
 

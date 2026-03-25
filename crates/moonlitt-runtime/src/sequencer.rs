@@ -30,8 +30,7 @@ pub struct Sequencer {
     /// Index of next event to emit
     cursor: usize,
     state: SeqState,
-    /// Total ticks in the sequence (for looping)
-    #[allow(dead_code)]
+    /// Total ticks in the sequence (used for looping).
     total_ticks: u64,
 }
 
@@ -177,15 +176,29 @@ impl Sequencer {
     }
 
     /// Advance the sequencer by `samples` samples at `sample_rate`.
+    ///
+    /// - `tempo_override`: if `Some(bpm)`, overrides the MIDI file's embedded tempo map.
+    /// - `looping`: if `true`, loops back to the beginning when reaching the end.
+    ///
     /// Emits due events into `output`.
-    pub fn advance(&mut self, samples: usize, sample_rate: u32, output: &mut Vec<AudioEvent>) {
+    pub fn advance(
+        &mut self,
+        samples: usize,
+        sample_rate: u32,
+        output: &mut Vec<AudioEvent>,
+        tempo_override: Option<f64>,
+        looping: bool,
+    ) {
         if self.state != SeqState::Playing {
             return;
         }
 
         // Calculate ticks to advance:
         // ticks = samples * ticks_per_beat * 1_000_000 / (sample_rate * us_per_beat)
-        let us_per_beat = self.us_per_beat_at(self.current_tick) as f64;
+        let us_per_beat = match tempo_override {
+            Some(bpm) => 60_000_000.0 / bpm,
+            None => self.us_per_beat_at(self.current_tick) as f64,
+        };
         let ticks_per_sample =
             (self.ticks_per_beat as f64) * 1_000_000.0 / (sample_rate as f64 * us_per_beat);
         let ticks_elapsed = samples as f64 * ticks_per_sample;
@@ -204,5 +217,11 @@ impl Sequencer {
         }
 
         self.current_tick = new_tick;
+
+        // Loop back to the beginning if we've passed the end
+        if looping && self.current_tick >= self.total_ticks as f64 {
+            self.current_tick = 0.0;
+            self.cursor = 0;
+        }
     }
 }

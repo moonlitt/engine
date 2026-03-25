@@ -38,7 +38,13 @@ impl AudioThread {
             if let Some(ref mut seq) = self.sequencer {
                 if self.transport.is_playing() {
                     self.seq_events.clear();
-                    seq.advance(chunk, self.engine.sample_rate(), &mut self.seq_events);
+                    seq.advance(
+                        chunk,
+                        self.engine.sample_rate(),
+                        &mut self.seq_events,
+                        self.transport.tempo(),
+                        self.transport.looping(),
+                    );
                     for i in 0..self.seq_events.len() {
                         let event = self.seq_events[i];
                         dispatch_to_engine(&mut self.engine, event);

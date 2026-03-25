@@ -61,8 +61,18 @@ pub struct ClapPlugin {
     buffer_size: u32,
 }
 
-// clap_plugin is declared Send+Sync in clap-sys.
-// Module handle and host context are Send (we marked them).
+// SAFETY: ClapPlugin is `Send` because:
+// 1. `*const clap_plugin` — CLAP spec requires the host to call process() from a
+//    single designated "audio thread". Once activated, the plugin instance can be
+//    moved to that thread. We only ever call process() from one thread at a time.
+// 2. `ClapModule` — holds a dlopen handle (opaque `*mut c_void`), which is a plain
+//    integer-like pointer safe to move across threads.
+// 3. `Pin<Box<HostContext>>` — HostContext contains only the clap_host vtable struct,
+//    which is read-only after construction.
+// 4. `Vec<MidiEvent>`, `String`, `f64`, `u32` — all inherently Send.
+//
+// ClapPlugin is intentionally NOT Sync — concurrent render() calls from multiple
+// threads violate the CLAP processing contract.
 unsafe impl Send for ClapPlugin {}
 
 impl ClapHost {

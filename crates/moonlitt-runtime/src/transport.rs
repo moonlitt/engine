@@ -10,7 +10,8 @@ pub enum TransportState {
 
 pub struct Transport {
     state: AtomicU8,
-    tempo: AtomicU64, // f64 bits stored as u64
+    /// Tempo override: 0 = use MIDI file's embedded tempo map, else f64 BPM bits.
+    tempo_override: AtomicU64,
     looping: AtomicBool,
 }
 
@@ -24,7 +25,7 @@ impl Transport {
     pub fn new() -> Self {
         Self {
             state: AtomicU8::new(TransportState::Stopped as u8),
-            tempo: AtomicU64::new(120.0f64.to_bits()),
+            tempo_override: AtomicU64::new(0), // 0 = no override
             looping: AtomicBool::new(false),
         }
     }
@@ -56,12 +57,24 @@ impl Transport {
             .store(TransportState::Stopped as u8, Ordering::Relaxed);
     }
 
-    pub fn tempo(&self) -> f64 {
-        f64::from_bits(self.tempo.load(Ordering::Relaxed))
+    /// Returns the tempo override, or `None` if using the MIDI file's embedded tempo.
+    pub fn tempo(&self) -> Option<f64> {
+        let bits = self.tempo_override.load(Ordering::Relaxed);
+        if bits == 0 {
+            None
+        } else {
+            Some(f64::from_bits(bits))
+        }
     }
 
+    /// Override the tempo (in BPM). This takes precedence over the MIDI file's tempo map.
     pub fn set_tempo(&self, bpm: f64) {
-        self.tempo.store(bpm.to_bits(), Ordering::Relaxed);
+        self.tempo_override.store(bpm.to_bits(), Ordering::Relaxed);
+    }
+
+    /// Clear the tempo override — revert to the MIDI file's embedded tempo.
+    pub fn clear_tempo(&self) {
+        self.tempo_override.store(0, Ordering::Relaxed);
     }
 
     pub fn looping(&self) -> bool {
