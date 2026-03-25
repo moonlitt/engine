@@ -1,6 +1,7 @@
 use crate::audio_output::AudioOutput;
 use crate::audio_thread::AudioThread;
 use crate::event::AudioEvent;
+use crate::midi_input::{MidiDeviceInfo, MidiInputConnection};
 use crate::transport::Transport;
 use moonlitt_engine::engine::Engine;
 use rtrb::RingBuffer;
@@ -9,7 +10,10 @@ use std::sync::Arc;
 pub struct Runtime {
     producer: rtrb::Producer<AudioEvent>,
     audio_output: Option<AudioOutput>,
+    #[allow(dead_code)]
+    midi_connection: Option<MidiInputConnection>,
     transport: Arc<Transport>,
+    #[allow(dead_code)]
     buffer_size: u32,
 }
 
@@ -34,6 +38,7 @@ impl Runtime {
         Ok(Self {
             producer,
             audio_output: Some(audio_output),
+            midi_connection: None,
             transport,
             buffer_size,
         })
@@ -121,6 +126,12 @@ impl Runtime {
 
     pub fn set_loop(&self, enabled: bool) {
         self.transport.set_loop(enabled);
+    }
+
+    // --- MIDI Input ---
+
+    pub fn list_midi_inputs() -> Result<Vec<MidiDeviceInfo>, String> {
+        MidiInputConnection::list_devices()
     }
 
     // --- Shutdown ---

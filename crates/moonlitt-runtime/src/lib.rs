@@ -9,9 +9,11 @@
 mod audio_output;
 mod audio_thread;
 mod event;
+mod midi_input;
 mod runtime;
 pub mod sequencer;
 pub mod transport;
 
 pub use event::AudioEvent;
+pub use midi_input::MidiDeviceInfo;
 pub use runtime::Runtime;
