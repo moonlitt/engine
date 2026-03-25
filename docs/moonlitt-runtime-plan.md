@@ -51,7 +51,7 @@
 - Create: `crates/moonlitt-runtime/Cargo.toml`
 - Create: `crates/moonlitt-runtime/src/lib.rs`
 
-- [ ] **Step 1: Add sample_rate/buffer_size accessors to Engine**
+- [x] **Step 1: Add sample_rate/buffer_size accessors to Engine**
 
 In `crates/moonlitt-engine/src/engine.rs`, add:
 
@@ -65,7 +65,7 @@ pub fn buffer_size(&self) -> u32 {
 }
 ```
 
-- [ ] **Step 2: Create moonlitt-runtime Cargo.toml**
+- [x] **Step 2: Create moonlitt-runtime Cargo.toml**
 
 ```toml
 [package]
@@ -84,7 +84,7 @@ midly = "0.5"
 rtrb = "0.3"
 ```
 
-- [ ] **Step 3: Create minimal lib.rs**
+- [x] **Step 3: Create minimal lib.rs**
 
 ```rust
 //! # moonlitt-runtime
@@ -97,15 +97,15 @@ mod event;
 pub use event::AudioEvent;
 ```
 
-- [ ] **Step 4: Add to workspace Cargo.toml**
+- [x] **Step 4: Add to workspace Cargo.toml**
 
 Add `"crates/moonlitt-runtime"` to workspace members.
 
-- [ ] **Step 5: Build**
+- [x] **Step 5: Build**
 
 Run: `cargo build -p moonlitt-runtime`
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A && git commit -m "feat(runtime): crate skeleton + Engine accessors"
@@ -119,7 +119,7 @@ git add -A && git commit -m "feat(runtime): crate skeleton + Engine accessors"
 - Create: `crates/moonlitt-runtime/src/event.rs`
 - Create: `crates/moonlitt-runtime/tests/event_test.rs`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 // tests/event_test.rs
@@ -194,12 +194,12 @@ fn event_queue_stress() {
 }
 ```
 
-- [ ] **Step 2: Run tests — verify they FAIL**
+- [x] **Step 2: Run tests — verify they FAIL**
 
 Run: `cargo test -p moonlitt-runtime`
 Expected: compilation errors (AudioEvent not defined, rtrb not in test deps)
 
-- [ ] **Step 3: Implement event.rs**
+- [x] **Step 3: Implement event.rs**
 
 ```rust
 /// Unified event type. All input sources produce the same event.
@@ -224,12 +224,12 @@ Add `rtrb` as dev-dependency for tests:
 rtrb = "0.3"
 ```
 
-- [ ] **Step 4: Run tests — verify PASS**
+- [x] **Step 4: Run tests — verify PASS**
 
 Run: `cargo test -p moonlitt-runtime`
 Expected: 4 tests pass
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A && git commit -m "feat(runtime): AudioEvent + lock-free queue tests"
@@ -243,7 +243,7 @@ git add -A && git commit -m "feat(runtime): AudioEvent + lock-free queue tests"
 - Create: `crates/moonlitt-runtime/src/transport.rs`
 - Create: `crates/moonlitt-runtime/tests/transport_test.rs`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 // tests/transport_test.rs
@@ -317,7 +317,7 @@ fn transport_is_thread_safe() {
 }
 ```
 
-- [ ] **Step 2: Implement transport.rs**
+- [x] **Step 2: Implement transport.rs**
 
 Use atomics for thread-safe state sharing.
 
@@ -381,9 +381,9 @@ Update lib.rs to export transport module:
 pub mod transport;
 ```
 
-- [ ] **Step 3: Run tests — verify PASS**
+- [x] **Step 3: Run tests — verify PASS**
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A && git commit -m "feat(runtime): Transport atomic state machine"
@@ -397,7 +397,7 @@ git add -A && git commit -m "feat(runtime): Transport atomic state machine"
 - Create: `crates/moonlitt-runtime/src/sequencer.rs`
 - Create: `crates/moonlitt-runtime/tests/sequencer_test.rs`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Tests should verify:
 1. Load a MIDI file (use midly to create a minimal test MIDI in-memory)
@@ -503,7 +503,7 @@ fn create_test_midi() -> Vec<u8> {
 }
 ```
 
-- [ ] **Step 2: Implement sequencer.rs**
+- [x] **Step 2: Implement sequencer.rs**
 
 Use `midly` crate to parse MIDI. Store events as a sorted list of (tick, AudioEvent). On `advance()`, convert elapsed samples to ticks and emit due events.
 
@@ -513,9 +513,9 @@ Key implementation details:
 - `advance()`: calculate ticks elapsed from samples, find and emit events in range
 - Support `from_bytes()` (for testing) and `from_file()` (for CLI)
 
-- [ ] **Step 3: Run tests — verify PASS**
+- [x] **Step 3: Run tests — verify PASS**
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A && git commit -m "feat(runtime): Sequencer with MIDI file playback and sample-accurate timing"
@@ -530,7 +530,7 @@ git add -A && git commit -m "feat(runtime): Sequencer with MIDI file playback an
 - Create: `crates/moonlitt-runtime/src/audio_output.rs`
 - Create: `crates/moonlitt-runtime/tests/runtime_test.rs`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```rust
 // tests/runtime_test.rs
@@ -564,7 +564,7 @@ fn runtime_start_stop() {
 }
 ```
 
-- [ ] **Step 2: Implement audio_thread.rs**
+- [x] **Step 2: Implement audio_thread.rs**
 
 ```rust
 use moonlitt_engine::engine::Engine;
@@ -644,7 +644,7 @@ impl AudioThread {
 }
 ```
 
-- [ ] **Step 3: Implement audio_output.rs**
+- [x] **Step 3: Implement audio_output.rs**
 
 ```rust
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -701,9 +701,9 @@ impl AudioOutput {
 }
 ```
 
-- [ ] **Step 4: Run test — verify PASS (you should hear audio!)**
+- [x] **Step 4: Run test — verify PASS (you should hear audio!)**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A && git commit -m "feat(runtime): AudioThread + cpal output — real-time audio works"
@@ -717,7 +717,7 @@ git add -A && git commit -m "feat(runtime): AudioThread + cpal output — real-t
 - Create: `crates/moonlitt-runtime/src/runtime.rs`
 - Modify: `crates/moonlitt-runtime/src/lib.rs`
 
-- [ ] **Step 1: Implement runtime.rs**
+- [x] **Step 1: Implement runtime.rs**
 
 ```rust
 use moonlitt_engine::engine::Engine;
@@ -845,7 +845,7 @@ impl Runtime {
 }
 ```
 
-- [ ] **Step 2: Update lib.rs**
+- [x] **Step 2: Update lib.rs**
 
 ```rust
 mod event;
@@ -862,11 +862,11 @@ pub use runtime::Runtime;
 pub use midi_input::MidiDeviceInfo;
 ```
 
-- [ ] **Step 3: Run all tests**
+- [x] **Step 3: Run all tests**
 
 Run: `cargo test -p moonlitt-runtime`
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A && git commit -m "feat(runtime): Runtime public API — note_on/off, start/stop, transport"
@@ -880,7 +880,7 @@ git add -A && git commit -m "feat(runtime): Runtime public API — note_on/off, 
 - Create: `crates/moonlitt-runtime/src/midi_input.rs`
 - Create: `crates/moonlitt-runtime/tests/midi_test.rs`
 
-- [ ] **Step 1: Write test**
+- [x] **Step 1: Write test**
 
 ```rust
 #[test]
@@ -894,7 +894,7 @@ fn list_midi_devices() {
 }
 ```
 
-- [ ] **Step 2: Implement midi_input.rs**
+- [x] **Step 2: Implement midi_input.rs**
 
 Use `midir` crate. Parse raw MIDI bytes into AudioEvent.
 
@@ -977,9 +977,9 @@ fn parse_midi_message(msg: &[u8]) -> Option<AudioEvent> {
 }
 ```
 
-- [ ] **Step 3: Run tests — verify PASS**
+- [x] **Step 3: Run tests — verify PASS**
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A && git commit -m "feat(runtime): MIDI input via midir — device listing and connection"
@@ -1073,7 +1073,7 @@ moonlitt midi-devices
 moonlitt live "Pianoteq 9.vst3"
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add -A && git commit -m "feat(cli): --live playback, MIDI keyboard, midi-devices commands"
