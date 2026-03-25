@@ -1,15 +1,27 @@
-use crate::{Error, Result};
+//! VST3 plugin scanner
+//!
+//! Scans system directories for .vst3 bundles, loads each one, and
+//! uses IPluginFactory to enumerate the audio classes inside.
+
+use crate::component::enumerate_audio_classes;
+use crate::module::load_module;
+use crate::Result;
 use std::path::{Path, PathBuf};
 
-/// Information about a discovered VST3 plugin
+/// Information about a discovered VST3 plugin.
 #[derive(Debug, Clone)]
 pub struct PluginInfo {
+    /// Human-readable name from the factory's PClassInfo.
     pub name: String,
+    /// Path to the .vst3 bundle on disk.
     pub path: PathBuf,
+    /// 16-byte class ID used to instantiate this plugin.
     pub class_id: [u8; 16],
+    /// Category string (e.g. "Audio Module Class").
+    pub category: String,
 }
 
-/// Scan default system paths for VST3 plugins
+/// Scan default system paths for VST3 plugins.
 pub fn scan_default_paths() -> Result<Vec<PluginInfo>> {
     let mut plugins = Vec::new();
     for dir in system_vst3_dirs() {
@@ -17,8 +29,12 @@ pub fn scan_default_paths() -> Result<Vec<PluginInfo>> {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.extension().map_or(false, |e| e == "vst3") {
-                    if let Ok(info) = probe_plugin(&path) {
-                        plugins.push(info);
+                    match probe_plugin(&path) {
+                        Ok(mut infos) => plugins.append(&mut infos),
+                        Err(_) => {
+                            // Skip plugins that fail to load — common for
+                            // plugins requiring specific hardware or licenses
+                        }
                     }
                 }
             }
@@ -27,20 +43,20 @@ pub fn scan_default_paths() -> Result<Vec<PluginInfo>> {
     Ok(plugins)
 }
 
-/// Probe a .vst3 bundle and extract plugin info
-fn probe_plugin(path: &Path) -> Result<PluginInfo> {
-    let name = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("Unknown")
-        .to_string();
+/// Probe a .vst3 bundle: load it, get the factory, enumerate audio classes.
+fn probe_plugin(path: &Path) -> Result<Vec<PluginInfo>> {
+    let factory_fn = load_module(path)?;
+    let classes = enumerate_audio_classes(factory_fn)?;
 
-    // TODO: actually load the bundle, get IPluginFactory, read class info
-    Ok(PluginInfo {
-        name,
-        path: path.to_path_buf(),
-        class_id: [0u8; 16], // placeholder
-    })
+    Ok(classes
+        .into_iter()
+        .map(|ci| PluginInfo {
+            name: ci.name,
+            path: path.to_path_buf(),
+            class_id: ci.cid,
+            category: ci.category,
+        })
+        .collect())
 }
 
 fn system_vst3_dirs() -> Vec<PathBuf> {
@@ -50,7 +66,9 @@ fn system_vst3_dirs() -> Vec<PathBuf> {
     {
         dirs.push(PathBuf::from("/Library/Audio/Plug-Ins/VST3"));
         if let Ok(home) = std::env::var("HOME") {
-            dirs.push(PathBuf::from(format!("{home}/Library/Audio/Plug-Ins/VST3")));
+            dirs.push(PathBuf::from(format!(
+                "{home}/Library/Audio/Plug-Ins/VST3"
+            )));
         }
     }
 
