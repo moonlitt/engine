@@ -60,6 +60,20 @@ enum Commands {
         /// Path to plugin file
         path: String,
     },
+    /// Play a MIDI file through a soundfont/plugin
+    Midi {
+        /// Path to MIDI file
+        midi: String,
+        /// Path to soundfont/plugin (SF2/VST3/CLAP)
+        #[arg(short, long)]
+        sound: String,
+        /// Play live through speakers (default: render to WAV)
+        #[arg(long)]
+        live: bool,
+        /// Output WAV file (when not --live)
+        #[arg(short, long, default_value = "output.wav")]
+        output: String,
+    },
     /// List available MIDI input devices
     MidiDevices,
 }
@@ -88,6 +102,13 @@ fn main() {
         }
         Commands::Presets { path } => cmd_presets(&path),
         Commands::Live { path } => cmd_live(&path),
+        Commands::Midi { midi, sound, live, output } => {
+            if live {
+                cmd_midi_live(&midi, &sound);
+            } else {
+                cmd_midi_render(&midi, &sound, &output);
+            }
+        }
         Commands::MidiDevices => cmd_midi_devices(),
     }
 }
@@ -287,6 +308,268 @@ fn cmd_midi_devices() {
                     println!("{:<4} {}", d.id, d.name);
                 }
             }
+        }
+        Err(e) => eprintln!("Error: {e}"),
+    }
+}
+
+// =============================================================================
+// MIDI file playback
+// =============================================================================
+
+struct MidiNote {
+    time_sec: f64,
+    channel: u8,
+    note: u8,
+    velocity: u8,
+    duration_sec: f64,
+    program: u8,
+}
+
+fn parse_midi_file(path: &str) -> Result<(Vec<MidiNote>, Vec<(f64, u8, u8)>), String> {
+    let data = std::fs::read(path).map_err(|e| e.to_string())?;
+    let smf = midly::Smf::parse(&data).map_err(|e| e.to_string())?;
+
+    let tpb = match smf.header.timing {
+        midly::Timing::Metrical(t) => t.as_int() as f64,
+        _ => return Err("SMPTE not supported".into()),
+    };
+
+    // Build tempo map from all tracks
+    let mut tempo_events: Vec<(u64, u32)> = vec![(0, 500_000)];
+    for track in &smf.tracks {
+        let mut abs = 0u64;
+        for ev in track {
+            abs += ev.delta.as_int() as u64;
+            if let midly::TrackEventKind::Meta(midly::MetaMessage::Tempo(t)) = ev.kind {
+                tempo_events.push((abs, t.as_int()));
+            }
+        }
+    }
+    tempo_events.sort_by_key(|&(t, _)| t);
+    tempo_events.dedup_by_key(|e| e.0);
+
+    let tick_to_sec = |tick: u64| -> f64 {
+        let mut elapsed = 0.0;
+        let mut prev_tick = 0u64;
+        let mut prev_tempo = 500_000u32;
+        for &(t, tempo) in &tempo_events {
+            if t >= tick { break; }
+            elapsed += (t - prev_tick) as f64 * prev_tempo as f64 / (tpb * 1_000_000.0);
+            prev_tick = t;
+            prev_tempo = tempo;
+        }
+        elapsed + (tick - prev_tick) as f64 * prev_tempo as f64 / (tpb * 1_000_000.0)
+    };
+
+    let mut notes = Vec::new();
+    let mut program_changes: Vec<(f64, u8, u8)> = Vec::new(); // (time, ch, program)
+    let mut programs = std::collections::HashMap::new();
+
+    for track in &smf.tracks {
+        let mut abs = 0u64;
+        let mut active: std::collections::HashMap<(u8, u8), (u64, u8)> = std::collections::HashMap::new();
+
+        for ev in track {
+            abs += ev.delta.as_int() as u64;
+            match ev.kind {
+                midly::TrackEventKind::Midi { channel, message } => {
+                    let ch = channel.as_int();
+                    match message {
+                        midly::MidiMessage::ProgramChange { program } => {
+                            let p = program.as_int();
+                            programs.insert(ch, p);
+                            program_changes.push((tick_to_sec(abs), ch, p));
+                        }
+                        midly::MidiMessage::NoteOn { key, vel } => {
+                            let v = vel.as_int();
+                            if v == 0 {
+                                if let Some((start, vel)) = active.remove(&(ch, key.as_int())) {
+                                    let s = tick_to_sec(start);
+                                    let e = tick_to_sec(abs);
+                                    notes.push(MidiNote {
+                                        time_sec: s, channel: ch, note: key.as_int(),
+                                        velocity: vel, duration_sec: e - s,
+                                        program: *programs.get(&ch).unwrap_or(&0),
+                                    });
+                                }
+                            } else {
+                                active.insert((ch, key.as_int()), (abs, v));
+                            }
+                        }
+                        midly::MidiMessage::NoteOff { key, .. } => {
+                            if let Some((start, vel)) = active.remove(&(ch, key.as_int())) {
+                                let s = tick_to_sec(start);
+                                let e = tick_to_sec(abs);
+                                notes.push(MidiNote {
+                                    time_sec: s, channel: ch, note: key.as_int(),
+                                    velocity: vel, duration_sec: e - s,
+                                    program: *programs.get(&ch).unwrap_or(&0),
+                                });
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    notes.sort_by(|a, b| a.time_sec.partial_cmp(&b.time_sec).unwrap());
+    Ok((notes, program_changes))
+}
+
+fn cmd_midi_live(midi_path: &str, sound_path: &str) {
+    use moonlitt_runtime::Runtime;
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    let (notes, program_changes) = match parse_midi_file(midi_path) {
+        Ok(v) => v,
+        Err(e) => { eprintln!("MIDI parse error: {e}"); std::process::exit(1); }
+    };
+
+    let duration = notes.iter()
+        .map(|n| n.time_sec + n.duration_sec)
+        .fold(0.0f64, f64::max);
+
+    println!("MIDI: {} notes, {:.1}s", notes.len(), duration);
+
+    let mut engine = Engine::new(44100, 256);
+    if let Err(e) = engine.load(sound_path) {
+        eprintln!("Error loading {sound_path}: {e}");
+        std::process::exit(1);
+    }
+    println!("Sound: {}", engine.backend_info().map(|i| i.name.clone()).unwrap_or_default());
+
+    // Send program changes
+    let mut sent_programs = std::collections::HashSet::new();
+    for &(_, ch, prog) in &program_changes {
+        if sent_programs.insert((ch, prog)) {
+            engine.program_change(ch, prog);
+        }
+    }
+
+    let mut rt = match Runtime::new(engine) {
+        Ok(r) => r,
+        Err(e) => { eprintln!("Audio error: {e}"); std::process::exit(1); }
+    };
+    rt.start().unwrap();
+
+    println!("Playing...");
+    let start = Instant::now();
+    let mut note_idx = 0;
+
+    // Schedule note-offs: (time, ch, note)
+    let mut pending_offs: Vec<(f64, u8, u8)> = Vec::new();
+
+    loop {
+        let elapsed = start.elapsed().as_secs_f64();
+        if elapsed > duration + 1.0 { break; }
+
+        // Process note-offs
+        pending_offs.retain(|&(off_time, ch, note)| {
+            if elapsed >= off_time {
+                rt.note_off(ch, note);
+                false
+            } else {
+                true
+            }
+        });
+
+        // Process note-ons
+        while note_idx < notes.len() && notes[note_idx].time_sec <= elapsed {
+            let n = &notes[note_idx];
+            rt.note_on(n.channel, n.note, n.velocity);
+            pending_offs.push((n.time_sec + n.duration_sec, n.channel, n.note));
+            note_idx += 1;
+        }
+
+        thread::sleep(Duration::from_millis(1));
+    }
+
+    println!("Done.");
+    rt.shutdown();
+}
+
+fn cmd_midi_render(midi_path: &str, sound_path: &str, output: &str) {
+    let (notes, program_changes) = match parse_midi_file(midi_path) {
+        Ok(v) => v,
+        Err(e) => { eprintln!("MIDI parse error: {e}"); std::process::exit(1); }
+    };
+
+    let duration = notes.iter()
+        .map(|n| n.time_sec + n.duration_sec)
+        .fold(0.0f64, f64::max) + 2.0; // 2s tail
+
+    println!("MIDI: {} notes, rendering {:.1}s", notes.len(), duration);
+
+    let sample_rate = 44100u32;
+    let buffer_size = 256u32;
+    let mut engine = Engine::new(sample_rate, buffer_size);
+    if let Err(e) = engine.load(sound_path) {
+        eprintln!("Error loading {sound_path}: {e}");
+        std::process::exit(1);
+    }
+
+    // Send initial program changes
+    let mut sent = std::collections::HashSet::new();
+    for &(_, ch, prog) in &program_changes {
+        if sent.insert((ch, prog)) {
+            engine.program_change(ch, prog);
+        }
+    }
+
+    let total_samples = (sample_rate as f64 * duration) as usize;
+    let num_buffers = total_samples.div_ceil(buffer_size as usize);
+
+    let mut all_left = Vec::with_capacity(total_samples);
+    let mut all_right = Vec::with_capacity(total_samples);
+    let mut left = vec![0.0f32; buffer_size as usize];
+    let mut right = vec![0.0f32; buffer_size as usize];
+
+    let mut note_idx = 0;
+    let mut pending_offs: Vec<(f64, u8, u8)> = Vec::new();
+
+    for buf_i in 0..num_buffers {
+        let buf_start = buf_i as f64 * buffer_size as f64 / sample_rate as f64;
+        let buf_end = buf_start + buffer_size as f64 / sample_rate as f64;
+
+        // Note-offs
+        pending_offs.retain(|&(off_time, ch, note)| {
+            if off_time <= buf_end {
+                engine.note_off(ch, note);
+                false
+            } else {
+                true
+            }
+        });
+
+        // Note-ons
+        while note_idx < notes.len() && notes[note_idx].time_sec <= buf_end {
+            let n = &notes[note_idx];
+            engine.note_on(n.channel, n.note, n.velocity);
+            pending_offs.push((n.time_sec + n.duration_sec, n.channel, n.note));
+            note_idx += 1;
+        }
+
+        engine.render(&mut left, &mut right);
+        all_left.extend_from_slice(&left);
+        all_right.extend_from_slice(&right);
+    }
+
+    all_left.truncate(total_samples);
+    all_right.truncate(total_samples);
+
+    let peak = all_left.iter().chain(all_right.iter())
+        .map(|s| s.abs()).fold(0.0f32, f32::max);
+
+    match wav::write_wav(output, sample_rate, &all_left, &all_right) {
+        Ok(()) => {
+            println!("Rendered to {output}");
+            println!("  Peak: {peak:.4}");
+            println!("  Samples: {total_samples}");
         }
         Err(e) => eprintln!("Error: {e}"),
     }

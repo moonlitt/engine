@@ -128,6 +128,13 @@ pub extern "C" fn moonlitt_runtime_pitch_bend(rt: *mut RuntimeHandle, ch: c_int,
 }
 
 #[no_mangle]
+pub extern "C" fn moonlitt_runtime_program_change(rt: *mut RuntimeHandle, ch: c_int, prog: c_int) {
+    if let Some(h) = unsafe { rt.as_mut() } {
+        h.runtime.program_change(ch as u8, prog as u8);
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn moonlitt_runtime_all_notes_off(rt: *mut RuntimeHandle) {
     if let Some(h) = unsafe { rt.as_mut() } {
         h.runtime.all_notes_off();
