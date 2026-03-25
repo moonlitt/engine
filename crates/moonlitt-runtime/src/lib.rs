@@ -7,5 +7,6 @@
 //! The audio thread drains events and renders audio.
 
 mod event;
+pub mod transport;
 
 pub use event::AudioEvent;
