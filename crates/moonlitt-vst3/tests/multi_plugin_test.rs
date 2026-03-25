@@ -1,4 +1,4 @@
-use moonlitt_vst3::{Vst3Host, MidiEvent, MidiEventKind};
+use moonlitt_vst3::Vst3Host;
 
 #[test]
 fn test_all_available_plugins() {
