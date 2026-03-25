@@ -29,6 +29,7 @@ impl MidiInputConnection {
     }
 
     /// Connect to a MIDI device by ID and feed events into the producer.
+    #[allow(dead_code)]
     pub fn connect(device_id: usize, mut producer: Producer<AudioEvent>) -> Result<Self, String> {
         let midi_in = midir::MidiInput::new("moonlitt").map_err(|e| e.to_string())?;
         let ports = midi_in.ports();
@@ -53,6 +54,7 @@ impl MidiInputConnection {
     }
 }
 
+#[allow(dead_code)]
 fn parse_midi_message(msg: &[u8]) -> Option<AudioEvent> {
     if msg.is_empty() {
         return None;

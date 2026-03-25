@@ -115,7 +115,7 @@ pub(crate) fn process_audio(
         },
         inputParameterChanges: std::ptr::null_mut(),
         outputParameterChanges: std::ptr::null_mut(),
-        inputEvents: input_events_ptr.as_ptr() as *mut IEventList,
+        inputEvents: input_events_ptr.as_ptr(),
         outputEvents: std::ptr::null_mut(),
         processContext: std::ptr::null_mut(),
     };

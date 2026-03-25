@@ -75,7 +75,7 @@ fn probe_plugin(path: &Path) -> Result<Vec<PluginInfo>> {
 
 /// Check if a path looks like a .clap bundle.
 fn is_clap_bundle(path: &Path) -> bool {
-    path.extension().map_or(false, |e| e == "clap")
+    path.extension().is_some_and(|e| e == "clap")
 }
 
 /// Return system directories where CLAP plugins are typically installed.

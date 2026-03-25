@@ -73,7 +73,7 @@ fn load_module_macos(path: &Path) -> Result<Module> {
 
         Ok(Module {
             _handle: handle,
-            factory_fn: std::mem::transmute(sym),
+            factory_fn: std::mem::transmute::<*mut c_void, GetFactoryFn>(sym),
         })
     }
 }

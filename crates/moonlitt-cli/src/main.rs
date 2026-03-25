@@ -101,7 +101,7 @@ fn cmd_scan(_dir: Option<String>) {
         return;
     }
 
-    println!("{:<40} {:<8} {}", "Name", "Format", "Path");
+    println!("{:<40} {:<8} Path", "Name", "Format");
     println!("{}", "-".repeat(80));
     for p in &plugins {
         println!("{:<40} {:<8} {}", p.name, format!("{:?}", p.format), p.path);
@@ -147,7 +147,7 @@ fn cmd_play(
     }
 
     let total_samples = (sample_rate as f32 * duration) as usize;
-    let num_buffers = (total_samples + buffer_size as usize - 1) / buffer_size as usize;
+    let num_buffers = total_samples.div_ceil(buffer_size as usize);
 
     // Note-on duration: 80% of total, then note-off for tail
     let note_off_buffer = (num_buffers as f32 * 0.8) as usize;
@@ -281,7 +281,7 @@ fn cmd_midi_devices() {
             if devices.is_empty() {
                 println!("No MIDI input devices found.");
             } else {
-                println!("{:<4} {}", "ID", "Name");
+                println!("{:<4} Name", "ID");
                 println!("{}", "-".repeat(40));
                 for d in &devices {
                     println!("{:<4} {}", d.id, d.name);
@@ -305,7 +305,7 @@ fn cmd_presets(path: &str) {
         return;
     }
 
-    println!("{:<6} {}", "ID", "Name");
+    println!("{:<6} Name", "ID");
     println!("{}", "-".repeat(40));
     for p in &presets {
         println!("{:<6} {}", p.id, p.name);

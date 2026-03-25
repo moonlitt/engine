@@ -14,6 +14,12 @@ pub struct Transport {
     looping: AtomicBool,
 }
 
+impl Default for Transport {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Transport {
     pub fn new() -> Self {
         Self {

@@ -234,7 +234,7 @@ impl Vst3Plugin {
             }
             let pinfo = unsafe { pinfo.assume_init() };
 
-            if pinfo.flags & ParameterFlags_::kIsProgramChange as i32 != 0 {
+            if pinfo.flags & ParameterFlags_::kIsProgramChange != 0 {
                 let normalized = if pinfo.stepCount > 0 {
                     id as f64 / pinfo.stepCount as f64
                 } else {

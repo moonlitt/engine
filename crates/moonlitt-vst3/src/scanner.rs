@@ -28,7 +28,7 @@ pub fn scan_default_paths() -> Result<Vec<PluginInfo>> {
         if let Ok(entries) = std::fs::read_dir(&dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().map_or(false, |e| e == "vst3") {
+                if path.extension().is_some_and(|e| e == "vst3") {
                     match probe_plugin(&path) {
                         Ok(mut infos) => plugins.append(&mut infos),
                         Err(_) => {

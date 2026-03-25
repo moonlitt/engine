@@ -31,6 +31,7 @@ pub struct Sequencer {
     cursor: usize,
     state: SeqState,
     /// Total ticks in the sequence (for looping)
+    #[allow(dead_code)]
     total_ticks: u64,
 }
 
