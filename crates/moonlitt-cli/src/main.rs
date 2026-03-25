@@ -46,12 +46,22 @@ enum Commands {
         /// Buffer size (default: 256)
         #[arg(long, default_value = "256")]
         buffer_size: u32,
+        /// Play live through speakers (instead of rendering to WAV)
+        #[arg(long)]
+        live: bool,
     },
     /// List presets for a plugin
     Presets {
         /// Path to plugin file
         path: String,
     },
+    /// Connect MIDI keyboard and play live
+    Live {
+        /// Path to plugin file
+        path: String,
+    },
+    /// List available MIDI input devices
+    MidiDevices,
 }
 
 fn main() {
@@ -68,8 +78,17 @@ fn main() {
             output,
             sample_rate,
             buffer_size,
-        } => cmd_play(&path, note, velocity, duration, &output, sample_rate, buffer_size),
+            live,
+        } => {
+            if live {
+                cmd_play_live(&path, note, velocity, duration, sample_rate, buffer_size);
+            } else {
+                cmd_play(&path, note, velocity, duration, &output, sample_rate, buffer_size);
+            }
+        }
         Commands::Presets { path } => cmd_presets(&path),
+        Commands::Live { path } => cmd_live(&path),
+        Commands::MidiDevices => cmd_midi_devices(),
     }
 }
 
@@ -172,6 +191,89 @@ fn cmd_play(
             eprintln!("Error writing WAV: {e}");
             std::process::exit(1);
         }
+    }
+}
+
+fn cmd_play_live(path: &str, note: u8, velocity: u8, duration: f32, sample_rate: u32, buffer_size: u32) {
+    use moonlitt_runtime::Runtime;
+    use std::thread;
+    use std::time::Duration;
+
+    let mut engine = Engine::new(sample_rate, buffer_size);
+    if let Err(e) = engine.load(path) {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
+    }
+
+    let mut rt = match Runtime::new(engine) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Audio error: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    rt.start().unwrap();
+    println!("Playing note {note} (velocity {velocity}) for {duration}s...");
+
+    rt.note_on(0, note, velocity);
+    thread::sleep(Duration::from_secs_f32(duration * 0.8));
+    rt.note_off(0, note);
+    thread::sleep(Duration::from_secs_f32(duration * 0.2));
+
+    println!("Done.");
+    rt.shutdown();
+}
+
+fn cmd_live(path: &str) {
+    use moonlitt_runtime::Runtime;
+    use std::time::Duration;
+
+    let mut engine = Engine::new(44100, 256);
+    if let Err(e) = engine.load(path) {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
+    }
+
+    let rt = match Runtime::new(engine) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Audio error: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    rt.start().unwrap();
+    println!("Live mode. Press Ctrl+C to quit.");
+
+    // List and auto-connect first MIDI device
+    match Runtime::list_midi_inputs() {
+        Ok(devices) if !devices.is_empty() => {
+            println!("MIDI input: {}", devices[0].name);
+        }
+        _ => println!("No MIDI devices. Use another instance to send notes."),
+    }
+
+    // Block until Ctrl+C
+    loop {
+        std::thread::sleep(Duration::from_secs(1));
+    }
+}
+
+fn cmd_midi_devices() {
+    match moonlitt_runtime::Runtime::list_midi_inputs() {
+        Ok(devices) => {
+            if devices.is_empty() {
+                println!("No MIDI input devices found.");
+            } else {
+                println!("{:<4} {}", "ID", "Name");
+                println!("{}", "-".repeat(40));
+                for d in &devices {
+                    println!("{:<4} {}", d.id, d.name);
+                }
+            }
+        }
+        Err(e) => eprintln!("Error: {e}"),
     }
 }
 

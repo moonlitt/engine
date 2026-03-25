@@ -12,4 +12,5 @@ path = "src/main.rs"
 
 [dependencies]
 moonlitt-engine = { path = "../moonlitt-engine", features = ["sf2", "vst3"] }
+moonlitt-runtime = { path = "../moonlitt-runtime" }
 clap = { version = "4", features = ["derive"] }
