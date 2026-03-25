@@ -38,6 +38,7 @@ pub struct BackendInfo {
     pub extensions: &'static [&'static str],
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackendType {
     Sampler,
     PluginHost,

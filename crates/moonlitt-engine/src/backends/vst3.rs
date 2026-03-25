@@ -7,6 +7,7 @@ pub struct Vst3Backend {
     host: Vst3Host,
     plugin: Option<Vst3Plugin>,
     sample_rate: u32,
+    #[allow(dead_code)]
     buffer_size: u32,
 }
 
