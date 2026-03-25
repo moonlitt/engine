@@ -58,7 +58,14 @@ impl Engine {
             }
             #[cfg(feature = "clap")]
             Some("clap") => {
-                Err(EngineError::UnsupportedFormat("CLAP not yet implemented".into()))
+                let mut backend =
+                    crate::backends::clap::ClapBackend::new(self.sample_rate, self.buffer_size)
+                        .map_err(|e| EngineError::BackendError(e.to_string()))?;
+                backend
+                    .load(path)
+                    .map_err(|e| EngineError::BackendError(e.to_string()))?;
+                self.backend = Some(Box::new(backend));
+                Ok(())
             }
             Some(ext) => Err(EngineError::UnsupportedFormat(ext.to_string())),
             None => Err(EngineError::UnsupportedFormat("no file extension".into())),
@@ -169,7 +176,21 @@ impl Engine {
             }
         }
 
-        // TODO: scan for CLAP plugins when moonlitt-clap is implemented
+        #[cfg(feature = "clap")]
+        {
+            if let Ok(host) = moonlitt_clap::ClapHost::new(self.sample_rate, self.buffer_size) {
+                if let Ok(clap_plugins) = host.scan() {
+                    for p in clap_plugins {
+                        plugins.push(PluginInfo {
+                            name: p.name,
+                            path: p.path.to_string_lossy().into_owned(),
+                            format: PluginFormat::Clap,
+                        });
+                    }
+                }
+            }
+        }
+
         // TODO: scan for SF2 files in common directories
 
         plugins
