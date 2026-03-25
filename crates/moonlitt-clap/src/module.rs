@@ -5,12 +5,15 @@
 
 use crate::{Error, Result};
 use clap_sys::entry::clap_plugin_entry;
-use clap_sys::factory::plugin_factory::{
-    clap_plugin_factory, CLAP_PLUGIN_FACTORY_ID,
-};
+use clap_sys::factory::plugin_factory::{clap_plugin_factory, CLAP_PLUGIN_FACTORY_ID};
 use clap_sys::plugin::clap_plugin_descriptor;
 use std::ffi::{c_void, CStr, CString};
 use std::path::Path;
+
+#[cfg(target_os = "windows")]
+use std::ffi::OsStr;
+#[cfg(target_os = "windows")]
+use std::os::windows::ffi::OsStrExt;
 
 /// Parsed plugin descriptor (owned strings).
 pub(crate) struct PluginDescriptor {
@@ -35,41 +38,22 @@ impl ClapModule {
     /// Load a .clap bundle from disk.
     pub fn load(path: &Path) -> Result<Self> {
         let binary_path = resolve_binary_path(path)?;
-        let c_path = CString::new(binary_path.as_str())
-            .map_err(|e| Error::LoadFailed(e.to_string()))?;
+        let (handle, entry_sym) = load_shared_library(&binary_path)?;
 
         let plugin_path = CString::new(path.to_string_lossy().as_ref())
             .map_err(|e| Error::LoadFailed(e.to_string()))?;
 
         unsafe {
-            // dlopen the shared library
-            let handle = libc::dlopen(c_path.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL);
-            if handle.is_null() {
-                let err = libc::dlerror();
-                let msg = if err.is_null() {
-                    "dlopen failed".to_string()
-                } else {
-                    CStr::from_ptr(err).to_string_lossy().into()
-                };
-                return Err(Error::LoadFailed(msg));
-            }
-
-            // Find clap_entry symbol
-            let sym = libc::dlsym(handle, c"clap_entry".as_ptr());
-            if sym.is_null() {
-                libc::dlclose(handle);
-                return Err(Error::LoadFailed("clap_entry symbol not found".into()));
-            }
-
-            let entry = sym as *const clap_plugin_entry;
+            let entry = entry_sym as *const clap_plugin_entry;
 
             // Call entry.init(plugin_path)
-            let init_fn = (*entry).init.ok_or(Error::LoadFailed(
-                "clap_entry.init is null".into(),
-            ))?;
+            let init_fn = (*entry)
+                .init
+                .ok_or(Error::LoadFailed("clap_entry.init is null".into()))?;
             if !init_fn(plugin_path.as_ptr()) {
-                libc::dlclose(handle);
-                return Err(Error::LoadFailed("clap_entry.init() returned false".into()));
+                return Err(Error::LoadFailed(
+                    "clap_entry.init() returned false".into(),
+                ));
             }
 
             // Get the plugin factory
@@ -78,11 +62,9 @@ impl ClapModule {
             ))?;
             let factory_raw = get_factory(CLAP_PLUGIN_FACTORY_ID.as_ptr());
             if factory_raw.is_null() {
-                let deinit = (*entry).deinit;
-                if let Some(deinit_fn) = deinit {
+                if let Some(deinit_fn) = (*entry).deinit {
                     deinit_fn();
                 }
-                libc::dlclose(handle);
                 return Err(Error::LoadFailed(
                     "get_factory returned null for plugin factory".into(),
                 ));
@@ -159,6 +141,67 @@ fn cstr_to_string(ptr: *const std::ffi::c_char) -> String {
     unsafe { CStr::from_ptr(ptr) }
         .to_string_lossy()
         .into_owned()
+}
+
+/// Load the shared library and find the `clap_entry` symbol.
+/// Returns (handle, symbol pointer).
+#[cfg(not(target_os = "windows"))]
+fn load_shared_library(binary_path: &str) -> Result<(*mut c_void, *mut c_void)> {
+    let c_path =
+        CString::new(binary_path).map_err(|e| Error::LoadFailed(e.to_string()))?;
+
+    unsafe {
+        let handle = libc::dlopen(c_path.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL);
+        if handle.is_null() {
+            let err = libc::dlerror();
+            let msg = if err.is_null() {
+                "dlopen failed".to_string()
+            } else {
+                CStr::from_ptr(err).to_string_lossy().into()
+            };
+            return Err(Error::LoadFailed(msg));
+        }
+
+        let sym = libc::dlsym(handle, c"clap_entry".as_ptr());
+        if sym.is_null() {
+            libc::dlclose(handle);
+            return Err(Error::LoadFailed("clap_entry symbol not found".into()));
+        }
+
+        Ok((handle, sym))
+    }
+}
+
+/// Load the shared library and find the `clap_entry` symbol (Windows).
+/// Returns (handle, symbol pointer).
+#[cfg(target_os = "windows")]
+fn load_shared_library(binary_path: &str) -> Result<(*mut c_void, *mut c_void)> {
+    let wide: Vec<u16> = OsStr::new(binary_path)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    unsafe {
+        let handle = LoadLibraryW(wide.as_ptr());
+        if handle.is_null() {
+            return Err(Error::LoadFailed(format!(
+                "LoadLibraryW failed for {binary_path}"
+            )));
+        }
+
+        let sym = GetProcAddress(handle, c"clap_entry".as_ptr() as *const u8);
+        if sym.is_null() {
+            return Err(Error::LoadFailed("clap_entry symbol not found".into()));
+        }
+
+        Ok((handle as *mut c_void, sym as *mut c_void))
+    }
+}
+
+#[cfg(target_os = "windows")]
+extern "system" {
+    fn LoadLibraryW(lpFileName: *const u16) -> *mut c_void;
+    fn GetProcAddress(hModule: *mut c_void, lpProcName: *const u8) -> *const ();
 }
 
 /// Resolve the actual binary path inside a .clap bundle.
