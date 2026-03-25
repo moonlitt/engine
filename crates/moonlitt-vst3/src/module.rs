@@ -9,8 +9,25 @@ use std::path::Path;
 /// Function pointer type for the VST3 module entry point
 pub(crate) type GetFactoryFn = unsafe extern "system" fn() -> *mut c_void;
 
-/// Load a .vst3 bundle and return the factory function
-pub(crate) fn load_module(path: &Path) -> Result<GetFactoryFn> {
+/// A loaded VST3 module. Holds the dlopen handle alongside the factory function.
+///
+/// We intentionally never call dlclose — audio plugins commonly have static
+/// destructors that reference the library, so unloading would cause crashes.
+/// This is standard practice across all major DAWs and plugin hosts.
+pub(crate) struct Module {
+    /// Kept alive to prevent the OS from unloading the shared library.
+    /// Never dlclosed (intentional — see struct-level doc).
+    _handle: *mut c_void,
+    pub factory_fn: GetFactoryFn,
+}
+
+// The module handle is a dlopen handle — safe to move between threads.
+// factory_fn is a plain function pointer.
+unsafe impl Send for Module {}
+unsafe impl Sync for Module {}
+
+/// Load a .vst3 bundle and return a Module holding both the handle and factory function.
+pub(crate) fn load_module(path: &Path) -> Result<Module> {
     #[cfg(target_os = "macos")]
     return load_module_macos(path);
 
@@ -25,7 +42,7 @@ pub(crate) fn load_module(path: &Path) -> Result<GetFactoryFn> {
 }
 
 #[cfg(target_os = "macos")]
-fn load_module_macos(path: &Path) -> Result<GetFactoryFn> {
+fn load_module_macos(path: &Path) -> Result<Module> {
     use std::ffi::CString;
 
     let stem = path
@@ -54,16 +71,19 @@ fn load_module_macos(path: &Path) -> Result<GetFactoryFn> {
             return Err(Error::LoadFailed("GetPluginFactory not found".into()));
         }
 
-        Ok(std::mem::transmute(sym))
+        Ok(Module {
+            _handle: handle,
+            factory_fn: std::mem::transmute(sym),
+        })
     }
 }
 
 #[cfg(target_os = "windows")]
-fn load_module_windows(path: &Path) -> Result<GetFactoryFn> {
+fn load_module_windows(path: &Path) -> Result<Module> {
     todo!("Windows VST3 loading")
 }
 
 #[cfg(target_os = "linux")]
-fn load_module_linux(path: &Path) -> Result<GetFactoryFn> {
+fn load_module_linux(path: &Path) -> Result<Module> {
     todo!("Linux VST3 loading")
 }

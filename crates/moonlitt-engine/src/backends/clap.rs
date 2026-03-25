@@ -36,25 +36,11 @@ impl AudioBackend for ClapBackend {
     fn load(&mut self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
         self.unload();
 
-        // Scan to find the plugin at this path, then load the first one
-        let plugins = self.host.scan()?;
-        let plugin_info = plugins
-            .into_iter()
-            .find(|p| p.path.to_string_lossy() == path);
-
-        let info = match plugin_info {
-            Some(info) => info,
-            None => {
-                // Try scanning again (may be a race)
-                let all_plugins = self.host.scan()?;
-                all_plugins
-                    .into_iter()
-                    .find(|p| p.path.to_string_lossy() == path)
-                    .ok_or_else(|| format!("CLAP plugin not found: {path}"))?
-            }
-        };
-
-        let plugin = self.host.load(&info)?;
+        // Probe the specific .clap bundle directly — no full system scan needed.
+        let plugin = self
+            .host
+            .load_from_path(std::path::Path::new(path))
+            .map_err(|e| format!("failed to load CLAP at {path}: {e}"))?;
         self.plugin = Some(plugin);
         Ok(())
     }
@@ -100,7 +86,9 @@ impl AudioBackend for ClapBackend {
 
     fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
         if let Some(ref mut plugin) = self.plugin {
-            let _ = plugin.render(left, right);
+            if let Err(e) = plugin.render(left, right) {
+                eprintln!("[moonlitt] CLAP render error: {e}");
+            }
         }
     }
 

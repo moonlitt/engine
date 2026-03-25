@@ -235,7 +235,7 @@ fn cmd_live(path: &str) {
         std::process::exit(1);
     }
 
-    let rt = match Runtime::new(engine) {
+    let mut rt = match Runtime::new(engine) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("Audio error: {e}");
@@ -246,13 +246,28 @@ fn cmd_live(path: &str) {
     rt.start().unwrap();
     println!("Live mode. Press Ctrl+C to quit.");
 
-    // List and auto-connect first MIDI device
+    // TODO: Runtime needs a connect_midi_input(device_id) method so we can
+    // route MIDI events from the keyboard into the audio thread's event queue.
+    // For now, we list devices for informational purposes only.
     match Runtime::list_midi_inputs() {
         Ok(devices) if !devices.is_empty() => {
-            println!("MIDI input: {}", devices[0].name);
+            println!("MIDI input detected: {}", devices[0].name);
+            println!("(MIDI routing not yet implemented — playing test chord instead)");
         }
-        _ => println!("No MIDI devices. Use another instance to send notes."),
+        _ => println!("No MIDI devices found. Playing test chord."),
     }
+
+    // Play a C major chord so the command produces audible output
+    rt.note_on(0, 60, 80); // C4
+    rt.note_on(0, 64, 80); // E4
+    rt.note_on(0, 67, 80); // G4
+    std::thread::sleep(Duration::from_secs(2));
+    rt.note_off(0, 60);
+    rt.note_off(0, 64);
+    rt.note_off(0, 67);
+    std::thread::sleep(Duration::from_millis(500)); // let the tail ring
+
+    println!("Test chord done. Waiting for Ctrl+C...");
 
     // Block until Ctrl+C
     loop {

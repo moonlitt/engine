@@ -79,6 +79,17 @@ impl ClapHost {
         scanner::scan_default_paths()
     }
 
+    /// Probe a specific .clap bundle path and load the first plugin.
+    /// This avoids scanning all system directories.
+    pub fn load_from_path(&self, path: &std::path::Path) -> Result<ClapPlugin> {
+        let plugins = scanner::probe_path(path)?;
+        let info = plugins
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::LoadFailed("no plugins found in bundle".into()))?;
+        self.load(&info)
+    }
+
     /// Load a plugin from PluginInfo.
     ///
     /// Performs the full CLAP lifecycle:

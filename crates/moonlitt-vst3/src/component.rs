@@ -21,7 +21,7 @@ use vst3::Steinberg::{
 use vst3::{ComPtr, Interface};
 
 use crate::host::HostApp;
-use crate::module::GetFactoryFn;
+use crate::module::{GetFactoryFn, Module};
 use crate::{Error, Result};
 
 /// Information about a class discovered in a plugin factory.
@@ -38,22 +38,24 @@ pub(crate) struct LoadedPlugin {
     pub processor: ComPtr<IAudioProcessor>,
     pub controller: Option<ComPtr<IEditController>>,
     pub class_info: ClassInfo,
+    /// Keeps the shared library loaded for the plugin's lifetime.
+    pub _module: Module,
 }
 
-/// Load a VST3 plugin from a factory function.
+/// Load a VST3 plugin from a loaded module.
 ///
 /// Performs the full lifecycle:
 ///   factory → enumerate → createInstance → initialize → QI
 ///   → setupProcessing → activateBuses → setActive → setProcessing
 pub(crate) fn load_plugin(
-    factory_fn: GetFactoryFn,
+    module: Module,
     class_id: &[u8; 16],
     host: &vst3::ComWrapper<HostApp>,
     sample_rate: f64,
     buffer_size: usize,
 ) -> Result<LoadedPlugin> {
     // 1. Call factory_fn() to get IPluginFactory
-    let factory = get_factory(factory_fn)?;
+    let factory = get_factory(module.factory_fn)?;
 
     // 2. Find the class info for validation
     let class_info = find_class(&factory, class_id)?;
@@ -94,6 +96,7 @@ pub(crate) fn load_plugin(
         processor,
         controller,
         class_info,
+        _module: module,
     })
 }
 
@@ -132,8 +135,8 @@ fn find_class(factory: &ComPtr<IPluginFactory>, class_id: &[u8; 16]) -> Result<C
 }
 
 /// Enumerate all Audio Module Classes in a factory (used by scanner).
-pub(crate) fn enumerate_audio_classes(factory_fn: GetFactoryFn) -> Result<Vec<ClassInfo>> {
-    let factory = get_factory(factory_fn)?;
+pub(crate) fn enumerate_audio_classes(module: &Module) -> Result<Vec<ClassInfo>> {
+    let factory = get_factory(module.factory_fn)?;
     let count = unsafe { factory.countClasses() };
     let mut classes = Vec::new();
 

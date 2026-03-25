@@ -128,7 +128,7 @@ fn midi_to_vst3_events(events: &[MidiEvent]) -> Vec<Event> {
             }
             MidiEventKind::ProgramChange {
                 channel,
-                program: _,
+                program,
             } => {
                 // Program change as legacy MIDI (controlNumber=130 = kCtrlProgramChange)
                 let mut e = zeroed_event();
@@ -139,7 +139,7 @@ fn midi_to_vst3_events(events: &[MidiEvent]) -> Vec<Event> {
                     midiCCOut: LegacyMIDICCOutEvent {
                         controlNumber: 130,
                         channel: channel as i8,
-                        value: 0,
+                        value: program as i8,
                         value2: 0,
                     },
                 };

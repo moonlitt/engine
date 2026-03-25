@@ -58,10 +58,16 @@ pub(crate) fn process_audio(
 
     let mut out_ptrs: [*mut f32; 2] = [left.as_mut_ptr(), right.as_mut_ptr()];
 
-    let mut scratch_left = vec![0.0f32; num_frames];
-    let mut scratch_right = vec![0.0f32; num_frames];
-    let mut scratch_ptrs: [*mut f32; 2] =
-        [scratch_left.as_mut_ptr(), scratch_right.as_mut_ptr()];
+    // Create independent scratch buffers for each extra output bus.
+    // Each bus needs its own pair of L/R buffers to avoid aliasing.
+    let mut extra_scratches: Vec<(Vec<f32>, Vec<f32>)> = (1..actual_out)
+        .map(|_| (vec![0.0f32; num_frames], vec![0.0f32; num_frames]))
+        .collect();
+    // Build pointer arrays for each extra bus (must live alongside the Vecs)
+    let mut extra_ptrs: Vec<[*mut f32; 2]> = extra_scratches
+        .iter_mut()
+        .map(|(l, r)| [l.as_mut_ptr(), r.as_mut_ptr()])
+        .collect();
 
     // Zero the output buffers
     left.fill(0.0);
@@ -73,7 +79,7 @@ pub(crate) fn process_audio(
         let ptrs = if i == 0 {
             &mut out_ptrs as *mut [*mut f32; 2] as *mut *mut f32
         } else {
-            &mut scratch_ptrs as *mut [*mut f32; 2] as *mut *mut f32
+            &mut extra_ptrs[i - 1] as *mut [*mut f32; 2] as *mut *mut f32
         };
         output_buses.push(AudioBusBuffers {
             numChannels: 2,

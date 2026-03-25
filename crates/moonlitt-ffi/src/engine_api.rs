@@ -13,6 +13,10 @@ use std::ffi::{c_char, c_float, c_int};
 pub struct EngineHandle {
     pub(crate) engine: Option<Engine>,
     last_error: Option<String>,
+    /// Cached CString for FFI error retrieval. The pointer returned by
+    /// `get_error` remains valid until the next engine operation that
+    /// overwrites `last_error` (same lifetime contract as C's `strerror`).
+    last_error_cstring: Option<std::ffi::CString>,
 }
 
 impl EngineHandle {
@@ -41,6 +45,7 @@ pub extern "C" fn moonlitt_engine_create(sample_rate: c_int, buffer_size: c_int)
     let handle = Box::new(EngineHandle {
         engine: Some(engine),
         last_error: None,
+        last_error_cstring: None,
     });
     Box::into_raw(handle)
 }
@@ -308,27 +313,28 @@ pub extern "C" fn moonlitt_engine_load_preset(e: *mut EngineHandle, id: c_int) -
 // ---------------------------------------------------------------------------
 
 /// Get the last error message, or null if no error.
-/// The returned pointer is valid until the next engine operation.
+///
+/// The returned pointer is valid until the next engine operation that may
+/// produce an error — same lifetime contract as C's `strerror()`. The
+/// CString is stored in the EngineHandle itself, so it is safe to call
+/// from any thread as long as the caller has exclusive access to the handle.
+///
 /// Do NOT free this pointer — it is owned by the engine handle.
 #[no_mangle]
 pub extern "C" fn moonlitt_engine_get_error(e: *mut EngineHandle) -> *const c_char {
-    match unsafe { e.as_ref() } {
-        Some(handle) => match &handle.last_error {
-            Some(msg) => {
-                // We need a stable pointer. Use a thread-local to hold the CString.
-                thread_local! {
-                    static LAST_ERROR: std::cell::RefCell<Option<std::ffi::CString>> =
-                        const { std::cell::RefCell::new(None) };
-                }
-                LAST_ERROR.with(|cell| {
-                    let cs = std::ffi::CString::new(msg.as_str()).unwrap_or_default();
-                    let ptr = cs.as_ptr();
-                    *cell.borrow_mut() = Some(cs);
-                    ptr
-                })
-            }
-            None => std::ptr::null(),
-        },
+    if e.is_null() {
+        return std::ptr::null();
+    }
+    let handle = unsafe { &mut *e };
+    match &handle.last_error {
+        Some(msg) => {
+            handle.last_error_cstring = std::ffi::CString::new(msg.as_str()).ok();
+            handle
+                .last_error_cstring
+                .as_ref()
+                .map(|cs| cs.as_ptr())
+                .unwrap_or(std::ptr::null())
+        }
         None => std::ptr::null(),
     }
 }

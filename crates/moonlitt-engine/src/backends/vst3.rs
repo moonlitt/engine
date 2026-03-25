@@ -36,32 +36,11 @@ impl AudioBackend for Vst3Backend {
     fn load(&mut self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
         self.unload();
 
-        // Scan the specific bundle to find the first audio class
-        let plugins = self.host.scan()?;
-        let plugin_info = plugins
-            .into_iter()
-            .find(|p| p.path.to_string_lossy() == path)
-            .ok_or_else(|| {
-                // If not found in default scan, try loading it directly
-                format!("VST3 plugin not found at: {path}")
-            });
-
-        // If not found in scan, try a direct approach:
-        // Scan the specific path by temporarily scanning it.
-        let info = match plugin_info {
-            Ok(info) => info,
-            Err(_) => {
-                // Try direct load by scanning the parent directory
-                // For now, scan default paths and match
-                let all_plugins = self.host.scan()?;
-                all_plugins
-                    .into_iter()
-                    .find(|p| p.path.to_string_lossy() == path)
-                    .ok_or_else(|| format!("VST3 plugin not found: {path}"))?
-            }
-        };
-
-        let plugin = self.host.load(&info)?;
+        // Probe the specific .vst3 bundle directly — no full system scan needed.
+        let plugin = self
+            .host
+            .load_from_path(std::path::Path::new(path))
+            .map_err(|e| format!("failed to load VST3 at {path}: {e}"))?;
         self.plugin = Some(plugin);
         Ok(())
     }
@@ -107,7 +86,9 @@ impl AudioBackend for Vst3Backend {
 
     fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
         if let Some(ref mut plugin) = self.plugin {
-            let _ = plugin.render(left, right);
+            if let Err(e) = plugin.render(left, right) {
+                eprintln!("[moonlitt] VST3 render error: {e}");
+            }
         }
     }
 

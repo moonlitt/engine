@@ -43,10 +43,16 @@ pub fn scan_default_paths() -> Result<Vec<PluginInfo>> {
     Ok(plugins)
 }
 
+/// Probe a specific .vst3 bundle path and return all discovered plugins.
+/// This avoids scanning all system directories.
+pub fn probe_path(path: &Path) -> Result<Vec<PluginInfo>> {
+    probe_plugin(path)
+}
+
 /// Probe a .vst3 bundle: load it, get the factory, enumerate audio classes.
 fn probe_plugin(path: &Path) -> Result<Vec<PluginInfo>> {
-    let factory_fn = load_module(path)?;
-    let classes = enumerate_audio_classes(factory_fn)?;
+    let module = load_module(path)?;
+    let classes = enumerate_audio_classes(&module)?;
 
     Ok(classes
         .into_iter()

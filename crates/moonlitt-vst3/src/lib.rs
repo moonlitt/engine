@@ -68,11 +68,22 @@ impl Vst3Host {
         scanner::scan_default_paths()
     }
 
+    /// Probe a specific .vst3 bundle path and load the first audio class.
+    /// This avoids scanning all system directories.
+    pub fn load_from_path(&self, path: &std::path::Path) -> Result<Vst3Plugin> {
+        let plugins = scanner::probe_path(path)?;
+        let info = plugins
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::LoadFailed("no audio classes found in bundle".into()))?;
+        self.load(&info)
+    }
+
     /// Load a plugin from PluginInfo.
     pub fn load(&self, info: &PluginInfo) -> Result<Vst3Plugin> {
-        let factory_fn = module::load_module(&info.path)?;
+        let module = module::load_module(&info.path)?;
         let loaded = component::load_plugin(
-            factory_fn,
+            module,
             &info.class_id,
             &self.host,
             self.sample_rate,

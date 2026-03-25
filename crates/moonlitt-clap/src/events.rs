@@ -15,7 +15,9 @@ use std::mem;
 #[derive(Debug, Clone)]
 pub struct MidiEvent {
     pub kind: MidiEventKind,
-    pub sample_offset: u32,
+    /// Sample offset within the current buffer. Uses i32 for consistency
+    /// with VST3's native type; converted to u32 internally for CLAP.
+    pub sample_offset: i32,
 }
 
 /// The kind of MIDI event.
@@ -83,7 +85,7 @@ impl InputEventList {
                     let event = clap_event_note {
                         header: clap_event_header {
                             size: mem::size_of::<clap_event_note>() as u32,
-                            time: ev.sample_offset,
+                            time: ev.sample_offset.max(0) as u32,
                             space_id: CLAP_CORE_EVENT_SPACE_ID,
                             type_: CLAP_EVENT_NOTE_ON,
                             flags: 0,
@@ -110,7 +112,7 @@ impl InputEventList {
                     let event = clap_event_note {
                         header: clap_event_header {
                             size: mem::size_of::<clap_event_note>() as u32,
-                            time: ev.sample_offset,
+                            time: ev.sample_offset.max(0) as u32,
                             space_id: CLAP_CORE_EVENT_SPACE_ID,
                             type_: CLAP_EVENT_NOTE_OFF,
                             flags: 0,
@@ -141,7 +143,7 @@ impl InputEventList {
                     let event = clap_event_midi {
                         header: clap_event_header {
                             size: mem::size_of::<clap_event_midi>() as u32,
-                            time: ev.sample_offset,
+                            time: ev.sample_offset.max(0) as u32,
                             space_id: CLAP_CORE_EVENT_SPACE_ID,
                             type_: CLAP_EVENT_MIDI,
                             flags: 0,
@@ -170,7 +172,7 @@ impl InputEventList {
                     let event = clap_event_midi {
                         header: clap_event_header {
                             size: mem::size_of::<clap_event_midi>() as u32,
-                            time: ev.sample_offset,
+                            time: ev.sample_offset.max(0) as u32,
                             space_id: CLAP_CORE_EVENT_SPACE_ID,
                             type_: CLAP_EVENT_MIDI,
                             flags: 0,
@@ -194,7 +196,7 @@ impl InputEventList {
                     let event = clap_event_midi {
                         header: clap_event_header {
                             size: mem::size_of::<clap_event_midi>() as u32,
-                            time: ev.sample_offset,
+                            time: ev.sample_offset.max(0) as u32,
                             space_id: CLAP_CORE_EVENT_SPACE_ID,
                             type_: CLAP_EVENT_MIDI,
                             flags: 0,

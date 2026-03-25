@@ -45,6 +45,12 @@ pub fn scan_default_paths() -> Result<Vec<PluginInfo>> {
     Ok(plugins)
 }
 
+/// Probe a specific .clap bundle path and return all discovered plugins.
+/// This avoids scanning all system directories.
+pub fn probe_path(path: &Path) -> Result<Vec<PluginInfo>> {
+    probe_plugin(path)
+}
+
 /// Probe a .clap bundle: load it, get the factory, enumerate plugins.
 fn probe_plugin(path: &Path) -> Result<Vec<PluginInfo>> {
     let module = ClapModule::load(path)?;
