@@ -274,18 +274,53 @@ impl Vst3Plugin {
         &self.inner.class_info.name
     }
 
-    /// Set plugin state from a binary blob (e.g., sfizz state with file path).
+    /// Set plugin state from a binary blob.
+    /// Handles the full stop → deactivate → setState → activate → start cycle.
     pub fn set_state(&mut self, data: &[u8]) -> Result<()> {
+        use vst3::Steinberg::Vst::{IAudioProcessorTrait, IComponentTrait};
+        use vst3::Steinberg::kResultOk;
+
+        // 1. Stop processing
+        unsafe { let _ = self.inner.processor.setProcessing(0); }
+        // 2. Deactivate
+        unsafe { let _ = self.inner.component.setActive(0); }
+
+        // 3. Set state on component
+        let mut stream = stream::MemoryStream::from_data(data.to_vec());
+        let ptr = stream.as_ibstream_ptr();
+        let comp_result = unsafe { self.inner.component.setState(ptr) };
+
+        // 4. Sync controller state
+        if let Some(ref ctrl) = self.inner.controller {
+            use vst3::Steinberg::Vst::IEditControllerTrait;
+            let mut stream2 = stream::MemoryStream::from_data(data.to_vec());
+            let ptr2 = stream2.as_ibstream_ptr();
+            let _ = unsafe { ctrl.setComponentState(ptr2) };
+        }
+
+        // 5. Reactivate
+        unsafe { let _ = self.inner.component.setActive(1); }
+        // 6. Restart processing
+        unsafe { let _ = self.inner.processor.setProcessing(1); }
+
+        if comp_result != kResultOk {
+            return Err(Error::Other(format!("setState failed: {comp_result}")));
+        }
+        Ok(())
+    }
+
+    /// Get current plugin state as raw bytes.
+    pub fn get_state(&self) -> Result<Vec<u8>> {
         use vst3::Steinberg::Vst::IComponentTrait;
         use vst3::Steinberg::kResultOk;
 
-        let mut stream = stream::MemoryStream::from_data(data.to_vec());
+        let mut stream = stream::MemoryStream::new_writable();
         let ptr = stream.as_ibstream_ptr();
-        let result = unsafe { self.inner.component.setState(ptr) };
+        let result = unsafe { self.inner.component.getState(ptr) };
         if result != kResultOk {
-            return Err(Error::Other(format!("setState failed: {result}")));
+            return Err(Error::Other(format!("getState failed: {result}")));
         }
-        Ok(())
+        Ok(stream.data().to_vec())
     }
 
     /// Load an SFZ file into sfizz by constructing and setting its state.

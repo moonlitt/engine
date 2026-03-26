@@ -7,6 +7,7 @@ members = [
     "crates/moonlitt-ffi",
     "crates/moonlitt-runtime",
     "crates/moonlitt-cli",
+    "crates/moonlitt-resampler",
 ]
 
 [workspace.package]

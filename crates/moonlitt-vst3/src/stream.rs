@@ -30,6 +30,19 @@ static VTBL: IBStreamVtbl = IBStreamVtbl {
 };
 
 impl MemoryStream {
+    pub fn new_writable() -> Box<Self> {
+        Box::new(Self {
+            vtbl: &VTBL,
+            ref_count: Cell::new(1),
+            data: Vec::new(),
+            position: Cell::new(0),
+        })
+    }
+
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+
     pub fn from_data(data: Vec<u8>) -> Box<Self> {
         Box::new(Self {
             vtbl: &VTBL,
@@ -97,12 +110,34 @@ unsafe extern "system" fn ms_read(
 }
 
 unsafe extern "system" fn ms_write(
-    _this: *mut IBStream,
-    _buffer: *mut c_void,
-    _num_bytes: int32,
-    _bytes_written: *mut int32,
+    this: *mut IBStream,
+    buffer: *mut c_void,
+    num_bytes: int32,
+    bytes_written: *mut int32,
 ) -> tresult {
-    kResultFalse // read-only
+    // Writable stream: append to data
+    let s = &*(this as *const MemoryStream);
+    if num_bytes > 0 && !buffer.is_null() {
+        let slice = std::slice::from_raw_parts(buffer as *const u8, num_bytes as usize);
+        // Need mutable access — use unsafe cell pattern
+        let data = &mut *(std::ptr::addr_of!(s.data) as *mut Vec<u8>);
+        let pos = s.position.get();
+        if pos == data.len() {
+            data.extend_from_slice(slice);
+        } else {
+            // Overwrite at position
+            let end = pos + slice.len();
+            if end > data.len() {
+                data.resize(end, 0);
+            }
+            data[pos..end].copy_from_slice(slice);
+        }
+        s.position.set(pos + slice.len());
+    }
+    if !bytes_written.is_null() {
+        *bytes_written = num_bytes;
+    }
+    kResultOk
 }
 
 unsafe extern "system" fn ms_seek(
@@ -135,46 +170,46 @@ unsafe extern "system" fn ms_tell(this: *mut IBStream, pos: *mut int64) -> tresu
 
 // === sfizz state builder ===
 
-/// Build a binary state blob for sfizz VST3 (state version 5).
+/// Build a binary state blob for sfizz VST3.
 /// Uses Steinberg IBStreamer little-endian format.
+///
+/// Supports version 0 (minimal) through 5 (full).
 pub fn build_sfizz_state(sfz_path: &str) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(256);
+    build_sfizz_state_v5(sfz_path)
+}
 
-    // version: u64 = 5
-    buf.extend_from_slice(&5u64.to_le_bytes());
-    // sfzFile: IBStreamer::writeStr8 (i32 len + bytes)
+/// State version 0: minimal (sfzFile + volume + numVoices + oversampling + preloadSize)
+pub fn build_sfizz_state_v0(sfz_path: &str) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(64);
+    buf.extend_from_slice(&0u64.to_le_bytes()); // version = 0
     write_str8(&mut buf, sfz_path);
-    // volume: f32 = 0.0
-    buf.extend_from_slice(&0.0f32.to_le_bytes());
-    // numVoices: i32 = 64
-    buf.extend_from_slice(&64i32.to_le_bytes());
-    // oversamplingLog2: i32 = 0
-    buf.extend_from_slice(&0i32.to_le_bytes());
-    // preloadSize: i32 = 8192
-    buf.extend_from_slice(&8192i32.to_le_bytes());
-    // scalaFile: string (v>=1) — empty string needs length 1 with just \0
-    write_str8(&mut buf, "");
-    // scalaRootKey: i32 = 60 (v>=1)
-    buf.extend_from_slice(&60i32.to_le_bytes());
-    // tuningFrequency: f32 = 440.0 (v>=1)
-    buf.extend_from_slice(&440.0f32.to_le_bytes());
-    // stretchedTuning: f32 = 0.0 (v>=1)
-    buf.extend_from_slice(&0.0f32.to_le_bytes());
-    // sampleQuality: i32 = 10 (Sinc 72) (v>=3)
-    buf.extend_from_slice(&10i32.to_le_bytes());
-    // oscillatorQuality: i32 = 3 (v>=3)
-    buf.extend_from_slice(&3i32.to_le_bytes());
-    // freewheelingSampleQuality: i32 = 10 (v>=5)
-    buf.extend_from_slice(&10i32.to_le_bytes());
-    // freewheelingOscillatorQuality: i32 = 3 (v>=5)
-    buf.extend_from_slice(&3i32.to_le_bytes());
-    // sustainCancelsRelease: bool as int16 = 0 (v>=5)
-    buf.extend_from_slice(&0i16.to_le_bytes());
-    // lastKeyswitch: i32 = -1 (v>=4)
-    buf.extend_from_slice(&(-1i32).to_le_bytes());
-    // controller count: u32 = 0 (v>=2)
-    buf.extend_from_slice(&0u32.to_le_bytes());
+    buf.extend_from_slice(&0.0f32.to_le_bytes()); // volume
+    buf.extend_from_slice(&64i32.to_le_bytes()); // numVoices
+    buf.extend_from_slice(&0i32.to_le_bytes()); // oversamplingLog2
+    buf.extend_from_slice(&8192i32.to_le_bytes()); // preloadSize
+    buf
+}
 
+/// State version 5: full (all fields including sample quality)
+pub fn build_sfizz_state_v5(sfz_path: &str) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(128);
+    buf.extend_from_slice(&5u64.to_le_bytes());
+    write_str8(&mut buf, sfz_path);
+    buf.extend_from_slice(&0.0f32.to_le_bytes()); // volume
+    buf.extend_from_slice(&64i32.to_le_bytes()); // numVoices
+    buf.extend_from_slice(&0i32.to_le_bytes()); // oversamplingLog2
+    buf.extend_from_slice(&8192i32.to_le_bytes()); // preloadSize
+    write_str8(&mut buf, ""); // scalaFile (v>=1)
+    buf.extend_from_slice(&60i32.to_le_bytes()); // scalaRootKey (v>=1)
+    buf.extend_from_slice(&440.0f32.to_le_bytes()); // tuningFrequency (v>=1)
+    buf.extend_from_slice(&0.0f32.to_le_bytes()); // stretchedTuning (v>=1)
+    buf.extend_from_slice(&10i32.to_le_bytes()); // sampleQuality (v>=3)
+    buf.extend_from_slice(&3i32.to_le_bytes()); // oscillatorQuality (v>=3)
+    buf.extend_from_slice(&10i32.to_le_bytes()); // freewheelingSampleQuality (v>=5)
+    buf.extend_from_slice(&3i32.to_le_bytes()); // freewheelingOscillatorQuality (v>=5)
+    buf.extend_from_slice(&0i16.to_le_bytes()); // sustainCancelsRelease (v>=5)
+    buf.extend_from_slice(&(-1i32).to_le_bytes()); // lastKeyswitch (v>=4)
+    buf.extend_from_slice(&0u32.to_le_bytes()); // controller count (v>=2)
     buf
 }
 
