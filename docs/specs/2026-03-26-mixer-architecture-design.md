@@ -1,19 +1,10 @@
-# Moonlitt Mixer Architecture Design
+# Moonlitt Mixer Architecture Design (v2)
 
 ## Position
 
-Moonlitt is a **headless DAW** — full audio engine capabilities, no GUI. All sound generation comes from plugins (VST3/CLAP) or sfizz. No built-in synthesizer.
+Moonlitt is a **headless DAW** — full audio engine capabilities, no GUI. Sound generation from plugins (VST3/CLAP) and OxiSynth (pure Rust SF2). Future: moonlitt-sampler (Sinc 72).
 
-## Current Problems
-
-1. Multiple engines output to separate cpal streams — no shared mixing
-2. No master bus (no unified volume, no limiter)
-3. No send bus (no shared reverb/effects)
-4. No pan control
-5. FluidLite is a mediocre SF2 player (7-point sinc)
-6. SF2 and SFZ use different engines with different quality ceilings
-
-## Target Architecture
+## Architecture
 
 ```
                     ┌──────────────────────────────────────────┐
@@ -40,239 +31,59 @@ Moonlitt is a **headless DAW** — full audio engine capabilities, no GUI. All s
                     └──────────────────────────────────────────┘
 ```
 
-**One cpal stream. All mixing in Rust. Zero hardware-level mixing.**
+One cpal stream. All mixing in Rust. Zero hardware-level mixing.
 
-## Component Design
+## Completed (Steps 1-3)
 
-### 1. Track
+### ✅ Mixer Core (mixer.rs)
+- Track: engine + channel_mask + volume + pan + mute/solo + send_levels
+- SendBus: effect engine + accumulation buffers + return level
+- MasterBus: master volume + soft limiter (tanh)
+- Constant-power pan law (cos/sin)
+- 9 unit tests passing
 
-A track owns one Engine and handles a set of MIDI channels.
+### ✅ AudioThread Integration
+- AudioThread owns Mixer (replaces single Engine)
+- Event routing by channel_mask bitmask
+- Sample-accurate delayed events with split rendering
+- Runtime::new() wraps single Engine in Mixer (backward compat)
+- Runtime::with_mixer() for pre-configured setups
 
-```rust
-pub struct Track {
-    id: u32,
-    engine: Engine,
-    channel_mask: u16,       // bitmask: which MIDI channels route here
-    volume: f32,             // 0.0-1.0
-    pan: f32,                // -1.0 (L) to 1.0 (R)
-    mute: bool,
-    solo: bool,
-    send_levels: Vec<f32>,   // per send bus
-    left: Vec<f32>,          // pre-allocated render buffer
-    right: Vec<f32>,
-}
-```
+### ✅ VST3/CLAP Effect Mode
+- AudioBackend::process_effect(in_l, in_r, out_l, out_r)
+- Vst3Plugin::process_effect — feeds audio into VST3 process() input bus
+- ClapPlugin::process_effect — same for CLAP
+- SendBus uses engine.process_effect() for shared effects
 
-### 2. SendBus
+### ✅ SF2 Backend: OxiSynth
+- Pure Rust, replaces FluidLite (kept as "sf2-legacy" feature)
+- SeventhOrder interpolation (highest OxiSynth offers)
+- Full parameter support (reverb, chorus, gain)
+- Future: replace with moonlitt-sampler (Sinc 72)
 
-A send bus holds an effect plugin (VST3/CLAP) and accumulates audio from tracks.
+### ✅ Sinc 72 Resampler (moonlitt-resampler)
+- Pure Rust, zero dependencies
+- Quality levels: Linear, Sinc8, Sinc16, Sinc36, Sinc48, Sinc72
+- Kaiser window + pre-computed sinc tables
+- 8 tests passing
+- Ready for integration into moonlitt-sampler
 
-```rust
-pub struct SendBus {
-    id: u32,
-    engine: Engine,          // loaded with a VST3/CLAP effect plugin
-    level: f32,              // return level (how much effect goes to master)
-    left: Vec<f32>,          // accumulation buffer
-    right: Vec<f32>,
-}
-```
+## Remaining Steps
 
-Effect plugins are loaded the same way as instruments — through our VST3/CLAP hosting. The difference: we feed audio INTO their input buffer (effect mode) instead of sending MIDI (instrument mode).
+### Step 4: Mixer FFI
 
-### 3. MasterBus
-
-```rust
-pub struct MasterBus {
-    volume: f32,
-    limiter_threshold: f32,  // soft limiter to prevent clipping
-    left: Vec<f32>,
-    right: Vec<f32>,
-}
-```
-
-### 4. Mixer
-
-```rust
-pub struct Mixer {
-    tracks: Vec<Track>,
-    send_buses: Vec<SendBus>,
-    master: MasterBus,
-    buffer_size: usize,
-    sample_rate: u32,
-}
-```
-
-### 5. Render Pipeline (per audio callback)
-
-```
-for each chunk of buffer_size:
-    1. Route events from queue to tracks (by channel_mask)
-    2. Render each track:
-       - engine.render(track.left, track.right)
-       - apply volume
-       - apply pan (constant-power: L *= cos(θ), R *= sin(θ))
-       - if muted or (any_solo && !this.solo): zero output
-    3. Sum all track outputs into master.left/right
-    4. For each send bus:
-       - accumulate: sum(track.left * track.send_levels[bus_id])
-       - process: send_bus.engine.render(input → output)  [effect mode]
-       - mix into master: master += send_bus.output * send_bus.level
-    5. Apply master volume
-    6. Apply soft limiter (tanh for peaks > threshold)
-    7. Output to cpal
-```
-
-### 6. Pan Law
-
-Constant-power panning (industry standard):
-
-```rust
-fn apply_pan(left: &mut [f32], right: &mut [f32], pan: f32) {
-    // pan: -1.0 (full left) to 1.0 (full right)
-    let angle = (pan + 1.0) * 0.25 * std::f32::consts::PI; // 0 to π/2
-    let gain_l = angle.cos();
-    let gain_r = angle.sin();
-    for s in left.iter_mut() { *s *= gain_l; }
-    for s in right.iter_mut() { *s *= gain_r; }
-}
-```
-
-### 7. Soft Limiter
-
-```rust
-fn soft_limit(sample: f32, threshold: f32) -> f32 {
-    if sample.abs() <= threshold {
-        sample
-    } else {
-        threshold * (sample / sample.abs()) * (1.0 + ((sample.abs() - threshold) / (1.0 - threshold)).tanh() * (1.0 - threshold) / threshold)
-    }
-    // Simplified: tanh(sample) for |sample| > threshold
-}
-```
-
-## SF2 → SFZ Conversion
-
-### Why
-
-sfizz is SFZ-only. SF2 users should get sfizz quality (Sinc 72) without manual conversion.
-
-### Converter: moonlitt-sf2-import
-
-A new crate or module that:
-
-1. Parses SF2 file (using `soundfont-rs` or custom parser)
-2. Extracts PCM samples → writes as WAV files to a cache directory
-3. Generates SFZ mapping file from SF2 instrument/preset definitions:
-   - Key ranges (`lokey`, `hikey`)
-   - Velocity layers (`lovel`, `hivel`)
-   - Loop points (`loop_mode`, `loop_start`, `loop_end`)
-   - Tuning (`tune`, `pitch_keycenter`)
-   - Volume envelope (`ampeg_attack`, `ampeg_decay`, `ampeg_sustain`, `ampeg_release`)
-   - Filter (`fil_type`, `cutoff`, `resonance`)
-4. Returns path to generated SFZ
-
-### Cache Strategy
-
-```
-~/.moonlitt/sf2-cache/
-  <sha256-of-sf2>/
-    preset_000_Acoustic_Grand_Piano.sfz
-    preset_001_Bright_Acoustic_Piano.sfz
-    samples/
-      sample_0001.wav
-      sample_0002.wav
-      ...
-```
-
-SHA-256 of the SF2 file prevents re-conversion. Cache is persistent across sessions.
-
-### Integration
-
-```rust
-// engine.load() auto-detects:
-fn load(&mut self, path: &str) -> Result<(), EngineError> {
-    match extension {
-        "sf2" => {
-            let sfz_path = sf2_import::convert_or_cache(path)?;
-            self.load_sfizz(&sfz_path)
-        }
-        "sfz" => self.load_sfizz(path),
-        "vst3" => self.load_vst3(path),
-        "clap" => self.load_clap(path),
-    }
-}
-```
-
-## sfizz Integration
-
-### Approach: libsfizz via C FFI
-
-Link libsfizz as a C library (BSD-2 license, redistributable).
-
-```rust
-// New backend: SfizzBackend
-pub struct SfizzBackend {
-    synth: *mut sfizz_synth_t,
-    sample_rate: u32,
-    buffer_size: u32,
-}
-
-impl AudioBackend for SfizzBackend {
-    fn load(&mut self, path: &str) {
-        sfizz_load_file(self.synth, path);
-    }
-    fn note_on(&mut self, ch: u8, note: u8, vel: u8) {
-        sfizz_send_note_on(self.synth, 0, note, vel);
-    }
-    fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
-        let channels = [left.as_mut_ptr(), right.as_mut_ptr()];
-        sfizz_render_block(self.synth, channels.as_ptr(), 2, left.len());
-    }
-    // ... params map to sfizz_set_sample_quality, etc.
-}
-```
-
-### Build
-
-sfizz requires: C++17 compiler, CMake, libsndfile. Use `cmake` crate in build.rs to compile from source (vendored submodule).
-
-### Sample Quality Mapping
-
-sfizz `sample_quality` 0-10:
-- 0: nearest (fastest)
-- 1: linear
-- 2: polynomial (default)
-- 3-10: sinc with increasing points
-
-We set **quality 10** (Sinc 72) by default. Users can adjust via parameter API.
-
-## Removing FluidLite
-
-### What gets removed
-
-- `moonlitt-engine/src/backends/sf2.rs` — entire file
-- `fluidlite` dependency from Cargo.toml
-- `sf2` feature flag
-- All FluidLite-specific parameter definitions
-
-### What replaces it
-
-- `moonlitt-engine/src/backends/sfizz.rs` — SfizzBackend
-- `moonlitt-sf2-import/` — new crate for SF2→SFZ conversion
-- `sfizz-sys/` — new crate for sfizz C FFI bindings
-
-## Mixer FFI
+Expose mixer controls through C FFI for C#/game integration.
 
 ```c
-// Track management
+// Track management (via AudioEvent ring buffer for thread safety)
 int   moonlitt_mixer_add_track(RuntimeHandle* rt, EngineHandle* engine) → track_id
 void  moonlitt_mixer_remove_track(RuntimeHandle* rt, int track_id)
 void  moonlitt_mixer_set_track_volume(RuntimeHandle* rt, int track_id, float vol)
 void  moonlitt_mixer_set_track_pan(RuntimeHandle* rt, int track_id, float pan)
-void  moonlitt_mixer_set_track_mute(RuntimeHandle* rt, int track_id, bool mute)
-void  moonlitt_mixer_set_track_solo(RuntimeHandle* rt, int track_id, bool solo)
+void  moonlitt_mixer_set_track_mute(RuntimeHandle* rt, int track_id, int mute)
+void  moonlitt_mixer_set_track_solo(RuntimeHandle* rt, int track_id, int solo)
 void  moonlitt_mixer_set_track_channels(RuntimeHandle* rt, int track_id, int mask)
-void  moonlitt_mixer_set_track_send(RuntimeHandle* rt, int track_id, int bus, float level)
+void  moonlitt_mixer_set_track_send(RuntimeHandle* rt, int track_id, int bus_id, float level)
 
 // Send bus management
 int   moonlitt_mixer_add_send(RuntimeHandle* rt, EngineHandle* effect) → bus_id
@@ -283,81 +94,62 @@ void  moonlitt_mixer_set_send_level(RuntimeHandle* rt, int bus_id, float level)
 void  moonlitt_mixer_set_master_volume(RuntimeHandle* rt, float vol)
 
 // Query
-char* moonlitt_mixer_info_json(RuntimeHandle* rt)  // track list + bus list
+char* moonlitt_mixer_info_json(RuntimeHandle* rt)
 ```
 
-## VST3/CLAP Effect Mode
+**Thread safety**: Track volume/pan/mute/solo changes go through the ring buffer as MixerCommand events. Track add/remove use a separate mpsc channel (rare operations, non-realtime safe is OK).
 
-Currently our hosting only supports instrument mode (MIDI → audio out). Effect mode needs:
+### Step 5: C# Bindings Update
 
-### VST3 Effect Mode
+Replace the manual multi-NativeEngine routing in AudioManager with proper mixer FFI calls.
 
-The VST3 `process()` already accepts both audio inputs and outputs. For instruments, we pass empty inputs. For effects, we pass the send bus accumulation buffer as input:
-
-```rust
-// Current (instrument):
-process_data.audio_inputs = null
-process_data.audio_outputs = &output_buffer
-
-// Effect mode:
-process_data.audio_inputs = &send_accumulation_buffer  // audio IN
-process_data.audio_outputs = &processed_buffer          // audio OUT
+```csharp
+// NativeEngine adds mixer methods:
+public int MixerAddTrack(IntPtr engineHandle);
+public void MixerSetTrackVolume(int trackId, float vol);
+public void MixerSetTrackPan(int trackId, float pan);
+public void MixerSetTrackMute(int trackId, bool mute);
+public void MixerSetTrackSolo(int trackId, bool solo);
+public void MixerSetTrackSend(int trackId, int busId, float level);
+public int MixerAddSend(IntPtr effectHandle);
+public void MixerSetMasterVolume(float vol);
+public string? MixerInfoJson();
 ```
 
-Both Vst3Plugin and ClapPlugin need a new `process_replacing(input, output)` method alongside the existing `render(output)`.
+AudioManager changes:
+- Remove `_channelEngines` dictionary (manual multi-engine routing)
+- Remove per-engine cpal streams
+- Use single Runtime with Mixer
+- `SetChannelEngine()` → creates Engine, adds as Mixer track
+- MixerMenu reads from `MixerInfoJson()` instead of TrackScanner
 
-### CLAP Effect Mode
+### Step 6: Tests
 
-Same principle — `clap_process` already has `audio_inputs` and `audio_outputs` fields.
+- Mixer FFI null safety tests
+- C# round-trip: add track → set volume → query info
+- E2E: multi-track rendering through single cpal stream
+- Verify: piano_track command works through new mixer FFI
 
-## Implementation Order
+## Future (Not This Session)
 
-1. **Mixer core** (`moonlitt-mixer` or in `moonlitt-runtime`)
-   - Mixer, Track, SendBus, MasterBus structs
-   - Render pipeline with pan, volume, mute/solo, send routing
-   - Soft limiter
+### moonlitt-sampler (Sinc 72 SF2 Synth)
+- World's first Sinc 72 pure Rust SF2 synthesizer
+- soundfont-rs parser + moonlitt-resampler + ADSR/Filter/LFO/VoicePool
+- Replace OxiSynth as default SF2 backend
+- Reference: SpessaSynth (spec compliance), OxiSynth (Rust patterns), FluidSynth (algorithms)
 
-2. **AudioThread integration**
-   - Replace single Engine with Mixer
-   - Event routing by channel_mask
+### sfizz VST3 Integration
+- setState file loading needs debugging (IBStream works, file not loaded)
+- Alternative: explore sfizz's IConnectionPoint messaging protocol
+- Goal: load SFZ files programmatically through sfizz VST3
 
-3. **VST3/CLAP effect mode**
-   - `process_replacing(input_l, input_r, output_l, output_r)`
-   - Wire into SendBus
-
-4. **sfizz backend**
-   - sfizz-sys crate (bindgen from sfizz.h)
-   - SfizzBackend implementing AudioBackend
-   - Build sfizz from source via cmake
-
-5. **SF2→SFZ converter**
-   - Parse SF2 (soundfont-rs)
-   - Extract samples to WAV
-   - Generate SFZ mapping
-   - SHA-256 cache
-
-6. **Remove FluidLite**
-   - Delete sf2.rs backend
-   - Remove fluidlite dependency
-   - Update feature flags
-
-7. **Mixer FFI**
-   - All mixer control functions
-   - JSON info query
-
-8. **C# bindings update**
-   - NativeEngine uses mixer FFI
-   - AudioManager routes through mixer API instead of manual multi-engine
-
-9. **Tests**
-   - Mixer unit tests (pan law, volume, mute/solo, send routing)
-   - sfizz integration test
-   - SF2→SFZ conversion test
-   - E2E: SF2 file → sfizz → mixer → cpal
+### Parameter Automation in Mixer
+- Per-track parameter automation lanes
+- Automation events in process loop (sample-accurate parameter changes)
 
 ## Non-Goals (v1)
 
-- Plugin delay compensation (PDC) — all plugins assumed zero latency
+- Plugin delay compensation (PDC)
 - Sidechain routing
 - Multi-output plugins (>2 channels)
 - Insert effects (per-track effect chain) — only send effects
