@@ -140,6 +140,16 @@ impl Engine {
         }
     }
 
+    /// Process audio as an effect (audio in → audio out).
+    pub fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
+        if let Some(ref mut backend) = self.backend {
+            backend.process_effect(in_l, in_r, out_l, out_r);
+        } else {
+            out_l.fill(0.0);
+            out_r.fill(0.0);
+        }
+    }
+
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
     }

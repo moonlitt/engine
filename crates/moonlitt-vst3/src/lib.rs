@@ -149,7 +149,7 @@ impl Vst3Plugin {
         }
     }
 
-    /// Render one buffer of audio. Drains all pending MIDI events.
+    /// Render one buffer of audio (instrument mode). Drains all pending MIDI events.
     ///
     /// `left` and `right` must be the same length (the buffer size).
     pub fn render(&mut self, left: &mut [f32], right: &mut [f32]) -> Result<()> {
@@ -160,6 +160,26 @@ impl Vst3Plugin {
             left,
             right,
             &events,
+        )
+    }
+
+    /// Process audio through the plugin as an effect (audio in → audio out).
+    ///
+    /// Reads from `in_left`/`in_right`, writes processed audio to `out_left`/`out_right`.
+    pub fn process_effect(
+        &mut self,
+        in_left: &[f32],
+        in_right: &[f32],
+        out_left: &mut [f32],
+        out_right: &mut [f32],
+    ) -> Result<()> {
+        processor::process_effect(
+            &self.inner.processor,
+            &self.inner.component,
+            in_left,
+            in_right,
+            out_left,
+            out_right,
         )
     }
 

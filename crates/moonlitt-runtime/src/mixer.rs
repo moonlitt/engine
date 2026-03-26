@@ -278,11 +278,14 @@ impl Mixer {
 
         // Process send buses (effect mode: feed accumulated audio through effect engine)
         for bus in &mut self.send_buses {
-            // Copy accumulated audio into effect engine's input, render to output
-            // For now: the effect engine renders using its internal state
-            // TODO: implement process_replacing for VST3/CLAP effect mode
-            bus.out_left[..chunk].copy_from_slice(&bus.acc_left[..chunk]);
-            bus.out_right[..chunk].copy_from_slice(&bus.acc_right[..chunk]);
+            bus.out_left[..chunk].fill(0.0);
+            bus.out_right[..chunk].fill(0.0);
+            bus.engine.process_effect(
+                &bus.acc_left[..chunk],
+                &bus.acc_right[..chunk],
+                &mut bus.out_left[..chunk],
+                &mut bus.out_right[..chunk],
+            );
 
             // Mix effect output into master
             let level = bus.level;

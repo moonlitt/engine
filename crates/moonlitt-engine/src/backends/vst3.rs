@@ -92,9 +92,16 @@ impl AudioBackend for Vst3Backend {
         }
     }
 
+    fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
+        if let Some(ref mut plugin) = self.plugin {
+            if let Err(e) = plugin.process_effect(in_l, in_r, out_l, out_r) {
+                eprintln!("[moonlitt] VST3 effect error: {e}");
+            }
+        }
+    }
+
     fn set_volume(&mut self, _volume: f32) {
         // VST3 volume is typically controlled via plugin parameters
-        // or a gain stage — not directly applicable here
     }
 
     fn sample_rate(&self) -> u32 {

@@ -300,6 +300,73 @@ impl ClapPlugin {
         Ok(())
     }
 
+    /// Process audio through the plugin as an effect (audio in → audio out).
+    pub fn process_effect(
+        &mut self,
+        in_left: &[f32],
+        in_right: &[f32],
+        out_left: &mut [f32],
+        out_right: &mut [f32],
+    ) -> Result<()> {
+        let num_frames = in_left.len().min(in_right.len()).min(out_left.len()).min(out_right.len()) as u32;
+        if num_frames == 0 {
+            return Ok(());
+        }
+
+        out_left.fill(0.0);
+        out_right.fill(0.0);
+
+        // Input buffer
+        let mut in_left_buf = in_left.to_vec();
+        let mut in_right_buf = in_right.to_vec();
+        let mut in_ptrs: [*mut f32; 2] = [in_left_buf.as_mut_ptr(), in_right_buf.as_mut_ptr()];
+        let mut audio_input = clap_audio_buffer {
+            data32: in_ptrs.as_mut_ptr(),
+            data64: ptr::null_mut(),
+            channel_count: 2,
+            latency: 0,
+            constant_mask: 0,
+        };
+
+        // Output buffer
+        let mut out_ptrs: [*mut f32; 2] = [out_left.as_mut_ptr(), out_right.as_mut_ptr()];
+        let mut audio_output = clap_audio_buffer {
+            data32: out_ptrs.as_mut_ptr(),
+            data64: ptr::null_mut(),
+            channel_count: 2,
+            latency: 0,
+            constant_mask: 0,
+        };
+
+        let input_events = InputEventList::from_midi_events(&[]);
+        let output_events = OutputEventList::new();
+
+        let process_data = clap_process {
+            steady_time: -1,
+            frames_count: num_frames,
+            transport: ptr::null(),
+            audio_inputs: &mut audio_input,
+            audio_outputs: &mut audio_output,
+            audio_inputs_count: 1,
+            audio_outputs_count: 1,
+            in_events: input_events.as_ptr(),
+            out_events: output_events.as_ptr(),
+        };
+
+        let status = unsafe {
+            let process_fn = (*self.plugin)
+                .process
+                .ok_or(Error::PluginError("process is null"))?;
+            process_fn(self.plugin, &process_data)
+        };
+
+        if status == CLAP_PROCESS_ERROR {
+            return Err(Error::PluginError("process returned error"));
+        }
+
+        Ok(())
+    }
+
     /// Get the plugin's display name.
     pub fn name(&self) -> &str {
         &self.plugin_name

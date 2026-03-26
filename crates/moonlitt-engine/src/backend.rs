@@ -16,6 +16,11 @@ pub trait AudioBackend: Send {
 
     // Audio
     fn render(&mut self, left: &mut [f32], right: &mut [f32]);
+    /// Process audio as an effect (audio in → audio out). Default: copy input to output.
+    fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
+        out_l[..in_l.len()].copy_from_slice(in_l);
+        out_r[..in_r.len()].copy_from_slice(in_r);
+    }
     fn set_volume(&mut self, volume: f32);
     fn sample_rate(&self) -> u32;
 

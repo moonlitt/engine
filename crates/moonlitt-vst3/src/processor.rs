@@ -127,3 +127,74 @@ pub(crate) fn process_audio(
 
     Ok(())
 }
+
+/// Process audio as an effect: feed real audio input, get processed output.
+pub(crate) fn process_effect(
+    processor: &ComPtr<IAudioProcessor>,
+    component: &ComPtr<IComponent>,
+    in_left: &[f32],
+    in_right: &[f32],
+    out_left: &mut [f32],
+    out_right: &mut [f32],
+) -> Result<()> {
+    let num_frames = in_left.len().min(in_right.len()).min(out_left.len()).min(out_right.len());
+    if num_frames == 0 {
+        return Ok(());
+    }
+
+    let num_audio_out = unsafe { component.getBusCount(kAudio as i32, kOutput as i32) };
+    let num_audio_in = unsafe { component.getBusCount(kAudio as i32, kInput as i32) };
+
+    // --- Input bus (real audio) ---
+    // Cast away const — VST3 API uses *mut but won't modify input buffers
+    let mut in_left_buf = in_left.to_vec();
+    let mut in_right_buf = in_right.to_vec();
+    let mut input_ptrs: [*mut f32; 2] = [in_left_buf.as_mut_ptr(), in_right_buf.as_mut_ptr()];
+
+    let mut input_bus = AudioBusBuffers {
+        numChannels: 2,
+        silenceFlags: 0, // NOT silent — real audio
+        __field0: AudioBusBuffers__type0 {
+            channelBuffers32: input_ptrs.as_mut_ptr(),
+        },
+    };
+
+    // --- Output bus ---
+    out_left.fill(0.0);
+    out_right.fill(0.0);
+    let mut out_ptrs: [*mut f32; 2] = [out_left.as_mut_ptr(), out_right.as_mut_ptr()];
+
+    let mut output_bus = AudioBusBuffers {
+        numChannels: 2,
+        silenceFlags: 0,
+        __field0: AudioBusBuffers__type0 {
+            channelBuffers32: out_ptrs.as_mut_ptr(),
+        },
+    };
+
+    let mut data = ProcessData {
+        processMode: kRealtime as i32,
+        symbolicSampleSize: kSample32 as i32,
+        numSamples: num_frames as i32,
+        numInputs: if num_audio_in > 0 { 1 } else { 0 },
+        numOutputs: if num_audio_out > 0 { 1 } else { 0 },
+        inputs: if num_audio_in > 0 {
+            &mut input_bus
+        } else {
+            std::ptr::null_mut()
+        },
+        outputs: &mut output_bus,
+        inputParameterChanges: std::ptr::null_mut(),
+        outputParameterChanges: std::ptr::null_mut(),
+        inputEvents: std::ptr::null_mut(), // no MIDI events for effects
+        outputEvents: std::ptr::null_mut(),
+        processContext: std::ptr::null_mut(),
+    };
+
+    let result = unsafe { processor.process(&mut data) };
+    if result != kResultOk {
+        return Err(Error::PluginError(result));
+    }
+
+    Ok(())
+}
