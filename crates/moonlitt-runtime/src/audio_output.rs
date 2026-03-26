@@ -12,7 +12,7 @@ impl AudioOutput {
             .default_output_device()
             .ok_or("no audio output device")?;
 
-        let sample_rate = audio_thread.engine.sample_rate();
+        let sample_rate = audio_thread.mixer.sample_rate();
         let config = cpal::StreamConfig {
             channels: 2,
             sample_rate: cpal::SampleRate(sample_rate),

@@ -10,6 +10,7 @@ mod audio_output;
 mod audio_thread;
 mod event;
 mod midi_input;
+pub mod mixer;
 mod runtime;
 pub mod sequencer;
 pub mod transport;

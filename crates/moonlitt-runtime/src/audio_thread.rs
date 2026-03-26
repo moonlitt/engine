@@ -1,7 +1,7 @@
 use crate::event::{AudioEvent, TimedEvent};
+use crate::mixer::Mixer;
 use crate::sequencer::Sequencer;
 use crate::transport::Transport;
-use moonlitt_engine::engine::Engine;
 use rtrb::Consumer;
 use std::sync::Arc;
 
@@ -16,41 +16,41 @@ struct PendingEvent {
 /// Holds everything that lives on the audio thread.
 /// This struct is moved into the cpal callback closure.
 pub(crate) struct AudioThread {
-    pub engine: Engine,
+    pub mixer: Mixer,
     pub consumer: Consumer<TimedEvent>,
     pub sequencer: Option<Sequencer>,
     pub transport: Arc<Transport>,
-    /// Pre-allocated render buffers
-    pub left: Vec<f32>,
-    pub right: Vec<f32>,
     /// Pre-allocated sequencer event buffer
     pub seq_events: Vec<AudioEvent>,
     /// Delayed events waiting for their sample offset
     pending: Vec<PendingEvent>,
+    /// Pre-allocated render buffers (for split rendering)
+    render_left: Vec<f32>,
+    render_right: Vec<f32>,
 }
 
 impl AudioThread {
     pub fn new(
-        engine: Engine,
+        mixer: Mixer,
         consumer: Consumer<TimedEvent>,
         sequencer: Option<Sequencer>,
         transport: Arc<Transport>,
         buffer_size: usize,
     ) -> Self {
         Self {
-            engine,
+            mixer,
             consumer,
             sequencer,
             transport,
-            left: vec![0.0; buffer_size],
-            right: vec![0.0; buffer_size],
             seq_events: Vec::with_capacity(64),
             pending: Vec::with_capacity(128),
+            render_left: vec![0.0; buffer_size],
+            render_right: vec![0.0; buffer_size],
         }
     }
 
     pub fn process(&mut self, output: &mut [f32]) {
-        let buffer_size = self.left.len();
+        let buffer_size = self.render_left.len();
         let frames_needed = output.len() / 2; // interleaved stereo
 
         // Process in chunks of buffer_size
@@ -61,7 +61,7 @@ impl AudioThread {
             // 1. Drain event queue — separate immediate and delayed
             while let Ok(timed) = self.consumer.pop() {
                 if timed.delay_samples == 0 {
-                    dispatch_to_engine(&mut self.engine, timed.event);
+                    dispatch_to_mixer(&mut self.mixer, timed.event);
                 } else {
                     self.pending.push(PendingEvent {
                         event: timed.event,
@@ -76,34 +76,31 @@ impl AudioThread {
                     self.seq_events.clear();
                     seq.advance(
                         chunk,
-                        self.engine.sample_rate(),
+                        self.mixer.sample_rate(),
                         &mut self.seq_events,
                         self.transport.tempo(),
                         self.transport.looping(),
                     );
                     for i in 0..self.seq_events.len() {
                         let event = self.seq_events[i];
-                        dispatch_to_engine(&mut self.engine, event);
+                        dispatch_to_mixer(&mut self.mixer, event);
                     }
                 }
             }
 
             // 3. Render with sample-accurate event insertion
-            self.left[..chunk].fill(0.0);
-            self.right[..chunk].fill(0.0);
-
             if self.pending.is_empty() {
-                // Fast path: no delayed events, render whole chunk
-                self.engine
-                    .render(&mut self.left[..chunk], &mut self.right[..chunk]);
+                // Fast path: no delayed events
+                self.mixer
+                    .render(&mut self.render_left[..chunk], &mut self.render_right[..chunk]);
             } else {
                 self.render_with_splits(chunk);
             }
 
             // 4. Interleave into output
             for i in 0..chunk {
-                output[(offset + i) * 2] = self.left[i];
-                output[(offset + i) * 2 + 1] = self.right[i];
+                output[(offset + i) * 2] = self.render_left[i];
+                output[(offset + i) * 2 + 1] = self.render_right[i];
             }
 
             offset += chunk;
@@ -111,10 +108,7 @@ impl AudioThread {
     }
 
     /// Render a chunk with sample-accurate event insertion.
-    /// Splits the chunk at each pending event's sample position,
-    /// dispatching the event between sub-renders.
     fn render_with_splits(&mut self, chunk: usize) {
-        // Sort pending by remaining samples (ascending)
         self.pending.sort_by_key(|e| e.remaining);
 
         let mut rendered = 0usize;
@@ -123,14 +117,14 @@ impl AudioThread {
         while dispatched < self.pending.len() {
             let sample_pos = self.pending[dispatched].remaining.max(0) as usize;
             if sample_pos >= chunk {
-                break; // no more events in this chunk
+                break;
             }
 
             // Render up to this event's position
             if sample_pos > rendered {
-                self.engine.render(
-                    &mut self.left[rendered..sample_pos],
-                    &mut self.right[rendered..sample_pos],
+                self.mixer.render(
+                    &mut self.render_left[rendered..sample_pos],
+                    &mut self.render_right[rendered..sample_pos],
                 );
                 rendered = sample_pos;
             }
@@ -139,7 +133,7 @@ impl AudioThread {
             while dispatched < self.pending.len()
                 && (self.pending[dispatched].remaining.max(0) as usize) == sample_pos
             {
-                dispatch_to_engine(&mut self.engine, self.pending[dispatched].event);
+                dispatch_to_mixer(&mut self.mixer, self.pending[dispatched].event);
                 dispatched += 1;
             }
         }
@@ -151,33 +145,33 @@ impl AudioThread {
 
         // Render remaining samples
         if rendered < chunk {
-            self.engine.render(
-                &mut self.left[rendered..chunk],
-                &mut self.right[rendered..chunk],
+            self.mixer.render(
+                &mut self.render_left[rendered..chunk],
+                &mut self.render_right[rendered..chunk],
             );
         }
 
-        // Decrement remaining for events not yet dispatched (carry over to next chunk)
+        // Decrement remaining for events not yet dispatched
         for pe in &mut self.pending {
             pe.remaining -= chunk as i32;
         }
     }
 }
 
-fn dispatch_to_engine(engine: &mut Engine, event: AudioEvent) {
+fn dispatch_to_mixer(mixer: &mut Mixer, event: AudioEvent) {
     match event {
         AudioEvent::NoteOn {
             channel,
             note,
             velocity,
-        } => engine.note_on(channel, note, velocity),
-        AudioEvent::NoteOff { channel, note, .. } => engine.note_off(channel, note),
-        AudioEvent::CC { channel, cc, value } => engine.cc(channel, cc, value),
-        AudioEvent::PitchBend { channel, value } => engine.pitch_bend(channel, value),
-        AudioEvent::ProgramChange { channel, program } => engine.program_change(channel, program),
-        AudioEvent::AllNotesOff => engine.all_notes_off(),
-        AudioEvent::SetVolume(v) => engine.set_volume(v),
-        AudioEvent::SetParam { id, value } => engine.set_param(id, value as f64),
-        AudioEvent::Stop => engine.all_notes_off(),
+        } => mixer.note_on(channel, note, velocity),
+        AudioEvent::NoteOff { channel, note, .. } => mixer.note_off(channel, note),
+        AudioEvent::CC { channel, cc, value } => mixer.cc(channel, cc, value),
+        AudioEvent::PitchBend { channel, value } => mixer.pitch_bend(channel, value),
+        AudioEvent::ProgramChange { channel, program } => mixer.program_change(channel, program),
+        AudioEvent::AllNotesOff => mixer.all_notes_off(),
+        AudioEvent::SetVolume(v) => mixer.set_volume(v),
+        AudioEvent::SetParam { id, value } => mixer.set_param(id, value as f64),
+        AudioEvent::Stop => mixer.all_notes_off(),
     }
 }

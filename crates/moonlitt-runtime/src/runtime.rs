@@ -2,6 +2,7 @@ use crate::audio_output::AudioOutput;
 use crate::audio_thread::AudioThread;
 use crate::event::{AudioEvent, TimedEvent};
 use crate::midi_input::{MidiDeviceInfo, MidiInputConnection};
+use crate::mixer::Mixer;
 use crate::transport::Transport;
 use moonlitt_engine::engine::Engine;
 use rtrb::RingBuffer;
@@ -18,13 +19,30 @@ pub struct Runtime {
 }
 
 impl Runtime {
+    /// Create a runtime with a single engine (backward compatible).
+    /// The engine is placed in a Mixer as the sole track handling all 16 channels.
     pub fn new(engine: Engine) -> Result<Self, String> {
         let buffer_size = engine.buffer_size();
+        let sample_rate = engine.sample_rate();
+
+        let mut mixer = Mixer::new(sample_rate, buffer_size as usize);
+        mixer.add_track(engine, 0xFFFF); // all 16 channels
+
+        Self::with_mixer(mixer, buffer_size)
+    }
+
+    /// Create a runtime with a pre-configured Mixer.
+    pub fn with_mixer(mixer: Mixer, buffer_size: u32) -> Result<Self, String> {
         let (producer, consumer) = RingBuffer::new(1024);
         let transport = Arc::new(Transport::new());
 
-        let audio_thread =
-            AudioThread::new(engine, consumer, None, transport.clone(), buffer_size as usize);
+        let audio_thread = AudioThread::new(
+            mixer,
+            consumer,
+            None,
+            transport.clone(),
+            buffer_size as usize,
+        );
 
         let audio_output = AudioOutput::new(audio_thread)?;
 
