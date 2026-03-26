@@ -1,6 +1,6 @@
 //! CLAP backend — wraps moonlitt_clap behind AudioBackend.
 
-use crate::backend::{AudioBackend, BackendInfo, BackendType};
+use crate::backend::{AudioBackend, BackendInfo, BackendType, ParamFlags, ParamInfo};
 use moonlitt_clap::{ClapHost, ClapPlugin};
 
 pub struct ClapBackend {
@@ -98,5 +98,48 @@ impl AudioBackend for ClapBackend {
 
     fn sample_rate(&self) -> u32 {
         self.sample_rate
+    }
+
+    fn param_count(&self) -> u32 {
+        self.plugin.as_ref().map(|p| p.param_count()).unwrap_or(0)
+    }
+
+    fn param_info(&self, index: u32) -> Option<ParamInfo> {
+        let plugin = self.plugin.as_ref()?;
+        let cinfo = plugin.param_info(index)?;
+        // Extract group from module path (e.g., "Synth/Oscillator" → "Synth")
+        let group = cinfo.module.split('/').next().unwrap_or("").to_string();
+        let mut flags = ParamFlags::empty();
+        // CLAP param flag constants (from clap-sys)
+        const IS_HIDDEN: u32 = 1 << 2;
+        const IS_READONLY: u32 = 1 << 3;
+        const IS_STEPPED: u32 = 1 << 0;
+        if cinfo.flags & IS_HIDDEN != 0 { flags |= ParamFlags::HIDDEN; }
+        if cinfo.flags & IS_READONLY != 0 { flags |= ParamFlags::READONLY; }
+        if cinfo.flags & IS_STEPPED != 0 { flags |= ParamFlags::STEPPED; }
+        Some(ParamInfo {
+            id: cinfo.id,
+            name: cinfo.name,
+            group,
+            min: cinfo.min,
+            max: cinfo.max,
+            default: cinfo.default,
+            step_count: 0,
+            flags,
+        })
+    }
+
+    fn get_param(&self, id: u32) -> Option<f64> {
+        self.plugin.as_ref()?.get_param(id)
+    }
+
+    fn set_param(&mut self, id: u32, value: f64) {
+        if let Some(ref mut plugin) = self.plugin {
+            plugin.set_param(id, value);
+        }
+    }
+
+    fn param_display(&self, id: u32, value: f64) -> Option<String> {
+        self.plugin.as_ref()?.param_display(id, value)
     }
 }

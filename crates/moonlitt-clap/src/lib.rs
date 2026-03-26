@@ -28,12 +28,13 @@ pub use events::{MidiEvent, MidiEventKind};
 pub use scanner::PluginInfo;
 
 use clap_sys::audio_buffer::clap_audio_buffer;
+use clap_sys::ext::params::{clap_plugin_params, CLAP_EXT_PARAMS};
 use clap_sys::plugin::clap_plugin;
 use clap_sys::process::{clap_process, CLAP_PROCESS_ERROR};
 use events::{InputEventList, OutputEventList};
 use host::HostContext;
 use module::ClapModule;
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::pin::Pin;
 use std::ptr;
 
@@ -55,6 +56,8 @@ pub struct ClapPlugin {
     pending_events: Vec<MidiEvent>,
     /// Plugin name (cached from descriptor).
     plugin_name: String,
+    /// Params extension (if supported by plugin).
+    params_ext: Option<*const clap_plugin_params>,
     #[allow(dead_code)]
     sample_rate: f64,
     #[allow(dead_code)]
@@ -167,12 +170,24 @@ impl ClapHost {
             }
         }
 
+        // 7. Query params extension
+        let params_ext = unsafe {
+            match (*plugin).get_extension {
+                Some(get_ext) => {
+                    let ext = get_ext(plugin, CLAP_EXT_PARAMS.as_ptr());
+                    if ext.is_null() { None } else { Some(ext as *const clap_plugin_params) }
+                }
+                None => None,
+            }
+        };
+
         Ok(ClapPlugin {
             plugin,
             _module: module,
             _host: host_ctx,
             pending_events: Vec::new(),
             plugin_name: info.name.clone(),
+            params_ext,
             sample_rate: self.sample_rate,
             buffer_size: self.buffer_size,
         })
@@ -289,6 +304,86 @@ impl ClapPlugin {
     pub fn name(&self) -> &str {
         &self.plugin_name
     }
+
+    // --- Parameters ---
+
+    pub fn param_count(&self) -> u32 {
+        let ext = match self.params_ext {
+            Some(e) => e,
+            None => return 0,
+        };
+        unsafe {
+            match (*ext).count {
+                Some(f) => f(self.plugin),
+                None => 0,
+            }
+        }
+    }
+
+    pub fn param_info(&self, index: u32) -> Option<ClapParamInfo> {
+        let ext = self.params_ext?;
+        let get_info = unsafe { (*ext).get_info? };
+        let mut info = unsafe { std::mem::zeroed::<clap_sys::ext::params::clap_param_info>() };
+        let ok = unsafe { get_info(self.plugin, index, &mut info) };
+        if !ok {
+            return None;
+        }
+        Some(ClapParamInfo {
+            id: info.id,
+            name: unsafe { CStr::from_ptr(info.name.as_ptr()) }
+                .to_string_lossy()
+                .into_owned(),
+            module: unsafe { CStr::from_ptr(info.module.as_ptr()) }
+                .to_string_lossy()
+                .into_owned(),
+            min: info.min_value,
+            max: info.max_value,
+            default: info.default_value,
+            flags: info.flags,
+        })
+    }
+
+    pub fn get_param(&self, id: u32) -> Option<f64> {
+        let ext = self.params_ext?;
+        let get_value = unsafe { (*ext).get_value? };
+        let mut value = 0.0f64;
+        let ok = unsafe { get_value(self.plugin, id, &mut value) };
+        if ok { Some(value) } else { None }
+    }
+
+    pub fn set_param(&mut self, _id: u32, _value: f64) {
+        // CLAP params are set via process events, not directly.
+        // For now, queue as a pending event would be needed.
+        // TODO: implement via CLAP_EVENT_PARAM_VALUE in next process call
+    }
+
+    pub fn param_display(&self, id: u32, value: f64) -> Option<String> {
+        let ext = self.params_ext?;
+        let value_to_text = unsafe { (*ext).value_to_text? };
+        let mut buf = [0i8; 256];
+        let ok = unsafe { value_to_text(self.plugin, id, value, buf.as_mut_ptr(), 256) };
+        if ok {
+            Some(
+                unsafe { CStr::from_ptr(buf.as_ptr()) }
+                    .to_string_lossy()
+                    .into_owned(),
+            )
+        } else {
+            None
+        }
+    }
+}
+
+/// Parameter info from a CLAP plugin.
+#[derive(Debug, Clone)]
+pub struct ClapParamInfo {
+    pub id: u32,
+    pub name: String,
+    pub module: String,
+    pub min: f64,
+    pub max: f64,
+    pub default: f64,
+    pub flags: u32,
 }
 
 impl Drop for ClapPlugin {
