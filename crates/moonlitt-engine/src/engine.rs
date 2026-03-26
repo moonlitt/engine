@@ -36,7 +36,7 @@ impl Engine {
         match ext.as_deref() {
             #[cfg(feature = "sf2")]
             Some("sf2") => {
-                let mut backend = crate::backends::sf2::Sf2Backend::new(self.sample_rate)
+                let mut backend = crate::backends::oxisynth::OxiSynthBackend::new(self.sample_rate)
                     .map_err(|e| EngineError::BackendError(e.to_string()))?;
                 backend
                     .load(path)

@@ -88,7 +88,7 @@ fn test_engine_load_sf2() {
 
     // Check backend info
     let info = engine.backend_info().unwrap();
-    assert_eq!(info.name, "FluidLite");
+    assert_eq!(info.name, "OxiSynth");
 
     // Play a note and render
     engine.note_on(0, 60, 100);
