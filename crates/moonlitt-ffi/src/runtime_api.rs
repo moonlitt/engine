@@ -106,10 +106,31 @@ pub extern "C" fn moonlitt_runtime_note_on(rt: *mut RuntimeHandle, ch: c_int, no
     }
 }
 
+/// Note-on with sample-accurate delay (23μs precision).
+/// `delay_samples` = number of samples to wait before triggering.
+#[no_mangle]
+pub extern "C" fn moonlitt_runtime_note_on_delayed(
+    rt: *mut RuntimeHandle, ch: c_int, note: c_int, vel: c_int, delay_samples: c_int,
+) {
+    if let Some(h) = unsafe { rt.as_mut() } {
+        h.runtime.note_on_delayed(ch as u8, note as u8, vel as u8, delay_samples.max(0) as u32);
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn moonlitt_runtime_note_off(rt: *mut RuntimeHandle, ch: c_int, note: c_int) {
     if let Some(h) = unsafe { rt.as_mut() } {
         h.runtime.note_off(ch as u8, note as u8);
+    }
+}
+
+/// Note-off with sample-accurate delay.
+#[no_mangle]
+pub extern "C" fn moonlitt_runtime_note_off_delayed(
+    rt: *mut RuntimeHandle, ch: c_int, note: c_int, delay_samples: c_int,
+) {
+    if let Some(h) = unsafe { rt.as_mut() } {
+        h.runtime.note_off_delayed(ch as u8, note as u8, delay_samples.max(0) as u32);
     }
 }
 

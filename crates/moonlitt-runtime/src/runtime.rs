@@ -1,6 +1,6 @@
 use crate::audio_output::AudioOutput;
 use crate::audio_thread::AudioThread;
-use crate::event::AudioEvent;
+use crate::event::{AudioEvent, TimedEvent};
 use crate::midi_input::{MidiDeviceInfo, MidiInputConnection};
 use crate::transport::Transport;
 use moonlitt_engine::engine::Engine;
@@ -8,7 +8,7 @@ use rtrb::RingBuffer;
 use std::sync::Arc;
 
 pub struct Runtime {
-    producer: rtrb::Producer<AudioEvent>,
+    producer: rtrb::Producer<TimedEvent>,
     audio_output: Option<AudioOutput>,
     #[allow(dead_code)]
     midi_connection: Option<MidiInputConnection>,
@@ -23,15 +23,8 @@ impl Runtime {
         let (producer, consumer) = RingBuffer::new(1024);
         let transport = Arc::new(Transport::new());
 
-        let audio_thread = AudioThread {
-            engine,
-            consumer,
-            sequencer: None,
-            transport: transport.clone(),
-            left: vec![0.0; buffer_size as usize],
-            right: vec![0.0; buffer_size as usize],
-            seq_events: Vec::with_capacity(64),
-        };
+        let audio_thread =
+            AudioThread::new(engine, consumer, None, transport.clone(), buffer_size as usize);
 
         let audio_output = AudioOutput::new(audio_thread)?;
 
@@ -63,7 +56,17 @@ impl Runtime {
     // --- MIDI events (thread-safe, lock-free) ---
 
     fn send(&mut self, event: AudioEvent) {
-        let _ = self.producer.push(event); // drop if full
+        let _ = self.producer.push(TimedEvent {
+            event,
+            delay_samples: 0,
+        });
+    }
+
+    fn send_delayed(&mut self, event: AudioEvent, delay_samples: u32) {
+        let _ = self.producer.push(TimedEvent {
+            event,
+            delay_samples,
+        });
     }
 
     pub fn note_on(&mut self, channel: u8, note: u8, velocity: u8) {
@@ -74,12 +77,34 @@ impl Runtime {
         });
     }
 
+    pub fn note_on_delayed(&mut self, channel: u8, note: u8, velocity: u8, delay_samples: u32) {
+        self.send_delayed(
+            AudioEvent::NoteOn {
+                channel,
+                note,
+                velocity,
+            },
+            delay_samples,
+        );
+    }
+
     pub fn note_off(&mut self, channel: u8, note: u8) {
         self.send(AudioEvent::NoteOff {
             channel,
             note,
             velocity: 0,
         });
+    }
+
+    pub fn note_off_delayed(&mut self, channel: u8, note: u8, delay_samples: u32) {
+        self.send_delayed(
+            AudioEvent::NoteOff {
+                channel,
+                note,
+                velocity: 0,
+            },
+            delay_samples,
+        );
     }
 
     pub fn cc(&mut self, channel: u8, cc: u8, value: u8) {
@@ -137,8 +162,10 @@ impl Runtime {
     // --- Shutdown ---
 
     pub fn shutdown(mut self) {
-        // Send stop event, then drop audio output (stops stream)
-        let _ = self.producer.push(AudioEvent::Stop);
+        let _ = self.producer.push(TimedEvent {
+            event: AudioEvent::Stop,
+            delay_samples: 0,
+        });
         drop(self.audio_output.take());
     }
 }

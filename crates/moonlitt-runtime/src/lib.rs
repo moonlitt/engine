@@ -14,6 +14,6 @@ mod runtime;
 pub mod sequencer;
 pub mod transport;
 
-pub use event::AudioEvent;
+pub use event::{AudioEvent, TimedEvent};
 pub use midi_input::MidiDeviceInfo;
 pub use runtime::Runtime;

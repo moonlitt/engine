@@ -11,3 +11,12 @@ pub enum AudioEvent {
     SetVolume(f32),
     Stop,
 }
+
+/// An event with a sample-accurate delay.
+/// `delay_samples = 0` means immediate (same as legacy behavior).
+/// `delay_samples > 0` means "trigger at this sample offset within the audio buffer."
+#[derive(Debug, Clone, Copy)]
+pub struct TimedEvent {
+    pub event: AudioEvent,
+    pub delay_samples: u32,
+}
