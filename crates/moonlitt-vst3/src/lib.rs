@@ -21,6 +21,7 @@ mod host;
 mod module;
 mod processor;
 mod scanner;
+pub mod stream;
 
 pub use error::{Error, Result};
 pub use events::{MidiEvent, MidiEventKind};
@@ -271,6 +272,26 @@ impl Vst3Plugin {
     /// Get the plugin's display name.
     pub fn name(&self) -> &str {
         &self.inner.class_info.name
+    }
+
+    /// Set plugin state from a binary blob (e.g., sfizz state with file path).
+    pub fn set_state(&mut self, data: &[u8]) -> Result<()> {
+        use vst3::Steinberg::Vst::IComponentTrait;
+        use vst3::Steinberg::kResultOk;
+
+        let mut stream = stream::MemoryStream::from_data(data.to_vec());
+        let ptr = stream.as_ibstream_ptr();
+        let result = unsafe { self.inner.component.setState(ptr) };
+        if result != kResultOk {
+            return Err(Error::Other(format!("setState failed: {result}")));
+        }
+        Ok(())
+    }
+
+    /// Load an SFZ file into sfizz by constructing and setting its state.
+    pub fn load_sfizz_file(&mut self, sfz_path: &str) -> Result<()> {
+        let state = stream::build_sfizz_state(sfz_path);
+        self.set_state(&state)
     }
 
     // --- Parameters ---
