@@ -172,6 +172,26 @@ fn dispatch_to_mixer(mixer: &mut Mixer, event: AudioEvent) {
         AudioEvent::AllNotesOff => mixer.all_notes_off(),
         AudioEvent::SetVolume(v) => mixer.set_volume(v),
         AudioEvent::SetParam { id, value } => mixer.set_param(id, value as f64),
+        AudioEvent::MixerTrackVolume { track_id, volume } => {
+            if let Some(t) = mixer.track_mut(track_id as u32) { t.volume = volume; }
+        }
+        AudioEvent::MixerTrackPan { track_id, pan } => {
+            if let Some(t) = mixer.track_mut(track_id as u32) { t.pan = pan; }
+        }
+        AudioEvent::MixerTrackMute { track_id, mute } => {
+            if let Some(t) = mixer.track_mut(track_id as u32) { t.mute = mute; }
+        }
+        AudioEvent::MixerTrackSolo { track_id, solo } => {
+            if let Some(t) = mixer.track_mut(track_id as u32) { t.solo = solo; }
+        }
+        AudioEvent::MixerTrackSend { track_id, bus_id, level } => {
+            if let Some(t) = mixer.track_mut(track_id as u32) {
+                if (bus_id as usize) < t.send_levels.len() {
+                    t.send_levels[bus_id as usize] = level;
+                }
+            }
+        }
+        AudioEvent::MixerMasterVolume(v) => mixer.set_master_volume(v),
         AudioEvent::Stop => mixer.all_notes_off(),
     }
 }

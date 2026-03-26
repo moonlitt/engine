@@ -149,6 +149,32 @@ impl Runtime {
         self.send(AudioEvent::SetParam { id, value });
     }
 
+    // --- Mixer control (thread-safe via ring buffer) ---
+
+    pub fn mixer_set_track_volume(&mut self, track_id: u8, volume: f32) {
+        self.send(AudioEvent::MixerTrackVolume { track_id, volume });
+    }
+
+    pub fn mixer_set_track_pan(&mut self, track_id: u8, pan: f32) {
+        self.send(AudioEvent::MixerTrackPan { track_id, pan });
+    }
+
+    pub fn mixer_set_track_mute(&mut self, track_id: u8, mute: bool) {
+        self.send(AudioEvent::MixerTrackMute { track_id, mute });
+    }
+
+    pub fn mixer_set_track_solo(&mut self, track_id: u8, solo: bool) {
+        self.send(AudioEvent::MixerTrackSolo { track_id, solo });
+    }
+
+    pub fn mixer_set_track_send(&mut self, track_id: u8, bus_id: u8, level: f32) {
+        self.send(AudioEvent::MixerTrackSend { track_id, bus_id, level });
+    }
+
+    pub fn mixer_set_master_volume(&mut self, volume: f32) {
+        self.send(AudioEvent::MixerMasterVolume(volume));
+    }
+
     // --- Transport ---
 
     pub fn play(&self) {

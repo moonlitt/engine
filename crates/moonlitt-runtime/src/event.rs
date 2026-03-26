@@ -10,6 +10,13 @@ pub enum AudioEvent {
     AllNotesOff,
     SetVolume(f32),
     SetParam { id: u32, value: f32 },
+    // Mixer control events
+    MixerTrackVolume { track_id: u8, volume: f32 },
+    MixerTrackPan { track_id: u8, pan: f32 },
+    MixerTrackMute { track_id: u8, mute: bool },
+    MixerTrackSolo { track_id: u8, solo: bool },
+    MixerTrackSend { track_id: u8, bus_id: u8, level: f32 },
+    MixerMasterVolume(f32),
     Stop,
 }
 
