@@ -50,6 +50,10 @@ impl AudioBackend for Sf2Backend {
         self.font_id = Some(id);
         self.synth.set_gain(self.volume);
 
+        // Enable built-in reverb and chorus with default parameters
+        self.synth.set_reverb_on(true);
+        self.synth.set_chorus_on(true);
+
         Ok(())
     }
 
