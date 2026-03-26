@@ -1,6 +1,6 @@
 //! VST3 backend — wraps moonlitt_vst3 behind AudioBackend.
 
-use crate::backend::{AudioBackend, BackendInfo, BackendType, PresetInfo};
+use crate::backend::{AudioBackend, BackendInfo, BackendType, ParamFlags, ParamInfo, PresetInfo};
 use moonlitt_vst3::{Vst3Host, Vst3Plugin};
 
 pub struct Vst3Backend {
@@ -116,6 +116,43 @@ impl AudioBackend for Vst3Backend {
         } else {
             vec![]
         }
+    }
+
+    fn param_count(&self) -> u32 {
+        self.plugin.as_ref().map(|p| p.param_count()).unwrap_or(0)
+    }
+
+    fn param_info(&self, index: u32) -> Option<ParamInfo> {
+        let plugin = self.plugin.as_ref()?;
+        let vinfo = plugin.param_info(index)?;
+        let mut flags = ParamFlags::empty();
+        if vinfo.is_hidden || vinfo.is_program_change { flags |= ParamFlags::HIDDEN; }
+        if vinfo.is_readonly { flags |= ParamFlags::READONLY; }
+        if vinfo.step_count > 0 { flags |= ParamFlags::STEPPED; }
+        Some(ParamInfo {
+            id: vinfo.id,
+            name: if vinfo.name.is_empty() { vinfo.short_name.clone() } else { vinfo.name },
+            group: String::new(), // VST3 units could be mapped here
+            min: 0.0,
+            max: 1.0, // VST3 uses normalized 0-1
+            default: vinfo.default_normalized,
+            step_count: vinfo.step_count,
+            flags,
+        })
+    }
+
+    fn get_param(&self, id: u32) -> Option<f64> {
+        self.plugin.as_ref()?.get_param(id)
+    }
+
+    fn set_param(&mut self, id: u32, value: f64) {
+        if let Some(ref mut plugin) = self.plugin {
+            plugin.set_param(id, value);
+        }
+    }
+
+    fn param_display(&self, id: u32, value: f64) -> Option<String> {
+        self.plugin.as_ref()?.param_display(id, value)
     }
 
     fn load_preset(&mut self, id: i32) -> Result<(), Box<dyn std::error::Error>> {

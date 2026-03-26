@@ -155,6 +155,30 @@ impl Engine {
         }
     }
 
+    // --- Parameters ---
+
+    pub fn param_count(&self) -> u32 {
+        self.backend.as_ref().map(|b| b.param_count()).unwrap_or(0)
+    }
+
+    pub fn param_info(&self, index: u32) -> Option<crate::backend::ParamInfo> {
+        self.backend.as_ref()?.param_info(index)
+    }
+
+    pub fn get_param(&self, id: u32) -> Option<f64> {
+        self.backend.as_ref()?.get_param(id)
+    }
+
+    pub fn set_param(&mut self, id: u32, value: f64) {
+        if let Some(ref mut backend) = self.backend {
+            backend.set_param(id, value);
+        }
+    }
+
+    pub fn param_display(&self, id: u32, value: f64) -> Option<String> {
+        self.backend.as_ref()?.param_display(id, value)
+    }
+
     // --- Plugin scanning ---
 
     /// Scan system paths for available plugins (VST3, CLAP, SF2).

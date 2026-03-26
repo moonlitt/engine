@@ -177,6 +177,7 @@ fn dispatch_to_engine(engine: &mut Engine, event: AudioEvent) {
         AudioEvent::ProgramChange { channel, program } => engine.program_change(channel, program),
         AudioEvent::AllNotesOff => engine.all_notes_off(),
         AudioEvent::SetVolume(v) => engine.set_volume(v),
+        AudioEvent::SetParam { id, value } => engine.set_param(id, value as f64),
         AudioEvent::Stop => engine.all_notes_off(),
     }
 }

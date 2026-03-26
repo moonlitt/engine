@@ -16,3 +16,4 @@ clap = ["dep:moonlitt-clap"]
 moonlitt-vst3 = { path = "../moonlitt-vst3", optional = true }
 moonlitt-clap = { path = "../moonlitt-clap", optional = true }
 fluidlite = { version = "0.2", optional = true, features = ["bindgen"] }
+bitflags = "2"

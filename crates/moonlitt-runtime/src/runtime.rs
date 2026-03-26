@@ -127,6 +127,10 @@ impl Runtime {
         self.send(AudioEvent::SetVolume(volume));
     }
 
+    pub fn set_param(&mut self, id: u32, value: f32) {
+        self.send(AudioEvent::SetParam { id, value });
+    }
+
     // --- Transport ---
 
     pub fn play(&self) {

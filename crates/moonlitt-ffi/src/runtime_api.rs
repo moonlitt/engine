@@ -170,6 +170,17 @@ pub extern "C" fn moonlitt_runtime_set_volume(rt: *mut RuntimeHandle, volume: c_
 }
 
 // ---------------------------------------------------------------------------
+// Parameters (thread-safe via ring buffer)
+// ---------------------------------------------------------------------------
+
+#[no_mangle]
+pub extern "C" fn moonlitt_runtime_set_param(rt: *mut RuntimeHandle, id: c_int, value: c_float) {
+    if let Some(h) = unsafe { rt.as_mut() } {
+        h.runtime.set_param(id as u32, value);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // MIDI device listing
 // ---------------------------------------------------------------------------
 

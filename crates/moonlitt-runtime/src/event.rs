@@ -9,6 +9,7 @@ pub enum AudioEvent {
     ProgramChange { channel: u8, program: u8 },
     AllNotesOff,
     SetVolume(f32),
+    SetParam { id: u32, value: f32 },
     Stop,
 }
 

@@ -19,7 +19,14 @@ pub trait AudioBackend: Send {
     fn set_volume(&mut self, volume: f32);
     fn sample_rate(&self) -> u32;
 
-    // Optional capabilities
+    // Parameters — backends opt in by overriding these defaults
+    fn param_count(&self) -> u32 { 0 }
+    fn param_info(&self, _index: u32) -> Option<ParamInfo> { None }
+    fn get_param(&self, _id: u32) -> Option<f64> { None }
+    fn set_param(&mut self, _id: u32, _value: f64) {}
+    fn param_display(&self, _id: u32, _value: f64) -> Option<String> { None }
+
+    // Presets
     fn presets(&self) -> Vec<PresetInfo> { vec![] }
     fn load_preset(&mut self, _id: i32) -> Result<(), Box<dyn std::error::Error>> {
         Err("not supported".into())
@@ -47,4 +54,35 @@ pub enum BackendType {
 pub struct PresetInfo {
     pub id: i32,
     pub name: String,
+}
+
+/// Describes a single controllable parameter.
+#[derive(Debug, Clone)]
+pub struct ParamInfo {
+    /// Unique ID within this backend instance.
+    pub id: u32,
+    /// Display name (e.g., "Reverb Room Size").
+    pub name: String,
+    /// UI grouping (e.g., "Reverb", "Chorus", "Dynamics").
+    pub group: String,
+    /// Minimum value.
+    pub min: f64,
+    /// Maximum value.
+    pub max: f64,
+    /// Default value.
+    pub default: f64,
+    /// 0 = continuous, >0 = discrete steps.
+    pub step_count: u32,
+    /// Parameter flags.
+    pub flags: ParamFlags,
+}
+
+bitflags::bitflags! {
+    /// Parameter behavior flags.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct ParamFlags: u32 {
+        const HIDDEN   = 1 << 0;
+        const READONLY = 1 << 1;
+        const STEPPED  = 1 << 2;
+    }
 }

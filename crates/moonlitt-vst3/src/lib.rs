@@ -252,6 +252,88 @@ impl Vst3Plugin {
     pub fn name(&self) -> &str {
         &self.inner.class_info.name
     }
+
+    // --- Parameters ---
+
+    /// Number of parameters exposed by the plugin.
+    pub fn param_count(&self) -> u32 {
+        use vst3::Steinberg::Vst::IEditControllerTrait;
+        match self.inner.controller.as_ref() {
+            Some(ctrl) => (unsafe { ctrl.getParameterCount() }) as u32,
+            None => 0,
+        }
+    }
+
+    /// Get info for parameter at `index` (0-based).
+    pub fn param_info(&self, index: u32) -> Option<Vst3ParamInfo> {
+        use vst3::Steinberg::Vst::{IEditControllerTrait, ParameterInfo, ParameterInfo_::ParameterFlags_};
+        use vst3::Steinberg::kResultOk;
+
+        let ctrl = self.inner.controller.as_ref()?;
+        let mut pinfo = std::mem::MaybeUninit::<ParameterInfo>::uninit();
+        if unsafe { ctrl.getParameterInfo(index as i32, pinfo.as_mut_ptr()) } != kResultOk {
+            return None;
+        }
+        let pinfo = unsafe { pinfo.assume_init() };
+
+        let flags = pinfo.flags;
+        Some(Vst3ParamInfo {
+            id: pinfo.id,
+            name: string128_to_string(&pinfo.title),
+            short_name: string128_to_string(&pinfo.shortTitle),
+            units: string128_to_string(&pinfo.units),
+            step_count: pinfo.stepCount as u32,
+            default_normalized: pinfo.defaultNormalizedValue,
+            is_hidden: flags & ParameterFlags_::kIsHidden != 0,
+            is_readonly: flags & ParameterFlags_::kIsReadOnly != 0,
+            is_program_change: flags & ParameterFlags_::kIsProgramChange != 0,
+            is_bypass: flags & ParameterFlags_::kIsBypass != 0,
+        })
+    }
+
+    /// Get current normalized value (0.0-1.0) for a parameter.
+    pub fn get_param(&self, id: u32) -> Option<f64> {
+        use vst3::Steinberg::Vst::IEditControllerTrait;
+        let ctrl = self.inner.controller.as_ref()?;
+        Some(unsafe { ctrl.getParamNormalized(id) })
+    }
+
+    /// Set normalized value (0.0-1.0) for a parameter.
+    pub fn set_param(&mut self, id: u32, value: f64) {
+        use vst3::Steinberg::Vst::IEditControllerTrait;
+        if let Some(ctrl) = self.inner.controller.as_ref() {
+            unsafe { ctrl.setParamNormalized(id, value) };
+        }
+    }
+
+    /// Get display string for a parameter value.
+    pub fn param_display(&self, id: u32, value: f64) -> Option<String> {
+        use vst3::Steinberg::Vst::IEditControllerTrait;
+        use vst3::Steinberg::kResultOk;
+
+        let ctrl = self.inner.controller.as_ref()?;
+        let mut buf = [0u16; 128];
+        if unsafe { ctrl.getParamStringByValue(id, value, &mut buf) } == kResultOk {
+            Some(string128_to_string(&buf))
+        } else {
+            None
+        }
+    }
+}
+
+/// Parameter info from a VST3 plugin.
+#[derive(Debug, Clone)]
+pub struct Vst3ParamInfo {
+    pub id: u32,
+    pub name: String,
+    pub short_name: String,
+    pub units: String,
+    pub step_count: u32,
+    pub default_normalized: f64,
+    pub is_hidden: bool,
+    pub is_readonly: bool,
+    pub is_program_change: bool,
+    pub is_bypass: bool,
 }
 
 impl Drop for Vst3Plugin {

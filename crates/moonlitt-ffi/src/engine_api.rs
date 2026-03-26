@@ -309,6 +309,90 @@ pub extern "C" fn moonlitt_engine_load_preset(e: *mut EngineHandle, id: c_int) -
 }
 
 // ---------------------------------------------------------------------------
+// Parameters
+// ---------------------------------------------------------------------------
+
+/// Get the number of parameters for the loaded backend.
+#[no_mangle]
+pub extern "C" fn moonlitt_engine_param_count(e: *mut EngineHandle) -> c_int {
+    match unsafe { e.as_ref() } {
+        Some(h) => match h.engine.as_ref() {
+            Some(eng) => eng.param_count() as c_int,
+            None => 0,
+        },
+        None => 0,
+    }
+}
+
+/// Get all parameter info as a JSON array string.
+/// Caller must free with `moonlitt_free_string`.
+#[no_mangle]
+pub extern "C" fn moonlitt_engine_param_info_json(e: *mut EngineHandle) -> *mut c_char {
+    let handle = match unsafe { e.as_ref() } {
+        Some(h) => h,
+        None => return to_c_string("[]"),
+    };
+    let engine = match handle.engine.as_ref() {
+        Some(eng) => eng,
+        None => return to_c_string("[]"),
+    };
+    let count = engine.param_count();
+    let entries: Vec<String> = (0..count)
+        .filter_map(|i| engine.param_info(i))
+        .map(|p| {
+            format!(
+                r#"{{"id":{},"name":"{}","group":"{}","min":{},"max":{},"default":{},"step_count":{},"flags":{}}}"#,
+                p.id,
+                json_escape(&p.name),
+                json_escape(&p.group),
+                p.min, p.max, p.default,
+                p.step_count,
+                p.flags.bits(),
+            )
+        })
+        .collect();
+    to_c_string(&format!("[{}]", entries.join(",")))
+}
+
+/// Get current value of a parameter. Returns NaN if invalid.
+#[no_mangle]
+pub extern "C" fn moonlitt_engine_get_param(e: *mut EngineHandle, id: c_int) -> f64 {
+    match unsafe { e.as_ref() } {
+        Some(h) => match h.engine.as_ref() {
+            Some(eng) => eng.get_param(id as u32).unwrap_or(f64::NAN),
+            None => f64::NAN,
+        },
+        None => f64::NAN,
+    }
+}
+
+/// Set a parameter value.
+#[no_mangle]
+pub extern "C" fn moonlitt_engine_set_param(e: *mut EngineHandle, id: c_int, value: f64) {
+    if let Some(h) = unsafe { e.as_mut() } {
+        if let Some(eng) = h.engine.as_mut() {
+            eng.set_param(id as u32, value);
+        }
+    }
+}
+
+/// Get display string for a parameter value.
+/// Caller must free with `moonlitt_free_string`.
+#[no_mangle]
+pub extern "C" fn moonlitt_engine_param_display(e: *mut EngineHandle, id: c_int, value: f64) -> *mut c_char {
+    match unsafe { e.as_ref() } {
+        Some(h) => match h.engine.as_ref() {
+            Some(eng) => {
+                let s = eng.param_display(id as u32, value).unwrap_or_default();
+                to_c_string(&s)
+            }
+            None => to_c_string(""),
+        },
+        None => to_c_string(""),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Error retrieval
 // ---------------------------------------------------------------------------
 
