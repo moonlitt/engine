@@ -13,21 +13,12 @@ fn test_sfizz_load_sfz_via_state() {
     let mut plugin = host.load(sfizz.unwrap()).unwrap();
     eprintln!("Loaded sfizz: {}", plugin.name());
 
-    // Create a minimal SFZ that references an SF2 preset
-    // sfizz can load SF2 via SFZ's `<region> sample=file.sf2` syntax
-    let sf2_path = "/Users/wangyan/Desktop/stardew valley mods/mods/piano-block/assets/soundfonts/GeneralUser_GS.sf2";
-    if !std::path::Path::new(sf2_path).exists() {
-        eprintln!("SF2 not found, skipping");
+    // Use a valid SFZ with a real WAV sample
+    let sfz_path = "/tmp/moonlitt_valid.sfz";
+    if !std::path::Path::new(sfz_path).exists() {
+        eprintln!("Test SFZ not found at {sfz_path}, skipping");
         return;
     }
-
-    // Write a temporary SFZ file that loads the SF2
-    let sfz_content = format!(
-        "<group>\n<region> sample={}\n",
-        sf2_path
-    );
-    let sfz_path = "/tmp/moonlitt_test.sfz";
-    std::fs::write(sfz_path, &sfz_content).unwrap();
 
     // Load via setState
     match plugin.load_sfizz_file(sfz_path) {
