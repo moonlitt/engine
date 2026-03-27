@@ -15,3 +15,4 @@ moonlitt-engine = { path = "../moonlitt-engine", features = ["sf2", "vst3", "cla
 moonlitt-runtime = { path = "../moonlitt-runtime" }
 clap = { version = "4", features = ["derive"] }
 midly = "0.5"
+hound = "3"
