@@ -316,10 +316,9 @@ impl Mixer {
 }
 
 /// Constant-power pan law.
+/// Center (pan=0): L=R=cos(π/4)≈0.707 (−3dB each, total power preserved).
+/// Hard left (pan=−1): L=1.0, R=0.0. Hard right (pan=+1): L=0.0, R=1.0.
 fn apply_pan(left: &mut [f32], right: &mut [f32], pan: f32) {
-    if pan == 0.0 {
-        return; // center, no change
-    }
     let angle = (pan + 1.0) * 0.25 * std::f32::consts::PI;
     let gain_l = angle.cos();
     let gain_r = angle.sin();
@@ -349,14 +348,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_pan_center_is_identity() {
-        let mut l = vec![1.0, 0.5, -0.3];
-        let mut r = vec![1.0, 0.5, -0.3];
-        let l_orig = l.clone();
-        let r_orig = r.clone();
+    fn test_pan_center_is_minus_3db() {
+        let mut l = vec![1.0];
+        let mut r = vec![1.0];
         apply_pan(&mut l, &mut r, 0.0);
-        assert_eq!(l, l_orig);
-        assert_eq!(r, r_orig);
+        // At center: gain = cos(π/4) ≈ 0.7071
+        assert!((l[0] - 0.7071).abs() < 0.001, "Center L should be ~0.707, got {}", l[0]);
+        assert!((r[0] - 0.7071).abs() < 0.001, "Center R should be ~0.707, got {}", r[0]);
     }
 
     #[test]

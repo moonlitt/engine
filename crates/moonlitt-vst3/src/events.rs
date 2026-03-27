@@ -112,6 +112,8 @@ fn midi_to_vst3_events(events: &[MidiEvent]) -> Vec<Event> {
             }
             MidiEventKind::PitchBend { channel, value } => {
                 // Pitch bend as legacy MIDI (controlNumber=129 = kPitchBend)
+                // Convert signed i16 (-8192..8191) to unsigned 14-bit (0..16383, center=8192)
+                let unsigned = (value as i32 + 8192).clamp(0, 16383) as u16;
                 let mut e = zeroed_event();
                 e.busIndex = 0;
                 e.sampleOffset = sample_offset;
@@ -120,8 +122,8 @@ fn midi_to_vst3_events(events: &[MidiEvent]) -> Vec<Event> {
                     midiCCOut: LegacyMIDICCOutEvent {
                         controlNumber: 129, // kPitchBend
                         channel: channel as i8,
-                        value: (value & 0x7F) as i8,
-                        value2: ((value >> 7) & 0x7F) as i8,
+                        value: (unsigned & 0x7F) as i8,       // LSB
+                        value2: ((unsigned >> 7) & 0x7F) as i8, // MSB
                     },
                 };
                 out.push(e);

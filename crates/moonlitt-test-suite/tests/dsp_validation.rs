@@ -335,8 +335,8 @@ fn l3_pan_constant_power() {
 
     eprintln!("Pan power variation: {variation_db:.2} dB (min={min_power:.4}, max={max_power:.4})");
     assert!(
-        variation_db < 3.1, // constant-power allows ~3dB at center
-        "Pan power variation should be < 3.1dB, got {variation_db:.2}dB"
+        variation_db < 0.5, // true constant-power: <0.5dB variation
+        "Pan power variation should be < 0.5dB, got {variation_db:.2}dB"
     );
 }
 
