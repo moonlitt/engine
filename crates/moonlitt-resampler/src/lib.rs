@@ -14,7 +14,7 @@
 //! ```
 
 mod sinc;
-mod window;
+pub mod window;
 
 pub use sinc::{Quality, SincInterpolator};
 

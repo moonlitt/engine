@@ -1,0 +1,15 @@
+[package]
+name = "moonlitt-test-suite"
+description = "DSP validation test suite for moonlitt audio engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dev-dependencies]
+moonlitt-resampler = { path = "../moonlitt-resampler" }
+moonlitt-engine = { path = "../moonlitt-engine", features = ["sf2", "vst3"] }
+moonlitt-runtime = { path = "../moonlitt-runtime" }
+rustfft = "6"
+approx = "0.5"
+hound = "3"
