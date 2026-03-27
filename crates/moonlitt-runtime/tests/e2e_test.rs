@@ -17,19 +17,38 @@ fn has_file(path: &str) -> bool {
     std::path::Path::new(path).exists()
 }
 
-/// Try to create and start a Runtime, returning None if no audio device.
+/// Returns true if the error message indicates a missing audio device
+/// (as opposed to a configuration or code bug).
+fn is_no_device_error(msg: &str) -> bool {
+    let lower = msg.to_lowercase();
+    lower.contains("no audio")
+        || lower.contains("not available")
+        || lower.contains("no device")
+        || lower.contains("no output device")
+}
+
+/// Try to create and start a Runtime, returning None only if no audio device
+/// is present. Panics on any other error to surface real regressions.
 fn try_create_runtime(engine: Engine) -> Option<Runtime> {
     match Runtime::new(engine) {
-        Ok(rt) => {
-            if rt.start().is_err() {
-                eprintln!("No audio device available, skipping");
-                return None;
+        Ok(rt) => match rt.start() {
+            Ok(()) => Some(rt),
+            Err(e) => {
+                if is_no_device_error(&e) {
+                    eprintln!("No audio device, skipping: {e}");
+                    None
+                } else {
+                    panic!("Runtime start failed (not a device issue): {e}");
+                }
             }
-            Some(rt)
-        }
-        Err(e) => {
-            eprintln!("Runtime creation failed (no audio device?): {e}, skipping");
-            None
+        },
+        Err((e, _engine)) => {
+            if is_no_device_error(&e) {
+                eprintln!("No audio device, skipping: {e}");
+                None
+            } else {
+                panic!("Runtime creation failed (not a device issue): {e}");
+            }
         }
     }
 }

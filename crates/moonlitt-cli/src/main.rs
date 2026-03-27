@@ -228,7 +228,7 @@ fn cmd_play_live(path: &str, note: u8, velocity: u8, duration: f32, sample_rate:
 
     let mut rt = match Runtime::new(engine) {
         Ok(r) => r,
-        Err(e) => {
+        Err((e, _)) => {
             eprintln!("Audio error: {e}");
             std::process::exit(1);
         }
@@ -261,7 +261,7 @@ fn cmd_live(path: &str) {
 
     let mut rt = match Runtime::new(engine) {
         Ok(r) => r,
-        Err(e) => {
+        Err((e, _)) => {
             eprintln!("Audio error: {e}");
             std::process::exit(1);
         }
@@ -462,7 +462,7 @@ fn cmd_midi_live(midi_path: &str, sound_path: &str) {
 
     let mut rt = match Runtime::new(engine) {
         Ok(r) => r,
-        Err(e) => { eprintln!("Audio error: {e}"); std::process::exit(1); }
+        Err((e, _)) => { eprintln!("Audio error: {e}"); std::process::exit(1); }
     };
     if let Err(e) = rt.start() {
         eprintln!("Failed to start audio output: {e}");

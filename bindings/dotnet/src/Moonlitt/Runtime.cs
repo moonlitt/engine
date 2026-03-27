@@ -55,7 +55,9 @@ public sealed class Runtime : IDisposable
     }
 
     // -------------------------------------------------------------------
-    // MIDI (thread-safe, lock-free via ring buffer)
+    // MIDI (lock-free SPSC ring buffer — single caller only.
+    // Do NOT call these methods from multiple threads concurrently.
+    // The audio thread is the consumer; the caller is the sole producer.)
     // -------------------------------------------------------------------
 
     public void NoteOn(int channel, int note, int velocity)

@@ -9,7 +9,7 @@
 //! is undefined behavior.
 
 use crate::engine_api::EngineHandle;
-use crate::util::{json_escape, to_c_string};
+use crate::util::{debug_warn_midi_range, json_escape, to_c_string};
 use moonlitt_runtime::Runtime;
 use std::ffi::{c_char, c_float, c_int};
 
@@ -24,17 +24,10 @@ pub struct RuntimeHandle {
 
 /// Create a runtime from an engine handle.
 ///
-/// **Ownership transfer**: the engine is moved out of `engine_handle`
-/// regardless of whether runtime creation succeeds or fails. On failure
-/// the engine is consumed internally (by the Mixer/audio subsystem) and
-/// cannot be recovered. The caller must create a new engine to retry.
-///
-/// After this call the engine handle is invalidated — calling any
-/// `moonlitt_engine_*` function on it is safe (returns error / no-op)
-/// but the engine itself is gone.
-///
-/// The caller should still call `moonlitt_engine_destroy` on the old
-/// handle to free the wrapper memory.
+/// **Ownership semantics**: the engine is only consumed on success.
+/// If runtime creation fails (e.g. no audio device), the engine is
+/// put back into the handle and the caller may retry or continue
+/// using the engine for offline rendering.
 ///
 /// Returns null on failure (retrieve error via the engine handle's
 /// `moonlitt_engine_get_error`).
@@ -59,7 +52,9 @@ pub extern "C" fn moonlitt_runtime_create(engine_handle: *mut EngineHandle) -> *
             let rt = Box::new(RuntimeHandle { runtime });
             Box::into_raw(rt)
         }
-        Err(err) => {
+        Err((err, engine)) => {
+            // Put the engine back — caller can retry or use it for offline rendering.
+            handle.engine = Some(engine);
             handle.last_error_set(&err);
             std::ptr::null_mut()
         }
@@ -113,6 +108,9 @@ pub extern "C" fn moonlitt_runtime_stop(rt: *mut RuntimeHandle) -> c_int {
 #[no_mangle]
 pub extern "C" fn moonlitt_runtime_note_on(rt: *mut RuntimeHandle, ch: c_int, note: c_int, vel: c_int) {
     if let Some(h) = unsafe { rt.as_mut() } {
+        debug_warn_midi_range("note_on", "ch", ch, 0, 15);
+        debug_warn_midi_range("note_on", "note", note, 0, 127);
+        debug_warn_midi_range("note_on", "vel", vel, 0, 127);
         let ch = (ch.max(0) as u8).min(15);
         let note = (note.max(0) as u8).min(127);
         let vel = (vel.max(0) as u8).min(127);
@@ -127,6 +125,9 @@ pub extern "C" fn moonlitt_runtime_note_on_delayed(
     rt: *mut RuntimeHandle, ch: c_int, note: c_int, vel: c_int, delay_samples: c_int,
 ) {
     if let Some(h) = unsafe { rt.as_mut() } {
+        debug_warn_midi_range("note_on_delayed", "ch", ch, 0, 15);
+        debug_warn_midi_range("note_on_delayed", "note", note, 0, 127);
+        debug_warn_midi_range("note_on_delayed", "vel", vel, 0, 127);
         let ch = (ch.max(0) as u8).min(15);
         let note = (note.max(0) as u8).min(127);
         let vel = (vel.max(0) as u8).min(127);
@@ -137,6 +138,8 @@ pub extern "C" fn moonlitt_runtime_note_on_delayed(
 #[no_mangle]
 pub extern "C" fn moonlitt_runtime_note_off(rt: *mut RuntimeHandle, ch: c_int, note: c_int) {
     if let Some(h) = unsafe { rt.as_mut() } {
+        debug_warn_midi_range("note_off", "ch", ch, 0, 15);
+        debug_warn_midi_range("note_off", "note", note, 0, 127);
         let ch = (ch.max(0) as u8).min(15);
         let note = (note.max(0) as u8).min(127);
         h.runtime.note_off(ch, note);
@@ -149,6 +152,8 @@ pub extern "C" fn moonlitt_runtime_note_off_delayed(
     rt: *mut RuntimeHandle, ch: c_int, note: c_int, delay_samples: c_int,
 ) {
     if let Some(h) = unsafe { rt.as_mut() } {
+        debug_warn_midi_range("note_off_delayed", "ch", ch, 0, 15);
+        debug_warn_midi_range("note_off_delayed", "note", note, 0, 127);
         let ch = (ch.max(0) as u8).min(15);
         let note = (note.max(0) as u8).min(127);
         h.runtime.note_off_delayed(ch, note, delay_samples.max(0) as u32);
@@ -158,6 +163,9 @@ pub extern "C" fn moonlitt_runtime_note_off_delayed(
 #[no_mangle]
 pub extern "C" fn moonlitt_runtime_cc(rt: *mut RuntimeHandle, ch: c_int, cc: c_int, val: c_int) {
     if let Some(h) = unsafe { rt.as_mut() } {
+        debug_warn_midi_range("cc", "ch", ch, 0, 15);
+        debug_warn_midi_range("cc", "cc", cc, 0, 127);
+        debug_warn_midi_range("cc", "val", val, 0, 127);
         let ch = (ch.max(0) as u8).min(15);
         let cc = (cc.max(0) as u8).min(127);
         let val = (val.max(0) as u8).min(127);
@@ -168,6 +176,8 @@ pub extern "C" fn moonlitt_runtime_cc(rt: *mut RuntimeHandle, ch: c_int, cc: c_i
 #[no_mangle]
 pub extern "C" fn moonlitt_runtime_pitch_bend(rt: *mut RuntimeHandle, ch: c_int, val: c_int) {
     if let Some(h) = unsafe { rt.as_mut() } {
+        debug_warn_midi_range("pitch_bend", "ch", ch, 0, 15);
+        debug_warn_midi_range("pitch_bend", "val", val, -8192, 8191);
         let ch = (ch.max(0) as u8).min(15);
         let val = (val.clamp(-8192, 8191)) as i16;
         h.runtime.pitch_bend(ch, val);
@@ -177,6 +187,8 @@ pub extern "C" fn moonlitt_runtime_pitch_bend(rt: *mut RuntimeHandle, ch: c_int,
 #[no_mangle]
 pub extern "C" fn moonlitt_runtime_program_change(rt: *mut RuntimeHandle, ch: c_int, prog: c_int) {
     if let Some(h) = unsafe { rt.as_mut() } {
+        debug_warn_midi_range("program_change", "ch", ch, 0, 15);
+        debug_warn_midi_range("program_change", "prog", prog, 0, 127);
         let ch = (ch.max(0) as u8).min(15);
         let prog = (prog.max(0) as u8).min(127);
         h.runtime.program_change(ch, prog);

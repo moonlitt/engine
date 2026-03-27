@@ -4,7 +4,7 @@
 //! (0 = success, non-zero = error) and store the error message internally
 //! for retrieval via `moonlitt_engine_get_error`.
 
-use crate::util::{cstr_to_str, json_escape, to_c_string};
+use crate::util::{cstr_to_str, debug_warn_midi_range, json_escape, to_c_string};
 use moonlitt_engine::engine::Engine;
 use std::ffi::{c_char, c_float, c_int};
 
@@ -128,6 +128,9 @@ pub extern "C" fn moonlitt_engine_is_loaded(e: *mut EngineHandle) -> c_int {
 pub extern "C" fn moonlitt_engine_note_on(e: *mut EngineHandle, ch: c_int, note: c_int, vel: c_int) {
     if let Some(handle) = unsafe { e.as_mut() } {
         if let Some(engine) = handle.engine.as_mut() {
+            debug_warn_midi_range("engine_note_on", "ch", ch, 0, 15);
+            debug_warn_midi_range("engine_note_on", "note", note, 0, 127);
+            debug_warn_midi_range("engine_note_on", "vel", vel, 0, 127);
             let ch = (ch.max(0) as u8).min(15);
             let note = (note.max(0) as u8).min(127);
             let vel = (vel.max(0) as u8).min(127);
@@ -140,6 +143,8 @@ pub extern "C" fn moonlitt_engine_note_on(e: *mut EngineHandle, ch: c_int, note:
 pub extern "C" fn moonlitt_engine_note_off(e: *mut EngineHandle, ch: c_int, note: c_int) {
     if let Some(handle) = unsafe { e.as_mut() } {
         if let Some(engine) = handle.engine.as_mut() {
+            debug_warn_midi_range("engine_note_off", "ch", ch, 0, 15);
+            debug_warn_midi_range("engine_note_off", "note", note, 0, 127);
             let ch = (ch.max(0) as u8).min(15);
             let note = (note.max(0) as u8).min(127);
             engine.note_off(ch, note);
@@ -151,6 +156,9 @@ pub extern "C" fn moonlitt_engine_note_off(e: *mut EngineHandle, ch: c_int, note
 pub extern "C" fn moonlitt_engine_cc(e: *mut EngineHandle, ch: c_int, cc: c_int, val: c_int) {
     if let Some(handle) = unsafe { e.as_mut() } {
         if let Some(engine) = handle.engine.as_mut() {
+            debug_warn_midi_range("engine_cc", "ch", ch, 0, 15);
+            debug_warn_midi_range("engine_cc", "cc", cc, 0, 127);
+            debug_warn_midi_range("engine_cc", "val", val, 0, 127);
             let ch = (ch.max(0) as u8).min(15);
             let cc = (cc.max(0) as u8).min(127);
             let val = (val.max(0) as u8).min(127);
@@ -163,6 +171,8 @@ pub extern "C" fn moonlitt_engine_cc(e: *mut EngineHandle, ch: c_int, cc: c_int,
 pub extern "C" fn moonlitt_engine_pitch_bend(e: *mut EngineHandle, ch: c_int, val: c_int) {
     if let Some(handle) = unsafe { e.as_mut() } {
         if let Some(engine) = handle.engine.as_mut() {
+            debug_warn_midi_range("engine_pitch_bend", "ch", ch, 0, 15);
+            debug_warn_midi_range("engine_pitch_bend", "val", val, -8192, 8191);
             let ch = (ch.max(0) as u8).min(15);
             let val = (val.clamp(-8192, 8191)) as i16;
             engine.pitch_bend(ch, val);
@@ -174,6 +184,8 @@ pub extern "C" fn moonlitt_engine_pitch_bend(e: *mut EngineHandle, ch: c_int, va
 pub extern "C" fn moonlitt_engine_program_change(e: *mut EngineHandle, ch: c_int, prog: c_int) {
     if let Some(handle) = unsafe { e.as_mut() } {
         if let Some(engine) = handle.engine.as_mut() {
+            debug_warn_midi_range("engine_program_change", "ch", ch, 0, 15);
+            debug_warn_midi_range("engine_program_change", "prog", prog, 0, 127);
             let ch = (ch.max(0) as u8).min(15);
             let prog = (prog.max(0) as u8).min(127);
             engine.program_change(ch, prog);

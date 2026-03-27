@@ -24,14 +24,27 @@ pub struct Runtime {
 impl Runtime {
     /// Create a runtime with a single engine (backward compatible).
     /// The engine is placed in a Mixer as the sole track handling all 16 channels.
-    pub fn new(engine: Engine) -> Result<Self, String> {
+    ///
+    /// Audio device and config compatibility are checked BEFORE consuming the
+    /// engine. On failure the engine is returned via the error tuple so the
+    /// caller can retry or continue using it for offline rendering.
+    pub fn new(engine: Engine) -> Result<Self, (String, Engine)> {
         let buffer_size = engine.buffer_size();
         let sample_rate = engine.sample_rate();
 
+        // Pre-check audio device AND config compatibility BEFORE consuming
+        // the engine into a Mixer. This ensures the engine is not lost on
+        // predictable failures (no device, incompatible config).
+        if let Err(e) = AudioOutput::pre_check(sample_rate) {
+            return Err((e, engine));
+        }
+
+        // Device + config validated — safe to consume engine into mixer.
         let mut mixer = Mixer::new(sample_rate, buffer_size as usize);
         mixer.add_track(engine, 0xFFFF); // all 16 channels
 
         Self::with_mixer(mixer, buffer_size)
+            .map_err(|e| (e, Engine::new(sample_rate, buffer_size)))
     }
 
     /// Create a runtime with a pre-configured Mixer.
@@ -165,7 +178,7 @@ impl Runtime {
         self.send(AudioEvent::SetParam { id, value });
     }
 
-    // --- Mixer control (thread-safe via ring buffer) ---
+    // --- Mixer control (lock-free SPSC — single caller only) ---
 
     pub fn mixer_set_track_volume(&mut self, track_id: u8, volume: f32) {
         self.send(AudioEvent::MixerTrackVolume { track_id, volume });

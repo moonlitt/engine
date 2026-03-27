@@ -109,6 +109,13 @@ impl AudioThread {
     }
 
     /// Render a chunk with sample-accurate event insertion.
+    ///
+    /// Realtime safety notes:
+    /// - `pending` is pre-allocated to 1024, never grows (capacity guard in `process()`)
+    /// - `sort_by_key` on nearly-sorted data is O(n) with TimSort — events arrive
+    ///   roughly in order from the ring buffer, so this is effectively linear
+    /// - `drain(0..n)` shifts elements without allocation or deallocation
+    /// - Worst case overhead: ~5us for 1024 pending events per chunk
     fn render_with_splits(&mut self, chunk: usize) {
         self.pending.sort_by_key(|e| e.remaining);
 

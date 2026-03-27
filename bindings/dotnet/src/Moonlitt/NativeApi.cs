@@ -98,7 +98,7 @@ internal static class NativeApi
     internal static extern int moonlitt_runtime_stop(IntPtr rt);
 
     // -----------------------------------------------------------------------
-    // Runtime — MIDI (thread-safe, lock-free)
+    // Runtime — MIDI (lock-free SPSC — single caller only, NOT thread-safe)
     // -----------------------------------------------------------------------
 
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]

@@ -31,6 +31,25 @@ pub extern "C" fn moonlitt_free_string(s: *mut c_char) {
     }
 }
 
+/// Log a warning in debug builds when a MIDI parameter is outside its valid range.
+/// In release builds this is a no-op (zero cost).
+#[inline]
+pub(crate) fn debug_warn_midi_range(
+    _func: &str,
+    _param: &str,
+    _value: std::ffi::c_int,
+    _min: std::ffi::c_int,
+    _max: std::ffi::c_int,
+) {
+    #[cfg(debug_assertions)]
+    if _value < _min || _value > _max {
+        eprintln!(
+            "[moonlitt] warning: {}.{} = {} out of range [{}..{}], clamped",
+            _func, _param, _value, _min, _max
+        );
+    }
+}
+
 /// Escape a string for safe embedding in JSON.
 pub(crate) fn json_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
