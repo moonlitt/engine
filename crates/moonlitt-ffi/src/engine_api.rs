@@ -128,7 +128,10 @@ pub extern "C" fn moonlitt_engine_is_loaded(e: *mut EngineHandle) -> c_int {
 pub extern "C" fn moonlitt_engine_note_on(e: *mut EngineHandle, ch: c_int, note: c_int, vel: c_int) {
     if let Some(handle) = unsafe { e.as_mut() } {
         if let Some(engine) = handle.engine.as_mut() {
-            engine.note_on(ch as u8, note as u8, vel as u8);
+            let ch = (ch.max(0) as u8).min(15);
+            let note = (note.max(0) as u8).min(127);
+            let vel = (vel.max(0) as u8).min(127);
+            engine.note_on(ch, note, vel);
         }
     }
 }
@@ -137,7 +140,9 @@ pub extern "C" fn moonlitt_engine_note_on(e: *mut EngineHandle, ch: c_int, note:
 pub extern "C" fn moonlitt_engine_note_off(e: *mut EngineHandle, ch: c_int, note: c_int) {
     if let Some(handle) = unsafe { e.as_mut() } {
         if let Some(engine) = handle.engine.as_mut() {
-            engine.note_off(ch as u8, note as u8);
+            let ch = (ch.max(0) as u8).min(15);
+            let note = (note.max(0) as u8).min(127);
+            engine.note_off(ch, note);
         }
     }
 }
@@ -146,7 +151,10 @@ pub extern "C" fn moonlitt_engine_note_off(e: *mut EngineHandle, ch: c_int, note
 pub extern "C" fn moonlitt_engine_cc(e: *mut EngineHandle, ch: c_int, cc: c_int, val: c_int) {
     if let Some(handle) = unsafe { e.as_mut() } {
         if let Some(engine) = handle.engine.as_mut() {
-            engine.cc(ch as u8, cc as u8, val as u8);
+            let ch = (ch.max(0) as u8).min(15);
+            let cc = (cc.max(0) as u8).min(127);
+            let val = (val.max(0) as u8).min(127);
+            engine.cc(ch, cc, val);
         }
     }
 }
@@ -155,7 +163,9 @@ pub extern "C" fn moonlitt_engine_cc(e: *mut EngineHandle, ch: c_int, cc: c_int,
 pub extern "C" fn moonlitt_engine_pitch_bend(e: *mut EngineHandle, ch: c_int, val: c_int) {
     if let Some(handle) = unsafe { e.as_mut() } {
         if let Some(engine) = handle.engine.as_mut() {
-            engine.pitch_bend(ch as u8, val as i16);
+            let ch = (ch.max(0) as u8).min(15);
+            let val = (val.clamp(-8192, 8191)) as i16;
+            engine.pitch_bend(ch, val);
         }
     }
 }
@@ -164,7 +174,9 @@ pub extern "C" fn moonlitt_engine_pitch_bend(e: *mut EngineHandle, ch: c_int, va
 pub extern "C" fn moonlitt_engine_program_change(e: *mut EngineHandle, ch: c_int, prog: c_int) {
     if let Some(handle) = unsafe { e.as_mut() } {
         if let Some(engine) = handle.engine.as_mut() {
-            engine.program_change(ch as u8, prog as u8);
+            let ch = (ch.max(0) as u8).min(15);
+            let prog = (prog.max(0) as u8).min(127);
+            engine.program_change(ch, prog);
         }
     }
 }

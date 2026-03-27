@@ -77,7 +77,7 @@ impl Runtime {
         }
     }
 
-    // --- MIDI events (thread-safe, lock-free) ---
+    // --- MIDI events (lock-free SPSC — single caller only) ---
 
     fn send(&mut self, event: AudioEvent) {
         if self.producer.push(TimedEvent {

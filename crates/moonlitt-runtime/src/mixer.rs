@@ -353,8 +353,9 @@ mod tests {
         let mut r = vec![1.0];
         apply_pan(&mut l, &mut r, 0.0);
         // At center: gain = cos(π/4) ≈ 0.7071
-        assert!((l[0] - 0.7071).abs() < 0.001, "Center L should be ~0.707, got {}", l[0]);
-        assert!((r[0] - 0.7071).abs() < 0.001, "Center R should be ~0.707, got {}", r[0]);
+        let expected = std::f32::consts::FRAC_1_SQRT_2;
+        assert!((l[0] - expected).abs() < 0.001, "Center L should be ~0.707, got {}", l[0]);
+        assert!((r[0] - expected).abs() < 0.001, "Center R should be ~0.707, got {}", r[0]);
     }
 
     #[test]

@@ -40,6 +40,10 @@ pub struct OxiSynthBackend {
     font_id: Option<oxisynth::SoundFontId>,
     reverb_on: bool,
     chorus_on: bool,
+    /// Cached reverb level for restoring after off->on toggle.
+    reverb_level_cache: f32,
+    /// Cached chorus level for restoring after off->on toggle.
+    chorus_level_cache: f32,
 }
 
 impl OxiSynthBackend {
@@ -63,6 +67,8 @@ impl OxiSynthBackend {
             font_id: None,
             reverb_on: true,
             chorus_on: true,
+            reverb_level_cache: 0.9,  // matches default in SF2_PARAMS
+            chorus_level_cache: 2.0,  // matches default in SF2_PARAMS
         })
     }
 }
@@ -196,13 +202,21 @@ impl AudioBackend for OxiSynthBackend {
     fn set_param(&mut self, id: u32, value: f64) {
         match id {
             PARAM_REVERB_ON => {
-                self.reverb_on = value > 0.5;
-                // OxiSynth doesn't have set_reverb_on — set level to 0 to disable
-                if !self.reverb_on {
+                let turning_on = value > 0.5;
+                // OxiSynth doesn't have set_reverb_on — simulate with level
+                if !turning_on && self.reverb_on {
+                    // Turning off: cache current level, then zero it
+                    self.reverb_level_cache = self.synth.reverb_params().level;
                     let mut p = self.synth.reverb_params();
                     p.level = 0.0f32;
                     self.synth.set_reverb_params(&p);
+                } else if turning_on && !self.reverb_on {
+                    // Turning on: restore cached level
+                    let mut p = self.synth.reverb_params();
+                    p.level = self.reverb_level_cache;
+                    self.synth.set_reverb_params(&p);
                 }
+                self.reverb_on = turning_on;
             }
             PARAM_REVERB_ROOMSIZE | PARAM_REVERB_DAMP | PARAM_REVERB_WIDTH | PARAM_REVERB_LEVEL => {
                 let mut p = self.synth.reverb_params();
@@ -210,24 +224,40 @@ impl AudioBackend for OxiSynthBackend {
                     PARAM_REVERB_ROOMSIZE => p.roomsize = value as f32,
                     PARAM_REVERB_DAMP => p.damp = value as f32,
                     PARAM_REVERB_WIDTH => p.width = value as f32,
-                    PARAM_REVERB_LEVEL => p.level = value as f32,
+                    PARAM_REVERB_LEVEL => {
+                        p.level = value as f32;
+                        // Keep cache in sync so on/off toggle restores the latest value
+                        self.reverb_level_cache = value as f32;
+                    }
                     _ => {}
                 }
                 self.synth.set_reverb_params(&p);
             }
             PARAM_CHORUS_ON => {
-                self.chorus_on = value > 0.5;
-                if !self.chorus_on {
+                let turning_on = value > 0.5;
+                if !turning_on && self.chorus_on {
+                    // Turning off: cache current level, then zero it
+                    self.chorus_level_cache = self.synth.chorus_params().level;
                     let mut p = self.synth.chorus_params();
                     p.level = 0.0f32;
                     self.synth.set_chorus_params(&p);
+                } else if turning_on && !self.chorus_on {
+                    // Turning on: restore cached level
+                    let mut p = self.synth.chorus_params();
+                    p.level = self.chorus_level_cache;
+                    self.synth.set_chorus_params(&p);
                 }
+                self.chorus_on = turning_on;
             }
             PARAM_CHORUS_VOICES | PARAM_CHORUS_LEVEL | PARAM_CHORUS_SPEED | PARAM_CHORUS_DEPTH => {
                 let mut p = self.synth.chorus_params();
                 match id {
                     PARAM_CHORUS_VOICES => p.nr = value as u32,
-                    PARAM_CHORUS_LEVEL => p.level = value as f32,
+                    PARAM_CHORUS_LEVEL => {
+                        p.level = value as f32;
+                        // Keep cache in sync so on/off toggle restores the latest value
+                        self.chorus_level_cache = value as f32;
+                    }
                     PARAM_CHORUS_SPEED => p.speed = value as f32,
                     PARAM_CHORUS_DEPTH => p.depth = value as f32,
                     _ => {}

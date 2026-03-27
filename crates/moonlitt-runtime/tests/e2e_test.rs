@@ -1,7 +1,9 @@
-//! End-to-end tests: Engine → Runtime → real audio output.
+//! End-to-end tests: Engine -> Runtime -> real audio output.
 //!
 //! These tests verify the full pipeline with real plugins.
-//! They skip gracefully if the required plugin is not installed.
+//! They skip gracefully if:
+//! - The required plugin is not installed
+//! - No audio output device is available
 
 use moonlitt_engine::engine::Engine;
 use moonlitt_runtime::Runtime;
@@ -15,11 +17,28 @@ fn has_file(path: &str) -> bool {
     std::path::Path::new(path).exists()
 }
 
-/// Full pipeline: Pianoteq VST3 → Engine → Runtime → cpal audio output.
+/// Try to create and start a Runtime, returning None if no audio device.
+fn try_create_runtime(engine: Engine) -> Option<Runtime> {
+    match Runtime::new(engine) {
+        Ok(rt) => {
+            if rt.start().is_err() {
+                eprintln!("No audio device available, skipping");
+                return None;
+            }
+            Some(rt)
+        }
+        Err(e) => {
+            eprintln!("Runtime creation failed (no audio device?): {e}, skipping");
+            None
+        }
+    }
+}
+
+/// Full pipeline: Pianoteq VST3 -> Engine -> Runtime -> cpal audio output.
 #[test]
 fn e2e_pianoteq_runtime() {
     if !has_file(VST3_PATH) {
-        eprintln!("Pianoteq not installed — skipping");
+        eprintln!("Pianoteq not installed -- skipping");
         return;
     }
 
@@ -30,8 +49,10 @@ fn e2e_pianoteq_runtime() {
     let info = engine.backend_info().unwrap();
     eprintln!("Backend: {} ({:?})", info.name, info.backend_type);
 
-    let mut rt = Runtime::new(engine).unwrap();
-    rt.start().unwrap();
+    let mut rt = match try_create_runtime(engine) {
+        Some(rt) => rt,
+        None => return,
+    };
 
     // Play a C major chord
     rt.note_on(0, 60, 100); // C4
@@ -57,15 +78,17 @@ fn e2e_pianoteq_runtime() {
 #[test]
 fn e2e_sf2_polyphony_stress() {
     if !has_file(SF2_PATH) {
-        eprintln!("SF2 not found — skipping");
+        eprintln!("SF2 not found -- skipping");
         return;
     }
 
     let mut engine = Engine::new(44100, 256);
     engine.load(SF2_PATH).unwrap();
 
-    let mut rt = Runtime::new(engine).unwrap();
-    rt.start().unwrap();
+    let mut rt = match try_create_runtime(engine) {
+        Some(rt) => rt,
+        None => return,
+    };
 
     // Fire 20 rapid notes (tests queue doesn't block or lose events)
     for note in 40..60 {
@@ -87,15 +110,17 @@ fn e2e_sf2_polyphony_stress() {
 #[test]
 fn e2e_volume_control() {
     if !has_file(SF2_PATH) {
-        eprintln!("SF2 not found — skipping");
+        eprintln!("SF2 not found -- skipping");
         return;
     }
 
     let mut engine = Engine::new(44100, 256);
     engine.load(SF2_PATH).unwrap();
 
-    let mut rt = Runtime::new(engine).unwrap();
-    rt.start().unwrap();
+    let mut rt = match try_create_runtime(engine) {
+        Some(rt) => rt,
+        None => return,
+    };
 
     rt.note_on(0, 60, 100);
 
@@ -114,15 +139,17 @@ fn e2e_volume_control() {
 #[test]
 fn e2e_transport_controls() {
     if !has_file(SF2_PATH) {
-        eprintln!("SF2 not found — skipping");
+        eprintln!("SF2 not found -- skipping");
         return;
     }
 
     let mut engine = Engine::new(44100, 256);
     engine.load(SF2_PATH).unwrap();
 
-    let mut rt = Runtime::new(engine).unwrap();
-    rt.start().unwrap();
+    let mut rt = match try_create_runtime(engine) {
+        Some(rt) => rt,
+        None => return,
+    };
 
     // Test transport state transitions
     assert!(!rt.is_playing());

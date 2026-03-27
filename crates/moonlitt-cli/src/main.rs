@@ -234,7 +234,10 @@ fn cmd_play_live(path: &str, note: u8, velocity: u8, duration: f32, sample_rate:
         }
     };
 
-    rt.start().unwrap();
+    if let Err(e) = rt.start() {
+        eprintln!("Failed to start audio output: {e}");
+        std::process::exit(1);
+    }
     println!("Playing note {note} (velocity {velocity}) for {duration}s...");
 
     rt.note_on(0, note, velocity);
@@ -264,7 +267,10 @@ fn cmd_live(path: &str) {
         }
     };
 
-    rt.start().unwrap();
+    if let Err(e) = rt.start() {
+        eprintln!("Failed to start audio output: {e}");
+        std::process::exit(1);
+    }
     println!("Live mode. Press Ctrl+C to quit.");
 
     // TODO: Runtime needs a connect_midi_input(device_id) method so we can
@@ -458,7 +464,10 @@ fn cmd_midi_live(midi_path: &str, sound_path: &str) {
         Ok(r) => r,
         Err(e) => { eprintln!("Audio error: {e}"); std::process::exit(1); }
     };
-    rt.start().unwrap();
+    if let Err(e) = rt.start() {
+        eprintln!("Failed to start audio output: {e}");
+        std::process::exit(1);
+    }
 
     println!("Playing...");
     let start = Instant::now();

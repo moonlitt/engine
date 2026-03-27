@@ -1,7 +1,12 @@
 //! Runtime FFI — opaque handle wrapping `moonlitt_runtime::Runtime`.
 //!
 //! The runtime owns the audio output stream and communicates with the
-//! engine via a lock-free ring buffer.
+//! engine via a lock-free SPSC (single-producer, single-consumer) ring buffer.
+//!
+//! **Threading contract**: All MIDI/parameter/mixer FFI functions must be
+//! called from a single thread (the producer side of the SPSC queue). The
+//! audio thread is the consumer. Calling from multiple threads concurrently
+//! is undefined behavior.
 
 use crate::engine_api::EngineHandle;
 use crate::util::{json_escape, to_c_string};
@@ -19,7 +24,11 @@ pub struct RuntimeHandle {
 
 /// Create a runtime from an engine handle.
 ///
-/// **Ownership transfer**: the engine is moved out of `engine_handle`.
+/// **Ownership transfer**: the engine is moved out of `engine_handle`
+/// regardless of whether runtime creation succeeds or fails. On failure
+/// the engine is consumed internally (by the Mixer/audio subsystem) and
+/// cannot be recovered. The caller must create a new engine to retry.
+///
 /// After this call the engine handle is invalidated — calling any
 /// `moonlitt_engine_*` function on it is safe (returns error / no-op)
 /// but the engine itself is gone.
@@ -27,7 +36,8 @@ pub struct RuntimeHandle {
 /// The caller should still call `moonlitt_engine_destroy` on the old
 /// handle to free the wrapper memory.
 ///
-/// Returns null on failure.
+/// Returns null on failure (retrieve error via the engine handle's
+/// `moonlitt_engine_get_error`).
 #[no_mangle]
 pub extern "C" fn moonlitt_runtime_create(engine_handle: *mut EngineHandle) -> *mut RuntimeHandle {
     let handle = match unsafe { engine_handle.as_mut() } {
@@ -96,31 +106,40 @@ pub extern "C" fn moonlitt_runtime_stop(rt: *mut RuntimeHandle) -> c_int {
 }
 
 // ---------------------------------------------------------------------------
-// MIDI events (thread-safe, lock-free via ring buffer)
+// MIDI events (lock-free SPSC ring buffer — single caller only,
+// audio thread is the consumer)
 // ---------------------------------------------------------------------------
 
 #[no_mangle]
 pub extern "C" fn moonlitt_runtime_note_on(rt: *mut RuntimeHandle, ch: c_int, note: c_int, vel: c_int) {
     if let Some(h) = unsafe { rt.as_mut() } {
-        h.runtime.note_on(ch as u8, note as u8, vel as u8);
+        let ch = (ch.max(0) as u8).min(15);
+        let note = (note.max(0) as u8).min(127);
+        let vel = (vel.max(0) as u8).min(127);
+        h.runtime.note_on(ch, note, vel);
     }
 }
 
-/// Note-on with sample-accurate delay (23μs precision).
+/// Note-on with sample-accurate delay (23us precision).
 /// `delay_samples` = number of samples to wait before triggering.
 #[no_mangle]
 pub extern "C" fn moonlitt_runtime_note_on_delayed(
     rt: *mut RuntimeHandle, ch: c_int, note: c_int, vel: c_int, delay_samples: c_int,
 ) {
     if let Some(h) = unsafe { rt.as_mut() } {
-        h.runtime.note_on_delayed(ch as u8, note as u8, vel as u8, delay_samples.max(0) as u32);
+        let ch = (ch.max(0) as u8).min(15);
+        let note = (note.max(0) as u8).min(127);
+        let vel = (vel.max(0) as u8).min(127);
+        h.runtime.note_on_delayed(ch, note, vel, delay_samples.max(0) as u32);
     }
 }
 
 #[no_mangle]
 pub extern "C" fn moonlitt_runtime_note_off(rt: *mut RuntimeHandle, ch: c_int, note: c_int) {
     if let Some(h) = unsafe { rt.as_mut() } {
-        h.runtime.note_off(ch as u8, note as u8);
+        let ch = (ch.max(0) as u8).min(15);
+        let note = (note.max(0) as u8).min(127);
+        h.runtime.note_off(ch, note);
     }
 }
 
@@ -130,28 +149,37 @@ pub extern "C" fn moonlitt_runtime_note_off_delayed(
     rt: *mut RuntimeHandle, ch: c_int, note: c_int, delay_samples: c_int,
 ) {
     if let Some(h) = unsafe { rt.as_mut() } {
-        h.runtime.note_off_delayed(ch as u8, note as u8, delay_samples.max(0) as u32);
+        let ch = (ch.max(0) as u8).min(15);
+        let note = (note.max(0) as u8).min(127);
+        h.runtime.note_off_delayed(ch, note, delay_samples.max(0) as u32);
     }
 }
 
 #[no_mangle]
 pub extern "C" fn moonlitt_runtime_cc(rt: *mut RuntimeHandle, ch: c_int, cc: c_int, val: c_int) {
     if let Some(h) = unsafe { rt.as_mut() } {
-        h.runtime.cc(ch as u8, cc as u8, val as u8);
+        let ch = (ch.max(0) as u8).min(15);
+        let cc = (cc.max(0) as u8).min(127);
+        let val = (val.max(0) as u8).min(127);
+        h.runtime.cc(ch, cc, val);
     }
 }
 
 #[no_mangle]
 pub extern "C" fn moonlitt_runtime_pitch_bend(rt: *mut RuntimeHandle, ch: c_int, val: c_int) {
     if let Some(h) = unsafe { rt.as_mut() } {
-        h.runtime.pitch_bend(ch as u8, val as i16);
+        let ch = (ch.max(0) as u8).min(15);
+        let val = (val.clamp(-8192, 8191)) as i16;
+        h.runtime.pitch_bend(ch, val);
     }
 }
 
 #[no_mangle]
 pub extern "C" fn moonlitt_runtime_program_change(rt: *mut RuntimeHandle, ch: c_int, prog: c_int) {
     if let Some(h) = unsafe { rt.as_mut() } {
-        h.runtime.program_change(ch as u8, prog as u8);
+        let ch = (ch.max(0) as u8).min(15);
+        let prog = (prog.max(0) as u8).min(127);
+        h.runtime.program_change(ch, prog);
     }
 }
 
@@ -170,7 +198,7 @@ pub extern "C" fn moonlitt_runtime_set_volume(rt: *mut RuntimeHandle, volume: c_
 }
 
 // ---------------------------------------------------------------------------
-// Parameters (thread-safe via ring buffer)
+// Parameters (lock-free SPSC — single caller only)
 // ---------------------------------------------------------------------------
 
 #[no_mangle]
@@ -181,7 +209,7 @@ pub extern "C" fn moonlitt_runtime_set_param(rt: *mut RuntimeHandle, id: c_int, 
 }
 
 // ---------------------------------------------------------------------------
-// Mixer control (thread-safe via ring buffer)
+// Mixer control (lock-free SPSC — single caller only)
 // ---------------------------------------------------------------------------
 
 #[no_mangle]

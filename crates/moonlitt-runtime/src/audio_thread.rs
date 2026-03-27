@@ -43,7 +43,7 @@ impl AudioThread {
             sequencer,
             transport,
             seq_events: Vec::with_capacity(64),
-            pending: Vec::with_capacity(128),
+            pending: Vec::with_capacity(1024),
             render_left: vec![0.0; buffer_size],
             render_right: vec![0.0; buffer_size],
         }
@@ -62,12 +62,13 @@ impl AudioThread {
             while let Ok(timed) = self.consumer.pop() {
                 if timed.delay_samples == 0 {
                     dispatch_to_mixer(&mut self.mixer, timed.event);
-                } else {
+                } else if self.pending.len() < self.pending.capacity() {
                     self.pending.push(PendingEvent {
                         event: timed.event,
                         remaining: timed.delay_samples as i32,
                     });
                 }
+                // else: drop the delayed event — better than allocating on audio thread
             }
 
             // 2. Advance sequencer (at chunk boundaries)
