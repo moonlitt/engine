@@ -1,19 +1,19 @@
 //! In-memory IBStream implementation for VST3 setState/getState.
 
-use std::cell::Cell;
+use std::cell::{Cell, UnsafeCell};
 use std::ffi::c_void;
 use vst3::Steinberg::{
     int32, int64, kResultFalse, kResultOk, tresult, uint32, FUnknown, FUnknownVtbl, IBStream,
     IBStreamVtbl, TUID,
 };
 
-/// A minimal in-memory read-only IBStream.
+/// A minimal in-memory IBStream with interior mutability for the data buffer.
 /// Layout: `{ vtbl: *const IBStreamVtbl, ... }` matches IBStream COM layout.
 #[repr(C)]
 pub struct MemoryStream {
     vtbl: *const IBStreamVtbl,
     ref_count: Cell<u32>,
-    data: Vec<u8>,
+    data: UnsafeCell<Vec<u8>>,
     position: Cell<usize>,
 }
 
@@ -34,20 +34,21 @@ impl MemoryStream {
         Box::new(Self {
             vtbl: &VTBL,
             ref_count: Cell::new(1),
-            data: Vec::new(),
+            data: UnsafeCell::new(Vec::new()),
             position: Cell::new(0),
         })
     }
 
     pub fn data(&self) -> &[u8] {
-        &self.data
+        // SAFETY: No concurrent mutation — MemoryStream is single-threaded.
+        unsafe { &*self.data.get() }
     }
 
     pub fn from_data(data: Vec<u8>) -> Box<Self> {
         Box::new(Self {
             vtbl: &VTBL,
             ref_count: Cell::new(1),
-            data,
+            data: UnsafeCell::new(data),
             position: Cell::new(0),
         })
     }
@@ -95,12 +96,13 @@ unsafe extern "system" fn ms_read(
     bytes_read: *mut int32,
 ) -> tresult {
     let s = get_self(this);
+    let data = &*s.data.get();
     let pos = s.position.get();
-    let available = s.data.len().saturating_sub(pos);
+    let available = data.len().saturating_sub(pos);
     let to_read = (num_bytes as usize).min(available);
 
     if to_read > 0 && !buffer.is_null() {
-        std::ptr::copy_nonoverlapping(s.data[pos..].as_ptr(), buffer as *mut u8, to_read);
+        std::ptr::copy_nonoverlapping(data[pos..].as_ptr(), buffer as *mut u8, to_read);
     }
     s.position.set(pos + to_read);
     if !bytes_read.is_null() {
@@ -115,12 +117,12 @@ unsafe extern "system" fn ms_write(
     num_bytes: int32,
     bytes_written: *mut int32,
 ) -> tresult {
-    // Writable stream: append to data
+    // Writable stream: append to data via UnsafeCell for proper interior mutability.
     let s = &*(this as *const MemoryStream);
     if num_bytes > 0 && !buffer.is_null() {
         let slice = std::slice::from_raw_parts(buffer as *const u8, num_bytes as usize);
-        // Need mutable access — use unsafe cell pattern
-        let data = &mut *(std::ptr::addr_of!(s.data) as *mut Vec<u8>);
+        // SAFETY: Single-threaded access guaranteed by VST3 hosting model.
+        let data = &mut *s.data.get();
         let pos = s.position.get();
         if pos == data.len() {
             data.extend_from_slice(slice);
@@ -147,13 +149,14 @@ unsafe extern "system" fn ms_seek(
     result: *mut int64,
 ) -> tresult {
     let s = get_self(this);
+    let data = &*s.data.get();
     let new_pos = match mode {
         0 => pos as usize,                              // kIBSeekSet
         1 => (s.position.get() as i64 + pos) as usize,  // kIBSeekCur
-        2 => (s.data.len() as i64 + pos) as usize,      // kIBSeekEnd
+        2 => (data.len() as i64 + pos) as usize,        // kIBSeekEnd
         _ => return kResultFalse,
     };
-    s.position.set(new_pos.min(s.data.len()));
+    s.position.set(new_pos.min(data.len()));
     if !result.is_null() {
         *result = s.position.get() as int64;
     }

@@ -20,6 +20,15 @@ enum SeqState {
 ///
 /// Loads a MIDI file, stores events as a sorted (tick, AudioEvent) list,
 /// and emits events at the correct sample positions via `advance()`.
+///
+/// # Note on dual-gating
+///
+/// When used inside a `Runtime`, the `AudioThread` gates `advance()` calls
+/// behind `Transport::is_playing()`. The sequencer's internal `SeqState` is
+/// therefore redundant in that context. However, the internal state is
+/// retained for standalone usage (e.g., CLI or tests) where no external
+/// transport controls advancement. Future cleanup: unify gating so there
+/// is a single source of truth.
 pub struct Sequencer {
     events: Vec<TimedEvent>,
     /// Tempo changes: (tick, microseconds_per_beat)

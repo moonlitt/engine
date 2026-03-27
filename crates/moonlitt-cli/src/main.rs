@@ -316,6 +316,9 @@ fn cmd_midi_devices() {
 // =============================================================================
 // MIDI file playback
 // =============================================================================
+// TODO: This MIDI parsing logic duplicates moonlitt_runtime::sequencer's
+// MIDI parsing. Refactor to share a common MIDI parser crate or move the
+// note-event extraction into moonlitt-runtime and expose it publicly.
 
 struct MidiNote {
     time_sec: f64,

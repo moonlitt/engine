@@ -1,3 +1,5 @@
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+
 //! # moonlitt-ffi
 //!
 //! C FFI layer for the moonlitt audio engine.

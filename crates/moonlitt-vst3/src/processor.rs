@@ -28,6 +28,8 @@ pub(crate) fn process_audio(
     left: &mut [f32],
     right: &mut [f32],
     events: &[MidiEvent],
+    silent_left: &mut [f32],
+    silent_right: &mut [f32],
 ) -> Result<()> {
     let num_frames = left.len().min(right.len());
     if num_frames == 0 {
@@ -39,8 +41,7 @@ pub(crate) fn process_audio(
 
     // --- Input bus (silent) ---
     // Some plugins (e.g. Pianoteq) expect at least 1 audio input bus.
-    let mut silent_left = vec![0.0f32; num_frames];
-    let mut silent_right = vec![0.0f32; num_frames];
+    // Silent buffers are pre-allocated by Vst3Plugin to avoid hot-path allocation.
     let mut silent_ptrs: [*mut f32; 2] = [silent_left.as_mut_ptr(), silent_right.as_mut_ptr()];
 
     let mut input_bus = AudioBusBuffers {
@@ -146,10 +147,12 @@ pub(crate) fn process_effect(
     let num_audio_in = unsafe { component.getBusCount(kAudio as i32, kInput as i32) };
 
     // --- Input bus (real audio) ---
-    // Cast away const — VST3 API uses *mut but won't modify input buffers
-    let mut in_left_buf = in_left.to_vec();
-    let mut in_right_buf = in_right.to_vec();
-    let mut input_ptrs: [*mut f32; 2] = [in_left_buf.as_mut_ptr(), in_right_buf.as_mut_ptr()];
+    // SAFETY: VST3 API declares channelBuffers32 as *mut but the spec guarantees
+    // the plugin will not modify input buffers. We cast away const to satisfy
+    // the API without a hot-path allocation.
+    let in_left_ptr = in_left.as_ptr() as *mut f32;
+    let in_right_ptr = in_right.as_ptr() as *mut f32;
+    let mut input_ptrs: [*mut f32; 2] = [in_left_ptr, in_right_ptr];
 
     let mut input_bus = AudioBusBuffers {
         numChannels: 2,

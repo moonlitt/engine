@@ -6,6 +6,7 @@ use crate::mixer::Mixer;
 use crate::transport::Transport;
 use moonlitt_engine::engine::Engine;
 use rtrb::RingBuffer;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 pub struct Runtime {
@@ -16,6 +17,8 @@ pub struct Runtime {
     transport: Arc<Transport>,
     #[allow(dead_code)]
     buffer_size: u32,
+    /// Counter for events dropped due to ring buffer overflow.
+    dropped_events: Arc<AtomicU64>,
 }
 
 impl Runtime {
@@ -33,6 +36,8 @@ impl Runtime {
 
     /// Create a runtime with a pre-configured Mixer.
     pub fn with_mixer(mixer: Mixer, buffer_size: u32) -> Result<Self, String> {
+        // Ring buffer capacity: 1024 events. Sufficient for real-time MIDI at
+        // typical rates; events are drained every audio callback (~5ms).
         let (producer, consumer) = RingBuffer::new(1024);
         let transport = Arc::new(Transport::new());
 
@@ -52,6 +57,7 @@ impl Runtime {
             midi_connection: None,
             transport,
             buffer_size,
+            dropped_events: Arc::new(AtomicU64::new(0)),
         })
     }
 
@@ -74,17 +80,27 @@ impl Runtime {
     // --- MIDI events (thread-safe, lock-free) ---
 
     fn send(&mut self, event: AudioEvent) {
-        let _ = self.producer.push(TimedEvent {
+        if self.producer.push(TimedEvent {
             event,
             delay_samples: 0,
-        });
+        }).is_err() {
+            self.dropped_events.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     fn send_delayed(&mut self, event: AudioEvent, delay_samples: u32) {
-        let _ = self.producer.push(TimedEvent {
+        if self.producer.push(TimedEvent {
             event,
             delay_samples,
-        });
+        }).is_err() {
+            self.dropped_events.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// Number of events silently dropped due to ring buffer overflow.
+    #[must_use]
+    pub fn dropped_events(&self) -> u64 {
+        self.dropped_events.load(Ordering::Relaxed)
     }
 
     pub fn note_on(&mut self, channel: u8, note: u8, velocity: u8) {

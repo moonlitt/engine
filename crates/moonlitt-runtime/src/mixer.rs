@@ -54,6 +54,11 @@ pub struct Mixer {
 }
 
 impl Mixer {
+    /// Create a new mixer with the given sample rate and buffer size.
+    ///
+    /// `buffer_size` is `usize` since it's used for buffer allocation. Callers
+    /// using `u32` (e.g., Runtime) cast via `as usize`. The inconsistency is
+    /// cosmetic — both types are adequate for buffer sizes in practice.
     pub fn new(sample_rate: u32, buffer_size: usize) -> Self {
         Self {
             tracks: Vec::new(),
@@ -202,8 +207,13 @@ impl Mixer {
         self.master.volume = volume;
     }
 
+    /// Broadcast a parameter change to all tracks.
+    ///
+    /// TODO: Add `set_param_for_track(track_id, id, value)` and a corresponding
+    /// `AudioEvent::SetParamForTrack` variant to allow targeting a specific track.
+    /// The broadcast behavior is correct for single-track setups but imprecise
+    /// for multi-track mixers where each track has a different plugin.
     pub fn set_param(&mut self, id: u32, value: f64) {
-        // Route to all tracks (params are engine-specific, caller should target)
         for track in &mut self.tracks {
             track.engine.set_param(id, value);
         }
@@ -322,6 +332,7 @@ fn apply_pan(left: &mut [f32], right: &mut [f32], pan: f32) {
 }
 
 /// Soft limiter: passes through below threshold, tanh compression above.
+/// Output is clamped to [-1.0, 1.0] to guarantee no clipping past the DAC range.
 fn soft_limit(sample: f32, threshold: f32) -> f32 {
     let abs = sample.abs();
     if abs <= threshold {
@@ -329,7 +340,7 @@ fn soft_limit(sample: f32, threshold: f32) -> f32 {
     } else {
         let sign = sample.signum();
         let excess = (abs - threshold) / (1.0 - threshold);
-        sign * (threshold + (1.0 - threshold) * excess.tanh())
+        (sign * (threshold + (1.0 - threshold) * excess.tanh())).clamp(-1.0, 1.0)
     }
 }
 

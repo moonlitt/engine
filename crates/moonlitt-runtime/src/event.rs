@@ -28,3 +28,10 @@ pub struct TimedEvent {
     pub event: AudioEvent,
     pub delay_samples: u32,
 }
+
+// Ensure TimedEvent stays small for efficient lock-free queue transfer.
+// If this assertion fails, review AudioEvent variants for bloat.
+const _: () = assert!(
+    std::mem::size_of::<TimedEvent>() <= 16,
+    "TimedEvent should be <= 16 bytes for cache-friendly ring buffer transfer"
+);

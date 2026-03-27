@@ -39,11 +39,19 @@ pub struct Vst3Host {
 /// A loaded and initialized VST3 plugin instance.
 pub struct Vst3Plugin {
     inner: LoadedPlugin,
+    /// Pending MIDI events drained on each render call.
+    /// Unbounded in theory, but in practice limited by the calling rate
+    /// (~172 calls/sec at 44100 Hz / 256 buffer). A single buffer rarely
+    /// accumulates more than a handful of events.
     pending_events: Vec<MidiEvent>,
     #[allow(dead_code)]
     sample_rate: f64,
     #[allow(dead_code)]
     buffer_size: usize,
+    /// Pre-allocated silent input buffer (left channel) to avoid hot-path allocation.
+    silent_left: Vec<f32>,
+    /// Pre-allocated silent input buffer (right channel) to avoid hot-path allocation.
+    silent_right: Vec<f32>,
 }
 
 /// Information about a factory preset.
@@ -91,11 +99,14 @@ impl Vst3Host {
             self.buffer_size,
         )?;
 
+        let bs = self.buffer_size;
         Ok(Vst3Plugin {
             inner: loaded,
             pending_events: Vec::new(),
             sample_rate: self.sample_rate,
-            buffer_size: self.buffer_size,
+            buffer_size: bs,
+            silent_left: vec![0.0f32; bs],
+            silent_right: vec![0.0f32; bs],
         })
     }
 }
@@ -137,13 +148,17 @@ impl Vst3Plugin {
         });
     }
 
-    /// Queue Note Off for all 128 notes (panic).
+    /// Send All Notes Off (CC#123) on all 16 channels.
+    ///
+    /// Uses the standard MIDI CC#123 (All Notes Off) message instead of
+    /// sending 128 individual NoteOff events, reducing event list overhead.
     pub fn all_notes_off(&mut self) {
-        for note in 0..128u8 {
+        for channel in 0..16u8 {
             self.pending_events.push(MidiEvent {
-                kind: MidiEventKind::NoteOff {
-                    channel: 0,
-                    note,
+                kind: MidiEventKind::CC {
+                    channel,
+                    cc: 123,  // All Notes Off
+                    value: 0,
                 },
                 sample_offset: 0,
             });
@@ -155,12 +170,18 @@ impl Vst3Plugin {
     /// `left` and `right` must be the same length (the buffer size).
     pub fn render(&mut self, left: &mut [f32], right: &mut [f32]) -> Result<()> {
         let events: Vec<MidiEvent> = std::mem::take(&mut self.pending_events);
+        // Re-zero silent buffers before each render (plugins may write into them)
+        let num_frames = left.len().min(right.len());
+        self.silent_left[..num_frames].fill(0.0);
+        self.silent_right[..num_frames].fill(0.0);
         processor::process_audio(
             &self.inner.processor,
             &self.inner.component,
             left,
             right,
             &events,
+            &mut self.silent_left[..num_frames],
+            &mut self.silent_right[..num_frames],
         )
     }
 
@@ -310,6 +331,7 @@ impl Vst3Plugin {
     }
 
     /// Get current plugin state as raw bytes.
+    #[must_use = "discarding plugin state bytes is likely a bug"]
     pub fn get_state(&self) -> Result<Vec<u8>> {
         use vst3::Steinberg::Vst::IComponentTrait;
         use vst3::Steinberg::kResultOk;

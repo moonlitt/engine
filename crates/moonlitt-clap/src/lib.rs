@@ -231,13 +231,17 @@ impl ClapPlugin {
         });
     }
 
-    /// Queue Note Off for all 128 notes (panic).
+    /// Send All Notes Off (CC#123) on all 16 channels.
+    ///
+    /// Uses the standard MIDI CC#123 (All Notes Off) message instead of
+    /// sending 128 individual NoteOff events, reducing event list overhead.
     pub fn all_notes_off(&mut self) {
-        for note in 0..128u8 {
+        for channel in 0..16u8 {
             self.pending_events.push(MidiEvent {
-                kind: MidiEventKind::NoteOff {
-                    channel: 0,
-                    note,
+                kind: MidiEventKind::CC {
+                    channel,
+                    cc: 123,  // All Notes Off
+                    value: 0,
                 },
                 sample_offset: 0,
             });
@@ -317,9 +321,12 @@ impl ClapPlugin {
         out_right.fill(0.0);
 
         // Input buffer
-        let mut in_left_buf = in_left.to_vec();
-        let mut in_right_buf = in_right.to_vec();
-        let mut in_ptrs: [*mut f32; 2] = [in_left_buf.as_mut_ptr(), in_right_buf.as_mut_ptr()];
+        // SAFETY: CLAP API declares data32 as *mut but the spec guarantees the plugin
+        // will not modify input buffers. We cast away const to satisfy the API without
+        // a hot-path allocation.
+        let in_left_ptr = in_left.as_ptr() as *mut f32;
+        let in_right_ptr = in_right.as_ptr() as *mut f32;
+        let mut in_ptrs: [*mut f32; 2] = [in_left_ptr, in_right_ptr];
         let mut audio_input = clap_audio_buffer {
             data32: in_ptrs.as_mut_ptr(),
             data64: ptr::null_mut(),
@@ -420,8 +427,11 @@ impl ClapPlugin {
 
     pub fn set_param(&mut self, _id: u32, _value: f64) {
         // CLAP params are set via process events, not directly.
-        // For now, queue as a pending event would be needed.
-        // TODO: implement via CLAP_EVENT_PARAM_VALUE in next process call
+        // TODO: implement via CLAP_EVENT_PARAM_VALUE in next process call.
+        // Currently this is a no-op — callers should be aware that parameter
+        // changes are silently discarded until this is implemented.
+        #[cfg(debug_assertions)]
+        eprintln!("warning: ClapPlugin::set_param() is not yet implemented — parameter change discarded");
     }
 
     pub fn param_display(&self, id: u32, value: f64) -> Option<String> {
