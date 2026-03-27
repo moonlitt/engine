@@ -16,6 +16,6 @@ clap = ["dep:moonlitt-clap"]
 [dependencies]
 moonlitt-vst3 = { path = "../moonlitt-vst3", optional = true }
 moonlitt-clap = { path = "../moonlitt-clap", optional = true }
-oxisynth = { version = "0.1", optional = true }
+oxisynth = { path = "/Users/wangyan/Desktop/moonlitt-oxisynth/oxisynth", optional = true }
 fluidlite = { version = "0.2", optional = true, features = ["bindgen"] }
 bitflags = "2"

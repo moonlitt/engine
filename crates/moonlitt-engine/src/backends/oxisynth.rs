@@ -1,7 +1,7 @@
 //! SF2 backend — pure Rust via OxiSynth.
 //!
 //! Replaces FluidLite with a pure Rust SoundFont synthesizer.
-//! Uses SeventhOrder interpolation (highest available in OxiSynth).
+//! Uses Sinc72 interpolation (72-point windowed sinc, Kaiser beta=9.5).
 
 use crate::backend::{AudioBackend, BackendInfo, BackendType, ParamFlags, ParamInfo, PresetInfo};
 use oxisynth::{InterpolationMethod, MidiEvent, SoundFont, Synth, SynthDescriptor};
@@ -51,7 +51,7 @@ impl OxiSynthBackend {
             midi_channels: 16,
             reverb_active: true,
             chorus_active: true,
-            interpolation: InterpolationMethod::SeventhOrder,
+            interpolation: InterpolationMethod::Sinc72,
             ..Default::default()
         })
         .map_err(|e| format!("failed to create OxiSynth: {e}"))?;
