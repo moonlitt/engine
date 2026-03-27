@@ -48,6 +48,14 @@ pub struct OxiSynthBackend {
 
 impl OxiSynthBackend {
     pub fn new(sample_rate: u32) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::with_interpolation(sample_rate, InterpolationMethod::SeventhOrder)
+    }
+
+    pub fn new_high_quality(sample_rate: u32) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::with_interpolation(sample_rate, InterpolationMethod::Sinc72)
+    }
+
+    fn with_interpolation(sample_rate: u32, interpolation: InterpolationMethod) -> Result<Self, Box<dyn std::error::Error>> {
         let synth = Synth::new(SynthDescriptor {
             sample_rate: sample_rate as f32,
             gain: 1.0,
@@ -55,7 +63,7 @@ impl OxiSynthBackend {
             midi_channels: 16,
             reverb_active: true,
             chorus_active: true,
-            interpolation: InterpolationMethod::Sinc72,
+            interpolation,
             ..Default::default()
         })
         .map_err(|e| format!("failed to create OxiSynth: {e}"))?;

@@ -520,7 +520,8 @@ fn cmd_midi_render(midi_path: &str, sound_path: &str, output: &str) {
     let sample_rate = 44100u32;
     let buffer_size = 256u32;
     let mut engine = Engine::new(sample_rate, buffer_size);
-    if let Err(e) = engine.load(sound_path) {
+    // Offline rendering uses highest quality (Sinc72 for SF2)
+    if let Err(e) = engine.load_high_quality(sound_path) {
         eprintln!("Error loading {sound_path}: {e}");
         std::process::exit(1);
     }

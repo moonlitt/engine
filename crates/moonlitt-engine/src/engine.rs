@@ -27,6 +27,20 @@ impl Engine {
     }
 
     /// Auto-detect format by file extension and load.
+    /// Load with highest quality settings (Sinc72 for SF2). Use for offline rendering.
+    pub fn load_high_quality(&mut self, path: &str) -> Result<(), EngineError> {
+        #[cfg(feature = "sf2")]
+        if path.to_lowercase().ends_with(".sf2") {
+            let mut backend = crate::backends::oxisynth::OxiSynthBackend::new_high_quality(self.sample_rate)
+                .map_err(|e| EngineError::BackendError(e.to_string()))?;
+            backend.load(path).map_err(|e| EngineError::BackendError(e.to_string()))?;
+            backend.set_volume(self.volume);
+            self.backend = Some(Box::new(backend));
+            return Ok(());
+        }
+        self.load(path)
+    }
+
     pub fn load(&mut self, path: &str) -> Result<(), EngineError> {
         let ext = Path::new(path)
             .extension()
