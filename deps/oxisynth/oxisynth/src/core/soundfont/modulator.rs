@@ -73,7 +73,13 @@ impl Mod {
         self.dest
     }
 
-    pub fn get_value(&self, chan: &Channel, voice: &Voice) -> f32 {
+    /// Returns true if either source of this modulator uses Link (Source Type 127).
+    pub fn uses_link(&self) -> bool {
+        self.src.controller_palette == ControllerPalette::General(GeneralPalette::Link)
+            || self.src2.controller_palette == ControllerPalette::General(GeneralPalette::Link)
+    }
+
+    pub fn get_value(&self, chan: &Channel, voice: &Voice, link_outputs: &[f32]) -> f32 {
         // 'special treatment' for default controller
         //
         //  Reference: SF2.01 section 8.4.2
@@ -108,9 +114,24 @@ impl Mod {
             return 0.0;
         }
 
+        // Check if src is a Link source (Source Type 127).
+        // Link sources use the output of another modulator as input.
+        // The linked modulator's output is used directly as the mapped v1 value,
+        // bypassing the normal source-type transform. src.index is the 0-based
+        // modulator index (valid even when index == 0).
+        let src_is_link =
+            self.src.controller_palette == ControllerPalette::General(GeneralPalette::Link);
+
         let mut range1: f32 = 127.0f32;
         // get the initial value of the first source
-        let mut v1 = if self.src.index > 0 {
+        let mut v1 = if src_is_link {
+            let idx = self.src.index as usize;
+            if idx < link_outputs.len() {
+                link_outputs[idx]
+            } else {
+                0.0
+            }
+        } else if self.src.index > 0 {
             use GeneralPalette::*;
             let v1 = match self.src.controller_palette {
                 ControllerPalette::Midi(id) => chan.cc(id as usize) as f32,
@@ -125,7 +146,8 @@ impl Mod {
                         chan.pitch_bend() as f32
                     }
                     PitchWheelSensitivity => chan.pitch_wheel_sensitivity() as f32,
-                    _ => 0.0,
+                    Link => unreachable!(), // handled above
+                    GeneralPalette::Unknown(_) => 0.0,
                 },
             };
 
@@ -229,9 +251,20 @@ impl Mod {
             return 0.0;
         }
 
+        let src2_is_link =
+            self.src2.controller_palette == ControllerPalette::General(GeneralPalette::Link);
+
         let range2: f32 = 127.0f32;
         // get the second input source
-        let v2 = if self.src2.index > 0 {
+        let v2 = if src2_is_link {
+            // Source Type 127 on src2: use linked modulator output directly.
+            let idx = self.src2.index as usize;
+            if idx < link_outputs.len() {
+                link_outputs[idx]
+            } else {
+                0.0
+            }
+        } else if self.src2.index > 0 {
             use GeneralPalette::*;
             let v2 = match self.src2.controller_palette {
                 ControllerPalette::Midi(id) => chan.cc(id as usize) as f32,
@@ -243,7 +276,8 @@ impl Mod {
                     ChannelPressure => chan.channel_pressure() as f32,
                     PitchWheel => chan.pitch_bend() as f32,
                     PitchWheelSensitivity => chan.pitch_wheel_sensitivity() as f32,
-                    _ => {
+                    Link => unreachable!(), // handled above
+                    GeneralPalette::Unknown(_) => {
                         // https://github.com/divideconcept/FluidLite/blob/fdd05bad03cdb24d1f78b5fe3453842890c1b0e8/src/fluid_mod.c#L282
                         // why is this setting v1 to 0.0?
                         v1 = 0.0;

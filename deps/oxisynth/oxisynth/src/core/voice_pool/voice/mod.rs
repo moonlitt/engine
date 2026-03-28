@@ -370,7 +370,7 @@ impl Voice {
         // sound card.  Discard them, maybe print a warning.
         if let ControllerPalette::General(g) = &mod_0.src.controller_palette {
             match g {
-                GeneralPalette::Unknown(_) | GeneralPalette::Link => {
+                GeneralPalette::Unknown(_) => {
                     log::warn!("Ignoring invalid controller, using non-CC source {:?}.", g);
                     return;
                 }
@@ -511,6 +511,27 @@ impl Voice {
         }
     }
 
+    /// Pre-compute all modulator outputs with multi-pass Link resolution.
+    /// Pass 1: evaluate all modulators (Link sources read 0.0).
+    /// Pass 2: re-evaluate Link-using modulators with cached outputs from pass 1.
+    fn compute_mod_outputs(&self, channel: &Channel) -> [f32; 64] {
+        let mut outputs = [0.0f32; 64];
+
+        // Pass 1: evaluate all modulators, Link sources default to 0.0
+        for i in 0..self.mod_count {
+            outputs[i] = self.mod_0[i].get_value(channel, self, &outputs);
+        }
+
+        // Pass 2: re-evaluate modulators that use Link sources
+        for i in 0..self.mod_count {
+            if self.mod_0[i].uses_link() {
+                outputs[i] = self.mod_0[i].get_value(channel, self, &outputs);
+            }
+        }
+
+        outputs
+    }
+
     pub(super) fn modulate(&mut self, channel: &Channel, ctrl: ModulateCtrl) {
         let ctrl = match ctrl {
             ModulateCtrl::CC(control_function) => ControllerPalette::Midi(control_function as u8),
@@ -522,18 +543,20 @@ impl Voice {
             m.src.controller_palette == ctrl || m.src2.controller_palette == ctrl
         }
 
+        let mod_outputs = self.compute_mod_outputs(channel);
+
         let mut i = 0;
         while i < self.mod_count {
-            let mod_0 = &mut self.mod_0[i];
+            let mod_0 = &self.mod_0[i];
 
             if mod_has_source(mod_0, ctrl) {
                 let gen = mod_0.get_dest();
-                let mut modval = 0.0;
+                let mut modval = 0.0f32;
 
                 let mut k = 0;
                 while k < self.mod_count {
                     if self.mod_0[k].dest == gen {
-                        modval += self.mod_0[k].get_value(channel, self);
+                        modval += mod_outputs[k];
                     }
                     k += 1
                 }
@@ -545,15 +568,14 @@ impl Voice {
     }
 
     pub(super) fn modulate_all(&mut self, channel: &Channel) {
+        let mod_outputs = self.compute_mod_outputs(channel);
+
         for i in 0..self.mod_count {
             let gen = self.mod_0[i].get_dest();
 
-            let modval: f32 = self
-                .mod_0
-                .iter()
-                .take(self.mod_count)
-                .filter(|k| k.dest == gen)
-                .map(|k| k.get_value(channel, self))
+            let modval: f32 = (0..self.mod_count)
+                .filter(|&k| self.mod_0[k].dest == gen)
+                .map(|k| mod_outputs[k])
                 .sum();
 
             self.gen[gen].mod_0 = modval as f64;
@@ -589,6 +611,8 @@ impl Voice {
     fn get_lower_boundary_for_attenuation(&mut self, channel: &Channel) -> f32 {
         const MOD_PITCHWHEEL: i32 = 14;
 
+        let mod_outputs = self.compute_mod_outputs(channel);
+
         let mut possible_att_reduction_c_b = 0.0;
         for i in 0..self.mod_count {
             let mod_0 = &self.mod_0[i];
@@ -596,7 +620,7 @@ impl Voice {
             // Modulator has attenuation as target and can change over time?
             if mod_0.dest == GeneratorType::Attenuation && (mod_0.src.is_cc() || mod_0.src2.is_cc())
             {
-                let current_val: f32 = mod_0.get_value(channel, self);
+                let current_val: f32 = mod_outputs[i];
                 let mut v = mod_0.amount.abs() as f32;
 
                 if mod_0.src.index as i32 == MOD_PITCHWHEEL
@@ -668,10 +692,11 @@ impl Voice {
             GeneratorType::Pitch,
         ];
 
+        let mod_outputs = self.compute_mod_outputs(channel);
         let mut i = 0;
         while i < self.mod_count {
             let mod_0 = &self.mod_0[i];
-            let modval: f32 = mod_0.get_value(channel, self);
+            let modval: f32 = mod_outputs[i];
             let dest_gen = &mut self.gen[mod_0.dest];
             dest_gen.mod_0 += modval as f64;
             i += 1
