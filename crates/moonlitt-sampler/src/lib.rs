@@ -7,6 +7,7 @@
 //! where every line of DSP code is ours.
 
 pub mod envelope;
+pub mod filter;
 mod sample;
 mod voice;
 
