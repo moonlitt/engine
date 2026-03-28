@@ -1,0 +1,10 @@
+[package]
+name = "moonlitt-core"
+description = "Core traits and types for moonlitt audio backends"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+bitflags = "2"

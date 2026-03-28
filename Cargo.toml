@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
-exclude = ["deps/oxisynth"]
 members = [
+    "crates/moonlitt-core",
     "crates/moonlitt-vst3",
     "crates/moonlitt-clap",
     "crates/moonlitt-engine",

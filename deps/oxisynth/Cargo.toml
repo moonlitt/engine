@@ -1,9 +1,0 @@
-[workspace]
-resolver = "2"
-members = ["oxisynth", "oxisynth-chorus", "oxisynth-reverb", "soundfont-rs", "./oxisynth/examples/real-time"]
-
-[workspace.dependencies]
-soundfont = { version = "0.1.0", path = "./soundfont-rs" }
-oxisynth-chorus = { version = "0.1.0", path = "./oxisynth-chorus" }
-oxisynth-reverb = { version = "0.1.0", path = "./oxisynth-reverb" }
-log = "0.4.14"

@@ -3,9 +3,6 @@
 #[cfg(feature = "sf2")]
 pub mod sampler;
 
-#[cfg(feature = "sf2-oxisynth")]
-pub mod oxisynth;
-
 #[cfg(feature = "sf2-legacy")]
 pub mod sf2;
 
