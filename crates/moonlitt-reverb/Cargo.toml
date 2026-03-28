@@ -1,0 +1,13 @@
+[package]
+name = "moonlitt-reverb"
+description = "Stereo reverb — Freeverb algorithm (8 comb + 4 allpass)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+moonlitt-core = { path = "../moonlitt-core" }
+
+[dev-dependencies]
+approx = "0.5"
