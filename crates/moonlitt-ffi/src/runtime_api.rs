@@ -394,6 +394,16 @@ pub extern "C" fn moonlitt_runtime_add_send_bus(
     rt.runtime.add_send_bus(engine) as c_int
 }
 
+/// Set a parameter on a send bus effect engine.
+#[no_mangle]
+pub extern "C" fn moonlitt_mixer_set_send_bus_param(
+    rt: *mut RuntimeHandle, bus_id: c_int, param_id: c_int, value: c_float,
+) {
+    if let Some(h) = unsafe { rt.as_mut() } {
+        h.runtime.set_send_bus_param(bus_id as u8, param_id as u16, value);
+    }
+}
+
 /// Route a track's output. target_id = 0xFF for master, else group track ID.
 #[no_mangle]
 pub extern "C" fn moonlitt_mixer_set_track_route(

@@ -241,6 +241,10 @@ impl Runtime {
         self.send(AudioEvent::SetInsertParam { track_id, insert_id, param_id, value });
     }
 
+    pub fn set_send_bus_param(&mut self, bus_id: u8, param_id: u16, value: f32) {
+        self.send(AudioEvent::SetSendBusParam { bus_id, param_id, value });
+    }
+
     /// Route a track's output. target_id = 0xFF for master, else group track ID.
     pub fn mixer_set_track_route(&mut self, track_id: u8, target_id: u8) {
         self.send(AudioEvent::MixerTrackRoute { track_id, target_id });

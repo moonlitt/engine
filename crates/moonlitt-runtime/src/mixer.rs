@@ -663,6 +663,13 @@ impl Mixer {
         }
     }
 
+    /// Set a parameter on a send bus effect engine.
+    pub fn set_send_bus_param(&mut self, bus_id: u32, param_id: u32, value: f64) {
+        if let Some(bus) = self.send_bus_mut(bus_id) {
+            bus.engine.set_param(param_id, value);
+        }
+    }
+
     // --- Rendering ---
 
     /// Render one chunk of audio into an interleaved stereo output buffer.
