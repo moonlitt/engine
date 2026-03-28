@@ -13,6 +13,7 @@ pub enum AudioEvent {
     // Mixer control events
     MixerTrackVolume { track_id: u8, volume: f32 },
     MixerTrackPan { track_id: u8, pan: f32 },
+    MixerTrackTrim { track_id: u8, trim_db: f32 },
     MixerTrackMute { track_id: u8, mute: bool },
     MixerTrackSolo { track_id: u8, solo: bool },
     MixerTrackSend { track_id: u8, bus_id: u8, level: f32 },

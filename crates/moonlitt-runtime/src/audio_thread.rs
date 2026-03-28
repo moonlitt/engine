@@ -202,6 +202,9 @@ fn dispatch_to_mixer(mixer: &mut Mixer, event: AudioEvent) {
         AudioEvent::MixerTrackPan { track_id, pan } => {
             if let Some(t) = mixer.track_mut(track_id as u32) { t.pan = pan; }
         }
+        AudioEvent::MixerTrackTrim { track_id, trim_db } => {
+            mixer.set_track_trim(track_id as u32, trim_db);
+        }
         AudioEvent::MixerTrackMute { track_id, mute } => {
             if let Some(t) = mixer.track_mut(track_id as u32) { t.mute = mute; }
         }

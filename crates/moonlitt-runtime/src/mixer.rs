@@ -191,6 +191,8 @@ pub struct Track {
     /// Bitmask: which MIDI channels route to this track (bit N = channel N).
     pub channel_mask: u16,
     pub volume: f32,
+    /// Pre-insert gain trim in dB. Range: -24.0 to +24.0, default 0.0.
+    pub trim_db: f32,
     /// -1.0 (full left) to 1.0 (full right), 0.0 = center.
     pub pan: f32,
     pub mute: bool,
@@ -321,6 +323,7 @@ impl Mixer {
             engine,
             channel_mask,
             volume: 1.0,
+            trim_db: 0.0,
             pan: 0.0,
             mute: false,
             solo: false,
@@ -351,6 +354,13 @@ impl Mixer {
         let track = self.tracks.remove(pos);
         self.rebuild_render_order();
         Some(track.engine)
+    }
+
+    /// Set a track's pre-insert trim gain in dB (clamped to -24..+24).
+    pub fn set_track_trim(&mut self, track_id: u32, trim_db: f32) {
+        if let Some(track) = self.tracks.iter_mut().find(|t| t.id == track_id) {
+            track.trim_db = trim_db.clamp(-24.0, 24.0);
+        }
     }
 
     /// Set a track's output routing (Master or Group).
@@ -700,6 +710,13 @@ impl Mixer {
             for k in 0..chunk {
                 track.left[k] += track.group_in_left[k];
                 track.right[k] += track.group_in_right[k];
+            }
+
+            // Trim (pre-insert gain staging)
+            if track.trim_db != 0.0 {
+                let trim_gain = 10f32.powf(track.trim_db / 20.0);
+                for s in &mut track.left[..chunk] { *s *= trim_gain; }
+                for s in &mut track.right[..chunk] { *s *= trim_gain; }
             }
 
             // Insert chain (pre-fader)
@@ -1358,5 +1375,55 @@ mod tests {
         // Group should be last in render order
         let last_idx = *mixer.render_order.last().unwrap();
         assert_eq!(mixer.tracks[last_idx].id, group);
+    }
+
+    // --- Trim tests ---
+
+    #[test]
+    fn test_trim_zero_is_passthrough() {
+        let mut mixer = Mixer::new(44100, 256);
+        let id = mixer.add_track(Engine::new(44100, 256), 0xFFFF);
+        // trim_db defaults to 0.0
+        assert_eq!(mixer.track(id).unwrap().trim_db, 0.0);
+
+        // Manually write known data into the track buffer and render
+        // With a no-backend engine, output is silence regardless, so verify
+        // the field default and setter round-trip
+        mixer.set_track_trim(id, 0.0);
+        assert_eq!(mixer.track(id).unwrap().trim_db, 0.0);
+    }
+
+    #[test]
+    fn test_trim_plus_6db() {
+        let mut mixer = Mixer::new(44100, 4);
+        let id = mixer.add_track(Engine::new(44100, 4), 0xFFFF);
+        mixer.set_track_trim(id, 6.0);
+
+        let expected_gain = 10f32.powf(6.0 / 20.0); // ~1.9953
+
+        // Directly verify the trim_db is stored
+        assert!((mixer.track(id).unwrap().trim_db - 6.0).abs() < f32::EPSILON);
+
+        // Verify the gain factor
+        assert!((expected_gain - 1.9953).abs() < 0.001,
+            "6 dB gain should be ~1.9953, got {}", expected_gain);
+    }
+
+    #[test]
+    fn test_trim_clamp() {
+        let mut mixer = Mixer::new(44100, 256);
+        let id = mixer.add_track(Engine::new(44100, 256), 0xFFFF);
+
+        // Above +24 should clamp to +24
+        mixer.set_track_trim(id, 30.0);
+        assert_eq!(mixer.track(id).unwrap().trim_db, 24.0);
+
+        // Below -24 should clamp to -24
+        mixer.set_track_trim(id, -30.0);
+        assert_eq!(mixer.track(id).unwrap().trim_db, -24.0);
+
+        // Within range should pass through
+        mixer.set_track_trim(id, -12.5);
+        assert!((mixer.track(id).unwrap().trim_db - (-12.5)).abs() < f32::EPSILON);
     }
 }

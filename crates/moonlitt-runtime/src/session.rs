@@ -38,6 +38,8 @@ pub struct TrackState {
     pub id: u32,
     pub channel_mask: u16,
     pub volume: f32,
+    #[serde(default)]
+    pub trim_db: f32,
     pub pan: f32,
     pub mute: bool,
     pub solo: bool,
@@ -88,6 +90,7 @@ impl Session {
                 id: t.id,
                 channel_mask: t.channel_mask,
                 volume: t.volume,
+                trim_db: t.trim_db,
                 pan: t.pan,
                 mute: t.mute,
                 solo: t.solo,
@@ -171,6 +174,7 @@ impl Session {
 
             if let Some(track) = mixer.track_mut(ts.id) {
                 track.volume = ts.volume;
+                track.trim_db = ts.trim_db;
                 track.pan = ts.pan;
                 track.mute = ts.mute;
                 track.solo = ts.solo;

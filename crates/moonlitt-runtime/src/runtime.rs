@@ -209,6 +209,10 @@ impl Runtime {
         self.send(AudioEvent::MixerTrackPan { track_id, pan });
     }
 
+    pub fn mixer_set_track_trim(&mut self, track_id: u8, trim_db: f32) {
+        self.send(AudioEvent::MixerTrackTrim { track_id, trim_db });
+    }
+
     pub fn mixer_set_track_mute(&mut self, track_id: u8, mute: bool) {
         self.send(AudioEvent::MixerTrackMute { track_id, mute });
     }
