@@ -30,6 +30,11 @@ pub trait AudioBackend: Send {
     fn set_volume(&mut self, volume: f32);
     fn sample_rate(&self) -> u32;
 
+    /// Report processing latency in samples.
+    /// Used for Plugin Delay Compensation (PDC).
+    /// Default: 0 (no latency).
+    fn latency(&self) -> u32 { 0 }
+
     // Parameters — backends opt in by overriding these defaults
     fn param_count(&self) -> u32 { 0 }
     fn param_info(&self, _index: u32) -> Option<ParamInfo> { None }

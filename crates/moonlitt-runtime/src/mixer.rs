@@ -13,6 +13,60 @@
 
 use moonlitt_engine::engine::Engine;
 
+/// Ring buffer delay line for Plugin Delay Compensation (PDC).
+///
+/// When tracks have different insert chain latencies, the mixer delays
+/// faster tracks so all audio arrives at the master bus in phase.
+struct DelayLine {
+    buffer_left: Vec<f32>,
+    buffer_right: Vec<f32>,
+    write_pos: usize,
+    delay: usize,
+}
+
+impl DelayLine {
+    fn new() -> Self {
+        Self {
+            buffer_left: Vec::new(),
+            buffer_right: Vec::new(),
+            write_pos: 0,
+            delay: 0,
+        }
+    }
+
+    fn set_delay(&mut self, delay: usize) {
+        if delay == self.delay {
+            return;
+        }
+        self.delay = delay;
+        if delay == 0 {
+            self.buffer_left.clear();
+            self.buffer_right.clear();
+        } else {
+            self.buffer_left = vec![0.0; delay];
+            self.buffer_right = vec![0.0; delay];
+        }
+        self.write_pos = 0;
+    }
+
+    /// Process audio through the delay line.
+    /// No-op when delay is 0 (fast path).
+    fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        if self.delay == 0 {
+            return;
+        }
+        for i in 0..left.len() {
+            let delayed_l = self.buffer_left[self.write_pos];
+            let delayed_r = self.buffer_right[self.write_pos];
+            self.buffer_left[self.write_pos] = left[i];
+            self.buffer_right[self.write_pos] = right[i];
+            left[i] = delayed_l;
+            right[i] = delayed_r;
+            self.write_pos = (self.write_pos + 1) % self.delay;
+        }
+    }
+}
+
 /// A single insert effect slot on a track.
 /// Processed pre-fader in series: Engine → Insert[0] → Insert[1] → ... → Fader.
 pub struct InsertEffect {
@@ -42,6 +96,8 @@ pub struct Track {
     // Scratch buffers for insert chain ping-pong processing
     scratch_left: Vec<f32>,
     scratch_right: Vec<f32>,
+    /// PDC delay line — compensates for insert chain latency differences.
+    delay_line: DelayLine,
 }
 
 /// A send bus: accumulates audio from tracks, processes through an effect engine.
@@ -145,6 +201,7 @@ impl Mixer {
             right: vec![0.0; self.buffer_size],
             scratch_left: vec![0.0; self.buffer_size],
             scratch_right: vec![0.0; self.buffer_size],
+            delay_line: DelayLine::new(),
         });
     }
 
@@ -238,6 +295,7 @@ impl Mixer {
             engine,
             bypass: false,
         });
+        self.recalculate_pdc();
         Some(id)
     }
 
@@ -253,6 +311,7 @@ impl Mixer {
                 bypass: false,
             });
         }
+        self.recalculate_pdc();
     }
 
     /// Remove an insert effect from a track. Returns the engine if found.
@@ -260,6 +319,7 @@ impl Mixer {
         let track = self.tracks.iter_mut().find(|t| t.id == track_id)?;
         let pos = track.inserts.iter().position(|i| i.id == insert_id)?;
         let insert = track.inserts.remove(pos);
+        self.recalculate_pdc();
         Some(insert.engine)
     }
 
@@ -269,6 +329,36 @@ impl Mixer {
             if let Some(insert) = track.inserts.iter_mut().find(|i| i.id == insert_id) {
                 insert.bypass = bypass;
             }
+        }
+        self.recalculate_pdc();
+    }
+
+    // --- Plugin Delay Compensation ---
+
+    /// Recalculate PDC delay lines for all tracks.
+    ///
+    /// Computes the total insert chain latency for each track, finds the
+    /// maximum, and sets delay lines on faster tracks to compensate.
+    /// Called automatically after insert add/remove/bypass changes.
+    pub fn recalculate_pdc(&mut self) {
+        // Compute per-track latency
+        let latencies: Vec<u32> = self
+            .tracks
+            .iter()
+            .map(|t| {
+                t.inserts
+                    .iter()
+                    .filter(|i| !i.bypass)
+                    .map(|i| i.engine.latency())
+                    .sum()
+            })
+            .collect();
+
+        let max_latency = latencies.iter().copied().max().unwrap_or(0) as usize;
+
+        for (track, &latency) in self.tracks.iter_mut().zip(latencies.iter()) {
+            let compensation = max_latency - latency as usize;
+            track.delay_line.set_delay(compensation);
         }
     }
 
@@ -394,6 +484,9 @@ impl Mixer {
                     chunk,
                 );
             }
+
+            // Apply PDC delay (compensate for insert chain latency differences)
+            track.delay_line.process(&mut track.left[..chunk], &mut track.right[..chunk]);
 
             if !audible {
                 continue;
@@ -802,5 +895,106 @@ mod tests {
         let mut right = vec![0.0; 256];
         mixer.render(&mut left, &mut right);
         // Should not crash with multiple tracks each having inserts
+    }
+
+    // --- PDC tests ---
+
+    #[test]
+    fn test_delay_line_passthrough_when_zero() {
+        let mut dl = DelayLine::new();
+        let mut left = vec![1.0, 2.0, 3.0];
+        let mut right = vec![4.0, 5.0, 6.0];
+        dl.process(&mut left, &mut right);
+        // Zero delay = passthrough
+        assert_eq!(left, vec![1.0, 2.0, 3.0]);
+        assert_eq!(right, vec![4.0, 5.0, 6.0]);
+    }
+
+    #[test]
+    fn test_delay_line_delays_by_n_samples() {
+        let mut dl = DelayLine::new();
+        dl.set_delay(2);
+
+        // First block: input [1,2,3], output should be [0,0,1] (delayed by 2)
+        let mut left = vec![1.0, 2.0, 3.0];
+        let mut right = vec![0.0; 3];
+        dl.process(&mut left, &mut right);
+        assert_eq!(left, vec![0.0, 0.0, 1.0]);
+
+        // Second block: input [4,5,6], output should be [2,3,4] (continuing)
+        let mut left2 = vec![4.0, 5.0, 6.0];
+        let mut right2 = vec![0.0; 3];
+        dl.process(&mut left2, &mut right2);
+        assert_eq!(left2, vec![2.0, 3.0, 4.0]);
+    }
+
+    #[test]
+    fn test_delay_line_set_delay_clears_buffer() {
+        let mut dl = DelayLine::new();
+        dl.set_delay(4);
+        let mut left = vec![1.0; 4];
+        let mut right = vec![0.0; 4];
+        dl.process(&mut left, &mut right);
+        // Output is zeros (delay buffer was initialized to zero)
+        assert!(left.iter().all(|&s| s == 0.0));
+
+        // Changing delay clears buffer
+        dl.set_delay(2);
+        let mut left2 = vec![5.0; 2];
+        let mut right2 = vec![0.0; 2];
+        dl.process(&mut left2, &mut right2);
+        assert!(left2.iter().all(|&s| s == 0.0)); // Fresh zero buffer
+    }
+
+    #[test]
+    fn test_pdc_no_inserts_no_delay() {
+        let mut mixer = Mixer::new(44100, 256);
+        mixer.add_track(Engine::new(44100, 256), 0xFFFF);
+        mixer.add_track(Engine::new(44100, 256), 0xFFFF);
+        mixer.recalculate_pdc();
+
+        // No inserts → no latency → no delay
+        assert_eq!(mixer.tracks()[0].delay_line.delay, 0);
+        assert_eq!(mixer.tracks()[1].delay_line.delay, 0);
+    }
+
+    #[test]
+    fn test_pdc_recalculate_on_insert_add() {
+        let mut mixer = Mixer::new(44100, 256);
+        mixer.add_track(Engine::new(44100, 256), 0x0001);
+        mixer.add_track(Engine::new(44100, 256), 0x0002);
+
+        // Add insert to track 0 (Engine with no backend reports 0 latency)
+        mixer.add_insert(0, Engine::new(44100, 256));
+
+        // Both tracks have 0 latency (no backend) → no compensation
+        assert_eq!(mixer.tracks()[0].delay_line.delay, 0);
+        assert_eq!(mixer.tracks()[1].delay_line.delay, 0);
+    }
+
+    #[test]
+    fn test_pdc_renders_without_crash() {
+        let mut mixer = Mixer::new(44100, 256);
+        mixer.add_track(Engine::new(44100, 256), 0xFFFF);
+        mixer.add_track(Engine::new(44100, 256), 0xFFFF);
+        mixer.add_insert(0, Engine::new(44100, 256));
+        mixer.recalculate_pdc();
+
+        let mut left = vec![0.0; 256];
+        let mut right = vec![0.0; 256];
+        mixer.render(&mut left, &mut right);
+        // Should render without crash
+    }
+
+    #[test]
+    fn test_pdc_bypass_recalculates() {
+        let mut mixer = Mixer::new(44100, 256);
+        let t0 = mixer.add_track(Engine::new(44100, 256), 0xFFFF);
+        mixer.add_track(Engine::new(44100, 256), 0xFFFF);
+        let i0 = mixer.add_insert(t0, Engine::new(44100, 256)).unwrap();
+
+        // Bypass should trigger recalculation
+        mixer.set_insert_bypass(t0, i0, true);
+        // No crash, PDC updated
     }
 }

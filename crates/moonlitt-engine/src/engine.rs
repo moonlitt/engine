@@ -186,6 +186,11 @@ impl Engine {
         self.buffer_size
     }
 
+    /// Report processing latency in samples (for PDC).
+    pub fn latency(&self) -> u32 {
+        self.backend.as_ref().map(|b| b.latency()).unwrap_or(0)
+    }
+
     pub fn set_volume(&mut self, volume: f32) {
         self.volume = volume;
         if let Some(ref mut backend) = self.backend {
