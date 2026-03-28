@@ -3,9 +3,9 @@
 //! Wraps SamplePool + VoicePool behind the standard AudioBackend trait,
 //! making moonlitt-sampler a drop-in replacement for OxiSynth.
 
-use crate::sample::SamplePool;
-use crate::voicepool::VoicePool;
-use moonlitt_engine::backend::{AudioBackend, BackendInfo, BackendType, PresetInfo};
+use moonlitt_sampler::SamplePool;
+use moonlitt_sampler::voicepool::VoicePool;
+use crate::backend::{AudioBackend, BackendInfo, BackendType, PresetInfo};
 
 pub struct SamplerBackend {
     pool: Option<SamplePool>,

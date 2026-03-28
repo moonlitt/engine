@@ -9,9 +9,9 @@ repository.workspace = true
 [dependencies]
 soundfont = { path = "../../deps/oxisynth/soundfont-rs" }
 moonlitt-resampler = { path = "../moonlitt-resampler" }
-moonlitt-engine = { path = "../moonlitt-engine", default-features = false }
 
 [dev-dependencies]
 approx = "0.5"
 hound = "3"
 rustfft = "6"
+moonlitt-engine = { path = "../moonlitt-engine" }

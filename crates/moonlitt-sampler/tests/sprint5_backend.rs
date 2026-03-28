@@ -23,7 +23,7 @@ fn has_sf2() -> bool {
 fn t1_backend_load() {
     if !has_sf2() { return; }
 
-    use moonlitt_sampler::backend::SamplerBackend;
+    use moonlitt_engine::backends::sampler::SamplerBackend;
     use moonlitt_engine::backend::AudioBackend;
 
     let mut backend = SamplerBackend::new(SAMPLE_RATE).unwrap();
@@ -42,7 +42,7 @@ fn t1_backend_load() {
 fn t2_note_on_render() {
     if !has_sf2() { return; }
 
-    use moonlitt_sampler::backend::SamplerBackend;
+    use moonlitt_engine::backends::sampler::SamplerBackend;
     use moonlitt_engine::backend::AudioBackend;
 
     let mut backend = SamplerBackend::new(SAMPLE_RATE).unwrap();
@@ -67,7 +67,7 @@ fn t2_note_on_render() {
 fn t3_program_change() {
     if !has_sf2() { return; }
 
-    use moonlitt_sampler::backend::SamplerBackend;
+    use moonlitt_engine::backends::sampler::SamplerBackend;
     use moonlitt_engine::backend::AudioBackend;
 
     let mut backend = SamplerBackend::new(SAMPLE_RATE).unwrap();
@@ -98,7 +98,7 @@ fn t3_program_change() {
 fn t4_midi_methods_safe() {
     if !has_sf2() { return; }
 
-    use moonlitt_sampler::backend::SamplerBackend;
+    use moonlitt_engine::backends::sampler::SamplerBackend;
     use moonlitt_engine::backend::AudioBackend;
 
     let mut backend = SamplerBackend::new(SAMPLE_RATE).unwrap();
@@ -133,7 +133,7 @@ fn t4_midi_methods_safe() {
 fn t5_correct_pitch() {
     if !has_sf2() { return; }
 
-    use moonlitt_sampler::backend::SamplerBackend;
+    use moonlitt_engine::backends::sampler::SamplerBackend;
     use moonlitt_engine::backend::AudioBackend;
     use rustfft::{num_complex::Complex, FftPlanner};
 
@@ -186,7 +186,7 @@ fn t5_correct_pitch() {
 fn t6_volume_control() {
     if !has_sf2() { return; }
 
-    use moonlitt_sampler::backend::SamplerBackend;
+    use moonlitt_engine::backends::sampler::SamplerBackend;
     use moonlitt_engine::backend::AudioBackend;
 
     let mut backend = SamplerBackend::new(SAMPLE_RATE).unwrap();
