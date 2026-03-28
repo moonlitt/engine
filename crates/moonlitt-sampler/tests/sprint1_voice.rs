@@ -130,8 +130,9 @@ fn t5_correct_pitch_fft() {
 
     voice.note_on(sample, C4_NOTE, 100);
 
-    // Render 1 second
-    let n = SAMPLE_RATE as usize;
+    // Render 4 seconds for high FFT resolution (0.25Hz/bin)
+    let duration_secs = 4;
+    let n = SAMPLE_RATE as usize * duration_secs;
     let mut output = vec![0.0f32; n];
     voice.render(&mut output);
 
@@ -156,16 +157,25 @@ fn t5_correct_pitch_fft() {
 
     let peak_bin = magnitudes.iter().enumerate()
         .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-        .unwrap().0 + 1; // +1 because we skipped DC
+        .unwrap().0 + 1;
 
-    let peak_freq = peak_bin as f32 * SAMPLE_RATE as f32 / n as f32;
-    let freq_error = (peak_freq - C4_FREQ).abs();
+    // Parabolic interpolation for sub-bin accuracy
+    let alpha = if peak_bin > 1 { magnitudes[peak_bin - 2].ln() } else { 0.0 };
+    let beta = magnitudes[peak_bin - 1].ln();
+    let gamma = if peak_bin < magnitudes.len() { magnitudes[peak_bin].ln() } else { 0.0 };
+    let p = 0.5 * (alpha - gamma) / (alpha - 2.0 * beta + gamma);
+    let precise_bin = peak_bin as f64 + p;
+    let precise_freq = precise_bin * SAMPLE_RATE as f64 / n as f64;
 
-    eprintln!("Detected frequency: {peak_freq:.1}Hz (expected {C4_FREQ:.1}Hz, error {freq_error:.1}Hz)");
+    let freq_error = (precise_freq - C4_FREQ as f64).abs();
+    let bin_resolution = SAMPLE_RATE as f64 / n as f64;
+
+    eprintln!("FFT resolution: {bin_resolution:.2}Hz/bin");
+    eprintln!("Detected frequency: {precise_freq:.3}Hz (expected {C4_FREQ}Hz, error {freq_error:.3}Hz)");
 
     assert!(
-        freq_error < 2.0,
-        "Fundamental should be at {C4_FREQ}Hz ±2Hz, got {peak_freq}Hz (error {freq_error}Hz)"
+        freq_error < 0.5,
+        "Fundamental should be at {C4_FREQ}Hz ±0.5Hz, got {precise_freq:.3}Hz (error {freq_error:.3}Hz)"
     );
 }
 
