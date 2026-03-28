@@ -202,8 +202,20 @@ impl Mixer {
         &self.tracks
     }
 
+    pub fn send_buses(&self) -> &[SendBus] {
+        &self.send_buses
+    }
+
+    pub fn send_bus_mut(&mut self, id: u32) -> Option<&mut SendBus> {
+        self.send_buses.iter_mut().find(|b| b.id == id)
+    }
+
     pub fn master(&self) -> &MasterBus {
         &self.master
+    }
+
+    pub fn master_mut(&mut self) -> &mut MasterBus {
+        &mut self.master
     }
 
     pub fn set_master_volume(&mut self, volume: f32) {

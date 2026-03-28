@@ -9,7 +9,7 @@
 //! is undefined behavior.
 
 use crate::engine_api::EngineHandle;
-use crate::util::{debug_warn_midi_range, json_escape, to_c_string};
+use crate::util::{cstr_to_str, debug_warn_midi_range, json_escape, to_c_string};
 use moonlitt_runtime::Runtime;
 use std::ffi::{c_char, c_float, c_int};
 
@@ -414,5 +414,44 @@ pub extern "C" fn moonlitt_runtime_pause(rt: *mut RuntimeHandle) {
 pub extern "C" fn moonlitt_runtime_stop_playback(rt: *mut RuntimeHandle) {
     if let Some(h) = unsafe { rt.as_ref() } {
         h.runtime.stop_playback();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Session save/load
+// ---------------------------------------------------------------------------
+
+/// Save mixer session to a file. Returns 0 on success, 1 on error.
+/// The path must be a valid UTF-8 C string.
+#[no_mangle]
+pub extern "C" fn moonlitt_session_save(path: *const c_char) -> c_int {
+    let path = match unsafe { cstr_to_str(path) } {
+        Some(p) => p,
+        None => return 1,
+    };
+    // Session save requires access to the mixer on the audio thread.
+    // For FFI, we provide file-based save/load that works with Session JSON.
+    // The caller is expected to get the JSON string and write it themselves,
+    // or use the standalone save function below.
+    // This is a placeholder — full integration requires command channel coordination.
+    let _ = path;
+    1 // Not yet wired to runtime; use moonlitt_session_save_json instead
+}
+
+/// Get session JSON from a mixer state snapshot.
+/// Caller must free the returned string with `moonlitt_free_string`.
+/// Returns null if the path is invalid.
+#[no_mangle]
+pub extern "C" fn moonlitt_session_load_file(path: *const c_char) -> *mut c_char {
+    let path = match unsafe { cstr_to_str(path) } {
+        Some(p) => p,
+        None => return std::ptr::null_mut(),
+    };
+    match moonlitt_runtime::Session::load_from_file(path) {
+        Ok(session) => match session.to_json() {
+            Ok(json) => to_c_string(&json),
+            Err(_) => std::ptr::null_mut(),
+        },
+        Err(_) => std::ptr::null_mut(),
     }
 }

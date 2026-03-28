@@ -13,6 +13,8 @@ pub struct Engine {
     sample_rate: u32,
     buffer_size: u32,
     volume: f32,
+    /// Path of the loaded file (for session save/restore).
+    loaded_path: Option<String>,
 }
 
 impl Engine {
@@ -23,6 +25,7 @@ impl Engine {
             sample_rate,
             buffer_size,
             volume: 1.0,
+            loaded_path: None,
         }
     }
 
@@ -37,6 +40,7 @@ impl Engine {
             backend.load(path).map_err(|e| EngineError::BackendError(e.to_string()))?;
             backend.set_volume(self.volume);
             self.backend = Some(Box::new(backend));
+            self.loaded_path = Some(path.to_string());
             return Ok(());
         }
         self.load(path)
@@ -58,6 +62,7 @@ impl Engine {
                     .map_err(|e| EngineError::BackendError(e.to_string()))?;
                 backend.set_volume(self.volume);
                 self.backend = Some(Box::new(backend));
+                self.loaded_path = Some(path.to_string());
                 Ok(())
             }
             #[cfg(feature = "vst3")]
@@ -69,6 +74,7 @@ impl Engine {
                     .load(path)
                     .map_err(|e| EngineError::BackendError(e.to_string()))?;
                 self.backend = Some(Box::new(backend));
+                self.loaded_path = Some(path.to_string());
                 Ok(())
             }
             #[cfg(feature = "clap")]
@@ -80,6 +86,7 @@ impl Engine {
                     .load(path)
                     .map_err(|e| EngineError::BackendError(e.to_string()))?;
                 self.backend = Some(Box::new(backend));
+                self.loaded_path = Some(path.to_string());
                 Ok(())
             }
             Some(ext) => Err(EngineError::UnsupportedFormat(ext.to_string())),
@@ -93,6 +100,12 @@ impl Engine {
             backend.unload();
         }
         self.backend = None;
+        self.loaded_path = None;
+    }
+
+    /// Path of the currently loaded file (for session persistence).
+    pub fn loaded_path(&self) -> Option<&str> {
+        self.loaded_path.as_deref()
     }
 
     /// Is a backend loaded and ready?
@@ -258,6 +271,21 @@ impl Engine {
         match self.backend.as_mut() {
             Some(backend) => backend
                 .load_preset(id)
+                .map_err(|e| EngineError::BackendError(e.to_string())),
+            None => Err(EngineError::NoBackendLoaded),
+        }
+    }
+
+    /// Save backend state (plugin state, presets, etc.).
+    pub fn save_state(&self) -> Option<Vec<u8>> {
+        self.backend.as_ref()?.save_state().ok()
+    }
+
+    /// Restore backend state.
+    pub fn load_state(&mut self, data: &[u8]) -> Result<(), EngineError> {
+        match self.backend.as_mut() {
+            Some(backend) => backend
+                .load_state(data)
                 .map_err(|e| EngineError::BackendError(e.to_string())),
             None => Err(EngineError::NoBackendLoaded),
         }

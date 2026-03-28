@@ -13,8 +13,10 @@ mod midi_input;
 pub mod mixer;
 mod runtime;
 pub mod sequencer;
+pub mod session;
 pub mod transport;
 
 pub use event::{AudioEvent, TimedEvent};
 pub use midi_input::MidiDeviceInfo;
 pub use runtime::Runtime;
+pub use session::Session;
