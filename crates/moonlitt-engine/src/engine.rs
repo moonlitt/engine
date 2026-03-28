@@ -29,6 +29,17 @@ impl Engine {
         }
     }
 
+    /// Create an engine with a pre-built AudioBackend (for built-in effects).
+    pub fn from_backend(backend: Box<dyn AudioBackend>, sample_rate: u32, buffer_size: u32) -> Self {
+        Self {
+            backend: Some(backend),
+            sample_rate,
+            buffer_size,
+            volume: 1.0,
+            loaded_path: None,
+        }
+    }
+
     /// Auto-detect format by file extension and load.
     /// Load with highest quality interpolation (Sinc72 for SF2).
     /// Use for offline rendering. Real-time uses SeventhOrder by default.

@@ -9,8 +9,10 @@
 
 mod engine_api;
 mod runtime_api;
+mod builtin_api;
 mod util;
 
 pub use engine_api::*;
 pub use runtime_api::*;
+pub use builtin_api::*;
 pub use util::*;

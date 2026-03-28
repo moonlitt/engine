@@ -15,7 +15,7 @@ use std::ffi::{c_char, c_float, c_int};
 
 /// Opaque runtime handle exposed to C callers.
 pub struct RuntimeHandle {
-    runtime: Runtime,
+    pub(crate) runtime: Runtime,
 }
 
 // ---------------------------------------------------------------------------

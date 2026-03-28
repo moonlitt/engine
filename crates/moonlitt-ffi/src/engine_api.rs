@@ -12,11 +12,11 @@ use std::ffi::{c_char, c_float, c_int};
 /// Stores the engine plus the last error message for `get_error`.
 pub struct EngineHandle {
     pub(crate) engine: Option<Engine>,
-    last_error: Option<String>,
+    pub(crate) last_error: Option<String>,
     /// Cached CString for FFI error retrieval. The pointer returned by
     /// `get_error` remains valid until the next engine operation that
     /// overwrites `last_error` (same lifetime contract as C's `strerror`).
-    last_error_cstring: Option<std::ffi::CString>,
+    pub(crate) last_error_cstring: Option<std::ffi::CString>,
 }
 
 impl EngineHandle {

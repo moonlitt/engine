@@ -12,3 +12,6 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 moonlitt-engine = { path = "../moonlitt-engine", features = ["sf2", "vst3", "clap"] }
 moonlitt-runtime = { path = "../moonlitt-runtime" }
+moonlitt-eq = { path = "../moonlitt-eq" }
+moonlitt-compressor = { path = "../moonlitt-compressor" }
+moonlitt-reverb = { path = "../moonlitt-reverb" }
