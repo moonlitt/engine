@@ -11,6 +11,7 @@
 //!
 //! All rendering happens in the audio thread. No locks, no allocations.
 
+use crate::dither::StereoDither;
 use moonlitt_engine::engine::Engine;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
@@ -214,6 +215,10 @@ pub struct Mixer {
     /// Pre-computed render order: source tracks first, then group tracks.
     /// Rebuilt when routing changes. Zero allocation during render().
     render_order: Vec<usize>,
+    /// TPDF dither applied at output stage.
+    dither: StereoDither,
+    /// Whether dithering is enabled.
+    dither_enabled: bool,
 }
 
 impl Mixer {
@@ -239,6 +244,8 @@ impl Mixer {
             next_bus_id: 0,
             next_insert_id: 0,
             render_order: Vec::new(),
+            dither: StereoDither::new_24bit(),
+            dither_enabled: false, // Enable explicitly; off by default for bit-exact testing
         }
     }
 
@@ -749,7 +756,12 @@ impl Mixer {
             output_right[i] = soft_limit(self.master.right[i] * mvol, threshold);
         }
 
-        // Update master meter (post-limiter)
+        // Apply TPDF dither (post-limiter, pre-DAC)
+        if self.dither_enabled {
+            self.dither.process(&mut output_left[..chunk], &mut output_right[..chunk]);
+        }
+
+        // Update master meter (post-dither)
         self.master.meter.update(&output_left[..chunk], &output_right[..chunk]);
     }
 
@@ -761,6 +773,11 @@ impl Mixer {
     /// Get a track's meter by ID.
     pub fn track_meter(&self, track_id: u32) -> Option<&LevelMeter> {
         self.tracks.iter().find(|t| t.id == track_id).map(|t| &t.meter)
+    }
+
+    /// Enable or disable dithering.
+    pub fn set_dither_enabled(&mut self, enabled: bool) {
+        self.dither_enabled = enabled;
     }
 }
 

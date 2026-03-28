@@ -8,6 +8,7 @@
 
 mod audio_output;
 mod audio_thread;
+pub mod dither;
 mod event;
 mod midi_input;
 pub mod mixer;
