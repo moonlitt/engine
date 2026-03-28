@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-soundfont = { path = "../../deps/soundfont-rs" }
+soundfont = { path = "../../deps/oxisynth/soundfont-rs" }
 moonlitt-core = { path = "../moonlitt-core" }
 moonlitt-resampler = { path = "../moonlitt-resampler" }
 
@@ -15,4 +15,4 @@ moonlitt-resampler = { path = "../moonlitt-resampler" }
 approx = "0.5"
 hound = "3"
 rustfft = "6"
-moonlitt-engine = { path = "../moonlitt-engine" }
+moonlitt-engine = { path = "../moonlitt-engine", features = ["sf2-sampler"] }

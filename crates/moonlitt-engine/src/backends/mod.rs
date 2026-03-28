@@ -1,6 +1,9 @@
 //! Backend implementations.
 
 #[cfg(feature = "sf2")]
+pub mod oxisynth;
+
+#[cfg(feature = "sf2-sampler")]
 pub mod sampler;
 
 #[cfg(feature = "sf2-legacy")]

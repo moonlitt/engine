@@ -8,7 +8,8 @@ repository.workspace = true
 
 [features]
 default = ["sf2"]
-sf2 = ["dep:moonlitt-sampler"]
+sf2 = ["dep:oxisynth"]
+sf2-sampler = ["dep:moonlitt-sampler"]
 sf2-legacy = ["dep:fluidlite"]
 vst3 = ["dep:moonlitt-vst3"]
 clap = ["dep:moonlitt-clap"]
@@ -18,4 +19,5 @@ moonlitt-core = { path = "../moonlitt-core" }
 moonlitt-vst3 = { path = "../moonlitt-vst3", optional = true }
 moonlitt-clap = { path = "../moonlitt-clap", optional = true }
 moonlitt-sampler = { path = "../moonlitt-sampler", optional = true }
+oxisynth = { path = "../../deps/oxisynth/oxisynth", optional = true }
 fluidlite = { version = "0.2", optional = true, features = ["bindgen"] }

@@ -27,9 +27,18 @@ impl Engine {
     }
 
     /// Auto-detect format by file extension and load.
-    /// Load with highest quality settings. For SF2, moonlitt-sampler already
-    /// uses Sinc72 by default, so this is equivalent to load().
+    /// Load with highest quality interpolation (Sinc72 for SF2).
+    /// Use for offline rendering. Real-time uses SeventhOrder by default.
     pub fn load_high_quality(&mut self, path: &str) -> Result<(), EngineError> {
+        #[cfg(feature = "sf2")]
+        if path.to_lowercase().ends_with(".sf2") {
+            let mut backend = crate::backends::oxisynth::OxiSynthBackend::new_high_quality(self.sample_rate)
+                .map_err(|e| EngineError::BackendError(e.to_string()))?;
+            backend.load(path).map_err(|e| EngineError::BackendError(e.to_string()))?;
+            backend.set_volume(self.volume);
+            self.backend = Some(Box::new(backend));
+            return Ok(());
+        }
         self.load(path)
     }
 
@@ -42,7 +51,7 @@ impl Engine {
         match ext.as_deref() {
             #[cfg(feature = "sf2")]
             Some("sf2") => {
-                let mut backend = crate::backends::sampler::SamplerBackend::new(self.sample_rate)
+                let mut backend = crate::backends::oxisynth::OxiSynthBackend::new(self.sample_rate)
                     .map_err(|e| EngineError::BackendError(e.to_string()))?;
                 backend
                     .load(path)
