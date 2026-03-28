@@ -385,6 +385,16 @@ pub extern "C" fn moonlitt_runtime_add_send_bus(
     rt.runtime.add_send_bus(engine) as c_int
 }
 
+/// Route a track's output. target_id = 0xFF for master, else group track ID.
+#[no_mangle]
+pub extern "C" fn moonlitt_mixer_set_track_route(
+    rt: *mut RuntimeHandle, track_id: c_int, target_id: c_int,
+) {
+    if let Some(h) = unsafe { rt.as_mut() } {
+        h.runtime.mixer_set_track_route(track_id as u8, target_id as u8);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // MIDI device listing
 // ---------------------------------------------------------------------------
