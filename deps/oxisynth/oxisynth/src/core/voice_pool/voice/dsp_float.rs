@@ -8,6 +8,18 @@ const SINC_INTERP_ORDER: usize = 7; // 7th order constant
 const SINC72_ORDER: usize = 72;
 const SINC72_HALF: usize = 36; // half_len = 72 / 2
 
+/// Scale factor for converting i32 sample data (24-bit in upper bits) to f32.
+/// Samples are stored as i32 = i16 << 8 (with optional sm24 low byte).
+/// Dividing by 256 recovers the original i16-equivalent amplitude range.
+const SAMPLE_SCALE: f32 = 1.0 / 256.0;
+
+/// Convert an i32 sample (24-bit precision, stored shifted left 8) to f32,
+/// scaled to the same amplitude range as the original i16 representation.
+#[inline(always)]
+fn s2f(sample: i32) -> f32 {
+    sample as f32 * SAMPLE_SCALE
+}
+
 pub struct DspFloatGlobal {
     interp_coeff_linear: [[f32; 2]; 256],
     interp_coeff: [[f32; 4]; 256],
@@ -194,7 +206,7 @@ impl Voice {
 
             // interpolate sequence of sample points
             while dsp_i < 64 && dsp_phase_index <= end_index {
-                dsp_buf[dsp_i] = dsp_amp * dsp_data[dsp_phase_index] as f32;
+                dsp_buf[dsp_i] = dsp_amp * s2f(dsp_data[dsp_phase_index]);
 
                 // increment phase and amplitude
                 dsp_phase += dsp_phase_incr;
@@ -235,7 +247,7 @@ impl Voice {
         phase_incr: f32,
     ) -> usize {
         let mut dsp_phase = self.phase;
-        let dsp_data: &[i16] = self.sample.data();
+        let dsp_data: &[i32] = self.sample.data();
         let mut dsp_amp: f32 = self.amp;
 
         // Convert playback "speed" floating point value to phase index/fract
@@ -271,8 +283,8 @@ impl Voice {
                 let coeffs = &DSP_FLOAT_GLOBAL.interp_coeff_linear[id];
 
                 dsp_buf[dsp_i] = dsp_amp
-                    * (coeffs[0] * dsp_data[dsp_phase_index] as f32
-                        + coeffs[1] * dsp_data[dsp_phase_index + 1] as f32);
+                    * (coeffs[0] * s2f(dsp_data[dsp_phase_index])
+                        + coeffs[1] * s2f(dsp_data[dsp_phase_index + 1]));
                 // increment phase and amplitude
                 dsp_phase += dsp_phase_incr;
                 dsp_phase_index = (dsp_phase >> 32) as usize;
@@ -293,7 +305,7 @@ impl Voice {
                 let coeffs = &DSP_FLOAT_GLOBAL.interp_coeff_linear[id];
 
                 dsp_buf[dsp_i] = dsp_amp
-                    * (coeffs[0] * dsp_data[dsp_phase_index] as f32 + coeffs[1] * point as f32);
+                    * (coeffs[0] * s2f(dsp_data[dsp_phase_index]) + coeffs[1] * s2f(point));
                 // increment phase and amplitude
                 dsp_phase += dsp_phase_incr;
                 dsp_phase_index = (dsp_phase >> 32) as usize;
@@ -337,10 +349,10 @@ impl Voice {
         phase_incr: f32,
     ) -> usize {
         let mut dsp_phase = self.phase;
-        let dsp_data: &[i16] = self.sample.data();
+        let dsp_data: &[i32] = self.sample.data();
         let mut dsp_amp: f32 = self.amp;
-        let end_point1: i16;
-        let end_point2: i16;
+        let end_point1: i32;
+        let end_point2: i32;
 
         // Convert playback "speed" floating point value to phase index/fract
         let dsp_phase_incr = phase_set_float(phase_incr);
@@ -357,7 +369,7 @@ impl Voice {
         } as usize;
 
         let mut start_index: usize;
-        let mut start_point: i16;
+        let mut start_point: i32;
 
         if self.has_looped {
             // set start_index and start point if looped or not
@@ -388,10 +400,10 @@ impl Voice {
                 let coeffs = &DSP_FLOAT_GLOBAL.interp_coeff[id];
 
                 dsp_buf[dsp_i] = dsp_amp
-                    * (coeffs[0] * start_point as f32
-                        + coeffs[1] * dsp_data[dsp_phase_index] as f32
-                        + coeffs[2] * dsp_data[dsp_phase_index + 1] as f32
-                        + coeffs[3] * dsp_data[dsp_phase_index + 2] as f32);
+                    * (coeffs[0] * s2f(start_point)
+                        + coeffs[1] * s2f(dsp_data[dsp_phase_index])
+                        + coeffs[2] * s2f(dsp_data[dsp_phase_index + 1])
+                        + coeffs[3] * s2f(dsp_data[dsp_phase_index + 2]));
 
                 // increment phase and amplitude
                 dsp_phase += dsp_phase_incr;
@@ -406,10 +418,10 @@ impl Voice {
                 let coeffs = &DSP_FLOAT_GLOBAL.interp_coeff[id];
 
                 dsp_buf[dsp_i] = dsp_amp
-                    * (coeffs[0] * dsp_data[dsp_phase_index - 1] as f32
-                        + coeffs[1] * dsp_data[dsp_phase_index] as f32
-                        + coeffs[2] * dsp_data[dsp_phase_index + 1] as f32
-                        + coeffs[3] * dsp_data[dsp_phase_index + 2] as f32);
+                    * (coeffs[0] * s2f(dsp_data[dsp_phase_index - 1])
+                        + coeffs[1] * s2f(dsp_data[dsp_phase_index])
+                        + coeffs[2] * s2f(dsp_data[dsp_phase_index + 1])
+                        + coeffs[3] * s2f(dsp_data[dsp_phase_index + 2]));
 
                 // increment phase and amplitude
                 dsp_phase += dsp_phase_incr;
@@ -432,10 +444,10 @@ impl Voice {
                 let coeffs = &DSP_FLOAT_GLOBAL.interp_coeff[id];
 
                 dsp_buf[dsp_i] = dsp_amp
-                    * (coeffs[0] * dsp_data[dsp_phase_index - 1] as f32
-                        + coeffs[1] * dsp_data[dsp_phase_index] as f32
-                        + coeffs[2] * dsp_data[dsp_phase_index + 1] as f32
-                        + coeffs[3] * end_point1 as f32);
+                    * (coeffs[0] * s2f(dsp_data[dsp_phase_index - 1])
+                        + coeffs[1] * s2f(dsp_data[dsp_phase_index])
+                        + coeffs[2] * s2f(dsp_data[dsp_phase_index + 1])
+                        + coeffs[3] * s2f(end_point1));
 
                 // increment phase and amplitude
                 dsp_phase += dsp_phase_incr;
@@ -452,10 +464,10 @@ impl Voice {
                 let coeffs = &DSP_FLOAT_GLOBAL.interp_coeff[id];
 
                 dsp_buf[dsp_i] = dsp_amp
-                    * (coeffs[0] * dsp_data[dsp_phase_index - 1] as f32
-                        + coeffs[1] * dsp_data[dsp_phase_index] as f32
-                        + coeffs[2] * end_point1 as f32
-                        + coeffs[3] * end_point2 as f32);
+                    * (coeffs[0] * s2f(dsp_data[dsp_phase_index - 1])
+                        + coeffs[1] * s2f(dsp_data[dsp_phase_index])
+                        + coeffs[2] * s2f(end_point1)
+                        + coeffs[3] * s2f(end_point2));
 
                 // increment phase and amplitude
                 dsp_phase += dsp_phase_incr;
@@ -499,7 +511,7 @@ impl Voice {
         dsp_amp_incr: f32,
         phase_incr: f32,
     ) -> usize {
-        let dsp_data: &[i16] = self.sample.data();
+        let dsp_data: &[i32] = self.sample.data();
         let mut dsp_amp: f32 = self.amp;
 
         // Convert playback "speed" floating point value to phase index/fract
@@ -518,8 +530,8 @@ impl Voice {
         let mut end_index = (end_index - 3) as usize;
 
         let mut start_index: usize;
-        let mut start_points: [i16; 3] = [0; 3];
-        let mut end_points: [i16; 3] = [0; 3];
+        let mut start_points: [i32; 3] = [0; 3];
+        let mut end_points: [i32; 3] = [0; 3];
 
         if self.has_looped {
             // set start_index and start point if looped or not
@@ -557,13 +569,13 @@ impl Voice {
                 let id = phase_fract_to_tablerow(dsp_phase as usize);
                 let coeffs = &DSP_FLOAT_GLOBAL.sinc_table7[id];
                 dsp_buf[dsp_i] = dsp_amp
-                    * (coeffs[0] * start_points[2] as f32
-                        + coeffs[1] * start_points[1] as f32
-                        + coeffs[2] * start_points[0] as f32
-                        + coeffs[3] * dsp_data[dsp_phase_index] as f32
-                        + coeffs[4] * dsp_data[dsp_phase_index + 1] as f32
-                        + coeffs[5] * dsp_data[dsp_phase_index + 2] as f32
-                        + coeffs[6] * dsp_data[dsp_phase_index + 3] as f32);
+                    * (coeffs[0] * s2f(start_points[2])
+                        + coeffs[1] * s2f(start_points[1])
+                        + coeffs[2] * s2f(start_points[0])
+                        + coeffs[3] * s2f(dsp_data[dsp_phase_index])
+                        + coeffs[4] * s2f(dsp_data[dsp_phase_index + 1])
+                        + coeffs[5] * s2f(dsp_data[dsp_phase_index + 2])
+                        + coeffs[6] * s2f(dsp_data[dsp_phase_index + 3]));
 
                 // increment phase and amplitude
                 dsp_phase += dsp_phase_incr;
@@ -578,13 +590,13 @@ impl Voice {
                 let id = phase_fract_to_tablerow(dsp_phase as usize);
                 let coeffs = &DSP_FLOAT_GLOBAL.sinc_table7[id];
                 dsp_buf[dsp_i] = dsp_amp
-                    * (coeffs[0] * start_points[1] as f32
-                        + coeffs[1] * start_points[0] as f32
-                        + coeffs[2] * dsp_data[dsp_phase_index - 1] as f32
-                        + coeffs[3] * dsp_data[dsp_phase_index] as f32
-                        + coeffs[4] * dsp_data[dsp_phase_index + 1] as f32
-                        + coeffs[5] * dsp_data[dsp_phase_index + 2] as f32
-                        + coeffs[6] * dsp_data[dsp_phase_index + 3] as f32);
+                    * (coeffs[0] * s2f(start_points[1])
+                        + coeffs[1] * s2f(start_points[0])
+                        + coeffs[2] * s2f(dsp_data[dsp_phase_index - 1])
+                        + coeffs[3] * s2f(dsp_data[dsp_phase_index])
+                        + coeffs[4] * s2f(dsp_data[dsp_phase_index + 1])
+                        + coeffs[5] * s2f(dsp_data[dsp_phase_index + 2])
+                        + coeffs[6] * s2f(dsp_data[dsp_phase_index + 3]));
 
                 // increment phase and amplitude
                 dsp_phase += dsp_phase_incr;
@@ -600,13 +612,13 @@ impl Voice {
                 let id = phase_fract_to_tablerow(dsp_phase as usize);
                 let coeffs = &DSP_FLOAT_GLOBAL.sinc_table7[id];
                 dsp_buf[dsp_i] = dsp_amp
-                    * (coeffs[0] * start_points[0] as f32
-                        + coeffs[1] * dsp_data[dsp_phase_index - 2] as f32
-                        + coeffs[2] * dsp_data[dsp_phase_index - 1] as f32
-                        + coeffs[3] * dsp_data[dsp_phase_index] as f32
-                        + coeffs[4] * dsp_data[dsp_phase_index + 1] as f32
-                        + coeffs[5] * dsp_data[dsp_phase_index + 2] as f32
-                        + coeffs[6] * dsp_data[dsp_phase_index + 3] as f32);
+                    * (coeffs[0] * s2f(start_points[0])
+                        + coeffs[1] * s2f(dsp_data[dsp_phase_index - 2])
+                        + coeffs[2] * s2f(dsp_data[dsp_phase_index - 1])
+                        + coeffs[3] * s2f(dsp_data[dsp_phase_index])
+                        + coeffs[4] * s2f(dsp_data[dsp_phase_index + 1])
+                        + coeffs[5] * s2f(dsp_data[dsp_phase_index + 2])
+                        + coeffs[6] * s2f(dsp_data[dsp_phase_index + 3]));
 
                 // increment phase and amplitude
                 dsp_phase += dsp_phase_incr;
@@ -623,13 +635,13 @@ impl Voice {
                 let id = phase_fract_to_tablerow(dsp_phase as usize);
                 let coeffs = &DSP_FLOAT_GLOBAL.sinc_table7[id];
                 dsp_buf[dsp_i] = dsp_amp
-                    * (coeffs[0] * dsp_data[dsp_phase_index - 3] as f32
-                        + coeffs[1] * dsp_data[dsp_phase_index - 2] as f32
-                        + coeffs[2] * dsp_data[dsp_phase_index - 1] as f32
-                        + coeffs[3] * dsp_data[dsp_phase_index] as f32
-                        + coeffs[4] * dsp_data[dsp_phase_index + 1] as f32
-                        + coeffs[5] * dsp_data[dsp_phase_index + 2] as f32
-                        + coeffs[6] * dsp_data[dsp_phase_index + 3] as f32);
+                    * (coeffs[0] * s2f(dsp_data[dsp_phase_index - 3])
+                        + coeffs[1] * s2f(dsp_data[dsp_phase_index - 2])
+                        + coeffs[2] * s2f(dsp_data[dsp_phase_index - 1])
+                        + coeffs[3] * s2f(dsp_data[dsp_phase_index])
+                        + coeffs[4] * s2f(dsp_data[dsp_phase_index + 1])
+                        + coeffs[5] * s2f(dsp_data[dsp_phase_index + 2])
+                        + coeffs[6] * s2f(dsp_data[dsp_phase_index + 3]));
 
                 // increment phase and amplitude
                 dsp_phase += dsp_phase_incr;
@@ -651,13 +663,13 @@ impl Voice {
                 let id = phase_fract_to_tablerow(dsp_phase as usize);
                 let coeffs = &DSP_FLOAT_GLOBAL.sinc_table7[id];
                 dsp_buf[dsp_i] = dsp_amp
-                    * (coeffs[0] * dsp_data[dsp_phase_index - 3] as f32
-                        + coeffs[1] * dsp_data[dsp_phase_index - 2] as f32
-                        + coeffs[2] * dsp_data[dsp_phase_index - 1] as f32
-                        + coeffs[3] * dsp_data[dsp_phase_index] as f32
-                        + coeffs[4] * dsp_data[dsp_phase_index + 1] as f32
-                        + coeffs[5] * dsp_data[dsp_phase_index + 2] as f32
-                        + coeffs[6] * end_points[0] as f32);
+                    * (coeffs[0] * s2f(dsp_data[dsp_phase_index - 3])
+                        + coeffs[1] * s2f(dsp_data[dsp_phase_index - 2])
+                        + coeffs[2] * s2f(dsp_data[dsp_phase_index - 1])
+                        + coeffs[3] * s2f(dsp_data[dsp_phase_index])
+                        + coeffs[4] * s2f(dsp_data[dsp_phase_index + 1])
+                        + coeffs[5] * s2f(dsp_data[dsp_phase_index + 2])
+                        + coeffs[6] * s2f(end_points[0]));
 
                 // increment phase and amplitude
                 dsp_phase += dsp_phase_incr;
@@ -674,13 +686,13 @@ impl Voice {
                 let id = phase_fract_to_tablerow(dsp_phase as usize);
                 let coeffs = &DSP_FLOAT_GLOBAL.sinc_table7[id];
                 dsp_buf[dsp_i] = dsp_amp
-                    * (coeffs[0] * dsp_data[dsp_phase_index - 3] as f32
-                        + coeffs[1] * dsp_data[dsp_phase_index - 2] as f32
-                        + coeffs[2] * dsp_data[dsp_phase_index - 1] as f32
-                        + coeffs[3] * dsp_data[dsp_phase_index] as f32
-                        + coeffs[4] * dsp_data[dsp_phase_index + 1] as f32
-                        + coeffs[5] * end_points[0] as f32
-                        + coeffs[6] * end_points[1] as f32);
+                    * (coeffs[0] * s2f(dsp_data[dsp_phase_index - 3])
+                        + coeffs[1] * s2f(dsp_data[dsp_phase_index - 2])
+                        + coeffs[2] * s2f(dsp_data[dsp_phase_index - 1])
+                        + coeffs[3] * s2f(dsp_data[dsp_phase_index])
+                        + coeffs[4] * s2f(dsp_data[dsp_phase_index + 1])
+                        + coeffs[5] * s2f(end_points[0])
+                        + coeffs[6] * s2f(end_points[1]));
 
                 // increment phase and amplitude
                 dsp_phase += dsp_phase_incr;
@@ -697,13 +709,13 @@ impl Voice {
                 let id = phase_fract_to_tablerow(dsp_phase as usize);
                 let coeffs = &DSP_FLOAT_GLOBAL.sinc_table7[id];
                 dsp_buf[dsp_i] = dsp_amp
-                    * (coeffs[0] * dsp_data[dsp_phase_index - 3] as f32
-                        + coeffs[1] * dsp_data[dsp_phase_index - 2] as f32
-                        + coeffs[2] * dsp_data[dsp_phase_index - 1] as f32
-                        + coeffs[3] * dsp_data[dsp_phase_index] as f32
-                        + coeffs[4] * end_points[0] as f32
-                        + coeffs[5] * end_points[1] as f32
-                        + coeffs[6] * end_points[2] as f32);
+                    * (coeffs[0] * s2f(dsp_data[dsp_phase_index - 3])
+                        + coeffs[1] * s2f(dsp_data[dsp_phase_index - 2])
+                        + coeffs[2] * s2f(dsp_data[dsp_phase_index - 1])
+                        + coeffs[3] * s2f(dsp_data[dsp_phase_index])
+                        + coeffs[4] * s2f(end_points[0])
+                        + coeffs[5] * s2f(end_points[1])
+                        + coeffs[6] * s2f(end_points[2]));
 
                 // increment phase and amplitude
                 dsp_phase += dsp_phase_incr;
@@ -758,7 +770,7 @@ impl Voice {
         dsp_amp_incr: f32,
         phase_incr: f32,
     ) -> usize {
-        let dsp_data: &[i16] = self.sample.data();
+        let dsp_data: &[i32] = self.sample.data();
         let mut dsp_amp: f32 = self.amp;
 
         // Convert playback "speed" floating point value to phase index/fract
@@ -777,8 +789,8 @@ impl Voice {
         let end_index = (end_index as usize + 1).saturating_sub(SINC72_HALF);
 
         let mut start_index: usize;
-        let mut start_points = [0i16; SINC72_HALF];
-        let mut end_points = [0i16; SINC72_HALF];
+        let mut start_points = [0i32; SINC72_HALF];
+        let mut end_points = [0i32; SINC72_HALF];
 
         if self.has_looped {
             start_index = self.loopstart as usize;
@@ -853,7 +865,7 @@ impl Voice {
                         dsp_data[sample_idx as usize]
                     };
 
-                    sum += coeffs[tap] * sample as f32;
+                    sum += coeffs[tap] * s2f(sample);
                 }
 
                 dsp_buf[dsp_i] = dsp_amp * sum;
@@ -895,7 +907,7 @@ impl Voice {
                         dsp_data[sample_idx as usize]
                     };
 
-                    sum += coeffs[tap] * sample as f32;
+                    sum += coeffs[tap] * s2f(sample);
                 }
 
                 dsp_buf[dsp_i] = dsp_amp * sum;

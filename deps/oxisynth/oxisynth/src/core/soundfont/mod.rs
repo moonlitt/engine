@@ -53,7 +53,11 @@ impl SoundFont {
 
         let sf2 = sf2.sort_presets();
 
-        let sample_data = SampleData::load(file, sf2.sample_data.smpl.as_ref().unwrap())?;
+        let sample_data = SampleData::load(
+            file,
+            sf2.sample_data.smpl.as_ref().unwrap(),
+            sf2.sample_data.sm24.as_ref(),
+        )?;
 
         let mut samples = Vec::new();
 

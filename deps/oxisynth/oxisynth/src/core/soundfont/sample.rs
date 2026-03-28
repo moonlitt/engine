@@ -64,11 +64,14 @@ impl Sample {
 
                 let mut reader = OggStreamReader::new(buf).unwrap();
 
-                let mut new = Vec::new();
+                let mut pcm16 = Vec::new();
 
                 while let Some(mut pck) = reader.read_dec_packet().unwrap() {
-                    new.append(&mut pck[0]);
+                    pcm16.append(&mut pck[0]);
                 }
+
+                // Convert i16 to i32 (shift left 8) to match 24-bit storage format
+                let new: Vec<i32> = pcm16.iter().map(|&s| (s as i32) << 8).collect();
 
                 sample.start = 0;
                 sample.end = (new.len() - 1) as u32;
@@ -155,8 +158,10 @@ impl Sample {
             // factor of 0.0001 (as opposed to the default 0.00001) will
             // drop this sample to the noise floor.
 
-            // 16 bits => 96+4=100 dB dynamic range => 0.00001
-            let normalized_amplitude_during_loop = peak as f32 / 32768.0;
+            // Samples are now stored as 24-bit in i32 (shifted left 8 from i16).
+            // Full scale = 8388608 (2^23). This keeps the normalized amplitude
+            // consistent regardless of whether sm24 data was available.
+            let normalized_amplitude_during_loop = peak as f32 / 8388608.0;
             let result = 0.00003 / normalized_amplitude_during_loop as f64;
 
             // Store in sample
@@ -215,7 +220,7 @@ impl Sample {
     }
 
     #[inline(always)]
-    pub fn data(&self) -> &[i16] {
+    pub fn data(&self) -> &[i32] {
         &self.data
     }
 }
