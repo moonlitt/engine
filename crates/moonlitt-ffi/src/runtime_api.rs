@@ -232,6 +232,15 @@ pub extern "C" fn moonlitt_mixer_set_track_volume(rt: *mut RuntimeHandle, track_
 }
 
 #[no_mangle]
+pub extern "C" fn moonlitt_mixer_set_track_trim(
+    rt: *mut RuntimeHandle, track_id: c_int, trim_db: c_float,
+) {
+    if let Some(h) = unsafe { rt.as_mut() } {
+        h.runtime.mixer_set_track_trim(track_id as u8, trim_db);
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn moonlitt_mixer_set_track_pan(rt: *mut RuntimeHandle, track_id: c_int, pan: c_float) {
     if let Some(h) = unsafe { rt.as_mut() } {
         h.runtime.mixer_set_track_pan(track_id as u8, pan);
