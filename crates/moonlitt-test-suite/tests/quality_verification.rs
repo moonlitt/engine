@@ -1175,3 +1175,479 @@ fn q25_default_send_levels() {
             "Send level[0] should be 0.1, got {}", track.send_levels[0]);
     }
 }
+
+// =============================================================================
+// P1-P7: Mixer Pipeline Compliance Tests
+// =============================================================================
+
+/// P1: Parallel 16-track render — sum of independent renders matches combined.
+///
+/// Due to floating-point addition order differences, the sum may differ slightly.
+/// The master limiter also prevents exact comparison on clipped signals.
+/// We use low-velocity notes and verify per-sample relative error < f32::EPSILON.
+#[test]
+fn p01_parallel_16_track_render() {
+    if !Path::new(SF2_PATH).exists() {
+        eprintln!("SF2 not found, skipping p01");
+        return;
+    }
+
+    let num_tracks = 16;
+    let num_blocks = 8;
+    let velocity = 30; // low velocity to avoid limiter engagement
+
+    // --- Combined render: 16 tracks in one mixer ---
+    let mut mixer_combined = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
+    // Disable limiter for exact comparison
+    mixer_combined.master_mut().limiter_threshold = 1.0;
+
+    for ch in 0..num_tracks as u8 {
+        let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
+        engine.load(SF2_PATH).unwrap();
+        let _id = mixer_combined.add_track(engine, 1u16 << ch);
+    }
+
+    // Play different notes on each channel
+    for ch in 0..num_tracks as u8 {
+        mixer_combined.note_on(ch, 48 + ch, velocity);
+    }
+
+    let (combined_left, combined_right) = render_blocks(&mut mixer_combined, num_blocks);
+
+    // --- Independent renders: each track in its own mixer ---
+    let mut sum_left = vec![0.0f64; combined_left.len()];
+    let mut sum_right = vec![0.0f64; combined_right.len()];
+
+    for ch in 0..num_tracks as u8 {
+        let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
+        engine.load(SF2_PATH).unwrap();
+
+        let mut mixer_single = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
+        mixer_single.master_mut().limiter_threshold = 1.0;
+        mixer_single.add_track(engine, 1u16 << ch);
+        mixer_single.note_on(ch, 48 + ch, velocity);
+
+        let (left, right) = render_blocks(&mut mixer_single, num_blocks);
+
+        for i in 0..left.len() {
+            sum_left[i] += left[i] as f64;
+            sum_right[i] += right[i] as f64;
+        }
+    }
+
+    // Compare combined vs sum of independent renders
+    let mut max_err_l = 0.0f64;
+    let mut max_err_r = 0.0f64;
+    let mut nonzero_samples = 0;
+
+    for i in 0..combined_left.len() {
+        let err_l = (combined_left[i] as f64 - sum_left[i]).abs();
+        let err_r = (combined_right[i] as f64 - sum_right[i]).abs();
+        if err_l > max_err_l { max_err_l = err_l; }
+        if err_r > max_err_r { max_err_r = err_r; }
+        if combined_left[i].abs() > 1e-10 || combined_right[i].abs() > 1e-10 {
+            nonzero_samples += 1;
+        }
+    }
+
+    eprintln!(
+        "p01: max_err_l={max_err_l:.2e}, max_err_r={max_err_r:.2e}, nonzero_samples={nonzero_samples}"
+    );
+
+    // With 16 tracks summed, the floating-point addition order matters.
+    // The combined mixer sums in track order; independent sums accumulate in f64.
+    // Relative error per sample should be bounded by num_tracks * f32::EPSILON.
+    let tolerance = (num_tracks as f64) * f32::EPSILON as f64;
+
+    assert!(
+        max_err_l < tolerance,
+        "Left channel per-sample error should be < {tolerance:.2e}, got {max_err_l:.2e}"
+    );
+    assert!(
+        max_err_r < tolerance,
+        "Right channel per-sample error should be < {tolerance:.2e}, got {max_err_r:.2e}"
+    );
+    assert!(
+        nonzero_samples > 0,
+        "Should have produced audible signal across 16 tracks"
+    );
+}
+
+/// P2: Solo exclusivity — only soloed track produces audio.
+#[test]
+fn p02_solo_exclusivity() {
+    if !Path::new(SF2_PATH).exists() {
+        eprintln!("SF2 not found, skipping p02");
+        return;
+    }
+
+    let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
+    mixer.master_mut().limiter_threshold = 1.0;
+
+    // 3 tracks with different notes on different channels
+    let mut engines = Vec::new();
+    for _ in 0..3 {
+        let mut e = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
+        e.load(SF2_PATH).unwrap();
+        engines.push(e);
+    }
+
+    let _id0 = mixer.add_track(engines.remove(0), 0x0001); // ch 0
+    let id1 = mixer.add_track(engines.remove(0), 0x0002); // ch 1
+    let _id2 = mixer.add_track(engines.remove(0), 0x0004); // ch 2
+
+    // Play different notes
+    mixer.note_on(0, 48, 100);
+    mixer.note_on(1, 60, 100);
+    mixer.note_on(2, 72, 100);
+
+    // Solo track 1 only
+    mixer.track_mut(id1).unwrap().solo = true;
+
+    let (left_solo, right_solo) = render_blocks(&mut mixer, 16);
+
+    // Now render track 1 in isolation for comparison
+    let mut engine_alone = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
+    engine_alone.load(SF2_PATH).unwrap();
+
+    let mut mixer_alone = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
+    mixer_alone.master_mut().limiter_threshold = 1.0;
+    mixer_alone.add_track(engine_alone, 0x0002);
+    mixer_alone.note_on(1, 60, 100);
+
+    let (left_alone, right_alone) = render_blocks(&mut mixer_alone, 16);
+
+    // Solo render should match isolated track 1 render exactly
+    let mut max_err = 0.0f32;
+    for i in 0..left_solo.len() {
+        let err = (left_solo[i] - left_alone[i]).abs().max((right_solo[i] - right_alone[i]).abs());
+        if err > max_err { max_err = err; }
+    }
+
+    eprintln!("p02: max_err between solo and isolated = {max_err:.2e}");
+
+    assert!(
+        max_err < f32::EPSILON,
+        "Solo render should match isolated track render, max_err={max_err:.2e}"
+    );
+
+    // Verify signal exists
+    let pk = peak(&left_solo).max(peak(&right_solo));
+    assert!(pk > 0.001, "Solo track should produce audible signal, got peak={pk}");
+}
+
+/// P3: Mute + Solo interaction — mute takes priority over solo.
+///
+/// Mixer logic: `let audible = !track.mute && (!any_solo || track.solo);`
+/// If mute=true and solo=true: audible = false && true = false.
+#[test]
+fn p03_mute_solo_interaction() {
+    if !Path::new(SF2_PATH).exists() {
+        eprintln!("SF2 not found, skipping p03");
+        return;
+    }
+
+    let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
+    mixer.master_mut().limiter_threshold = 1.0;
+
+    let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
+    engine.load(SF2_PATH).unwrap();
+    let id = mixer.add_track(engine, 0xFFFF);
+
+    // Mute + Solo = silent
+    mixer.track_mut(id).unwrap().mute = true;
+    mixer.track_mut(id).unwrap().solo = true;
+
+    mixer.note_on(0, 60, 127);
+    let (left, right) = render_blocks(&mut mixer, 16);
+
+    let pk = peak(&left).max(peak(&right));
+    eprintln!("p03: mute+solo peak = {pk:.2e}");
+
+    assert!(
+        pk < f32::EPSILON,
+        "Mute + Solo should produce silence (mute takes priority), got peak={pk:.2e}"
+    );
+}
+
+/// P4: Send post-fader — fader=0 with send=1 should route nothing to send bus.
+#[test]
+fn p04_send_post_fader() {
+    if !Path::new(SF2_PATH).exists() {
+        eprintln!("SF2 not found, skipping p04");
+        return;
+    }
+
+    let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
+    mixer.master_mut().limiter_threshold = 1.0;
+
+    let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
+    engine.load(SF2_PATH).unwrap();
+    let id = mixer.add_track(engine, 0xFFFF);
+
+    // Add a reverb send bus so we can observe its output
+    let reverb = Reverb::new(SAMPLE_RATE);
+    let mut reverb_engine = Engine::from_backend(Box::new(reverb), SAMPLE_RATE, BUFFER_SIZE as u32);
+    reverb_engine.set_param(7, 1.0); // 100% wet
+    let _bus_id = mixer.add_send_bus(reverb_engine);
+
+    // Set fader=0 and send=1.0
+    mixer.track_mut(id).unwrap().volume = 0.0;
+    mixer.track_mut(id).unwrap().send_levels = vec![1.0];
+
+    mixer.note_on(0, 60, 127);
+    let (left, right) = render_blocks(&mut mixer, 16);
+
+    let pk = peak(&left).max(peak(&right));
+    eprintln!("p04: fader=0 send=1 peak = {pk:.2e}");
+
+    // Post-fader send: vol=0 => track signal is zero after fader => send receives 0
+    assert!(
+        pk < f32::EPSILON,
+        "Post-fader send with fader=0 should produce silence, got peak={pk:.2e}"
+    );
+}
+
+/// P5: Group routing additive — 3 tracks routed to group, group output = sum.
+///
+/// The group track accumulates source track outputs (post-fader, post-pan),
+/// then applies its own volume and pan. To test additivity, we compare
+/// the group render against independently-rendered tracks that are also
+/// routed through a group with the same configuration.
+///
+/// Equivalently, we can render the 3 tracks through a group and compare
+/// against the same 3 tracks going directly to master, accounting for
+/// the group track's additional pan law application.
+#[test]
+fn p05_group_routing_additive() {
+    if !Path::new(SF2_PATH).exists() {
+        eprintln!("SF2 not found, skipping p05");
+        return;
+    }
+
+    // --- Reference: 3 tracks each independently through their own group ---
+    // Each independent mixer has 1 source track -> 1 group -> master
+    let mut independent_sum_left = vec![0.0f64; 16 * BUFFER_SIZE];
+    let mut independent_sum_right = vec![0.0f64; 16 * BUFFER_SIZE];
+
+    for ch in 0..3u8 {
+        let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
+        engine.load(SF2_PATH).unwrap();
+
+        let mut mixer_single = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
+        mixer_single.master_mut().limiter_threshold = 1.0;
+        let tid = mixer_single.add_track(engine, 1u16 << ch);
+        let gid = mixer_single.add_track(Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32), 0x0000);
+        mixer_single.set_track_output(tid, OutputTarget::Group(gid));
+        mixer_single.note_on(ch, 48 + ch * 12, 80);
+
+        let (left, right) = render_blocks(&mut mixer_single, 16);
+        for i in 0..left.len() {
+            independent_sum_left[i] += left[i] as f64;
+            independent_sum_right[i] += right[i] as f64;
+        }
+    }
+
+    // --- Combined: 3 tracks routed through one group ---
+    let mut mixer_group = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
+    mixer_group.master_mut().limiter_threshold = 1.0;
+
+    let mut track_ids = Vec::new();
+    for ch in 0..3u8 {
+        let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
+        engine.load(SF2_PATH).unwrap();
+        let id = mixer_group.add_track(engine, 1u16 << ch);
+        track_ids.push(id);
+    }
+
+    // Group track (no source engine, just accumulator)
+    let group_id = mixer_group.add_track(Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32), 0x0000);
+
+    // Route all 3 source tracks to the group
+    for &tid in &track_ids {
+        assert!(mixer_group.set_track_output(tid, OutputTarget::Group(group_id)));
+    }
+
+    // Play different notes
+    for ch in 0..3u8 {
+        mixer_group.note_on(ch, 48 + ch * 12, 80);
+    }
+
+    let (group_left, group_right) = render_blocks(&mut mixer_group, 16);
+
+    // The combined render sums all 3 sources into the group's accumulator,
+    // then the group applies volume*pan. The independent renders each
+    // go through their own group (each applying volume*pan independently).
+    // Due to floating-point commutativity (a+b+c)*k vs a*k + b*k + c*k,
+    // there will be minor differences.
+
+    let mut max_err = 0.0f64;
+    for i in 0..group_left.len() {
+        let err_l = (group_left[i] as f64 - independent_sum_left[i]).abs();
+        let err_r = (group_right[i] as f64 - independent_sum_right[i]).abs();
+        let err = err_l.max(err_r);
+        if err > max_err { max_err = err; }
+    }
+
+    eprintln!("p05: max_err between group and independent sum = {max_err:.2e}");
+
+    // Allow for floating-point differences from different addition orders:
+    // combined: (a+b+c)*k  vs  independent: a*k + b*k + c*k
+    // The distributive law error is bounded by num_tracks * f32::EPSILON * max_signal.
+    let pk_val = peak(&group_left).max(peak(&group_right));
+    let tolerance = 4.0 * f32::EPSILON as f64 * pk_val.max(1.0) as f64;
+
+    assert!(
+        max_err < tolerance,
+        "Group output should match sum of independent renders, max_err={max_err:.2e}, tolerance={tolerance:.2e}"
+    );
+
+    assert!(pk_val > 0.001, "Group render should produce audible signal");
+}
+
+/// P6: Master limiter no overflow — 16 tracks at max volume, |output| <= 1.0.
+#[test]
+fn p06_master_limiter_no_overflow() {
+    if !Path::new(SF2_PATH).exists() {
+        eprintln!("SF2 not found, skipping p06");
+        return;
+    }
+
+    let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
+    // Default limiter_threshold = 0.95, volume = 1.0
+
+    // 16 tracks at full volume with loud notes
+    for ch in 0..16u8 {
+        let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
+        engine.load(SF2_PATH).unwrap();
+        let id = mixer.add_track(engine, 1u16 << ch);
+        mixer.track_mut(id).unwrap().volume = 1.0;
+    }
+
+    // Play the same loud note on all 16 channels
+    for ch in 0..16u8 {
+        mixer.note_on(ch, 60, 127);
+    }
+
+    // Render many blocks
+    let num_blocks = 32;
+    let (left, right) = render_blocks(&mut mixer, num_blocks);
+
+    let pk_l = peak(&left);
+    let pk_r = peak(&right);
+
+    eprintln!("p06: 16 tracks peak_l={pk_l:.6}, peak_r={pk_r:.6}");
+
+    // Every sample must be <= 1.0 (the soft limiter clamps to [-1.0, 1.0])
+    for (i, &s) in left.iter().enumerate() {
+        assert!(
+            s.abs() <= 1.0 + f32::EPSILON,
+            "Left[{i}] = {s} exceeds 1.0"
+        );
+    }
+    for (i, &s) in right.iter().enumerate() {
+        assert!(
+            s.abs() <= 1.0 + f32::EPSILON,
+            "Right[{i}] = {s} exceeds 1.0"
+        );
+    }
+
+    // Signal should be present and near limiter ceiling
+    assert!(pk_l > 0.5, "16 loud tracks should drive signal near ceiling, got {pk_l}");
+    assert!(pk_r > 0.5, "16 loud tracks should drive signal near ceiling, got {pk_r}");
+}
+
+/// P7: Zero latency no insert — track with no inserts has PDC delay = 0.
+///
+/// A track with no inserts should have zero PDC compensation delay.
+/// Its output should arrive at the expected sample position (no delay).
+#[test]
+fn p07_zero_latency_no_insert() {
+    if !Path::new(SF2_PATH).exists() {
+        eprintln!("SF2 not found, skipping p07");
+        return;
+    }
+
+    // Create mixer with 2 tracks, no inserts
+    let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
+    mixer.master_mut().limiter_threshold = 1.0;
+
+    let mut engine0 = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
+    engine0.load(SF2_PATH).unwrap();
+    let id0 = mixer.add_track(engine0, 0x0001);
+
+    let mut engine1 = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
+    engine1.load(SF2_PATH).unwrap();
+    let id1 = mixer.add_track(engine1, 0x0002);
+
+    // Verify no inserts
+    assert_eq!(mixer.track(id0).unwrap().inserts.len(), 0);
+    assert_eq!(mixer.track(id1).unwrap().inserts.len(), 0);
+
+    // Recalculate PDC (should be zero everywhere)
+    mixer.recalculate_pdc();
+
+    // Render the same note on both tracks simultaneously
+    mixer.note_on(0, 60, 100);
+    mixer.note_on(1, 60, 100);
+
+    let (combined_left, _combined_right) = render_blocks(&mut mixer, 8);
+
+    // Render each track independently
+    let mut engine0_solo = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
+    engine0_solo.load(SF2_PATH).unwrap();
+    let mut mixer0 = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
+    mixer0.master_mut().limiter_threshold = 1.0;
+    mixer0.add_track(engine0_solo, 0x0001);
+    mixer0.note_on(0, 60, 100);
+    let (left0, _right0) = render_blocks(&mut mixer0, 8);
+
+    let mut engine1_solo = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
+    engine1_solo.load(SF2_PATH).unwrap();
+    let mut mixer1 = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
+    mixer1.master_mut().limiter_threshold = 1.0;
+    mixer1.add_track(engine1_solo, 0x0002);
+    mixer1.note_on(1, 60, 100);
+    let (left1, _right1) = render_blocks(&mut mixer1, 8);
+
+    // Find first non-zero sample in combined render
+    let first_nonzero_combined = combined_left.iter()
+        .position(|&s| s.abs() > 1e-10)
+        .unwrap_or(combined_left.len());
+
+    // Find first non-zero sample in each independent render
+    let first_nonzero_0 = left0.iter()
+        .position(|&s| s.abs() > 1e-10)
+        .unwrap_or(left0.len());
+    let first_nonzero_1 = left1.iter()
+        .position(|&s| s.abs() > 1e-10)
+        .unwrap_or(left1.len());
+
+    let expected_first = first_nonzero_0.min(first_nonzero_1);
+
+    eprintln!(
+        "p07: first_nonzero: combined={first_nonzero_combined}, track0={first_nonzero_0}, track1={first_nonzero_1}"
+    );
+
+    // With no inserts and no PDC delay, audio should arrive at the same sample position
+    assert_eq!(
+        first_nonzero_combined, expected_first,
+        "Combined render should start at same sample as earliest independent track"
+    );
+
+    // Verify the combined output matches sum of independent renders
+    let mut max_err = 0.0f64;
+    for i in 0..combined_left.len() {
+        let sum_l = left0[i] as f64 + left1[i] as f64;
+        let err = (combined_left[i] as f64 - sum_l).abs();
+        if err > max_err { max_err = err; }
+    }
+
+    eprintln!("p07: max_err = {max_err:.2e}");
+
+    let tolerance = 2.0 * f32::EPSILON as f64;
+    assert!(
+        max_err < tolerance,
+        "Zero-latency tracks should sum exactly, max_err={max_err:.2e}"
+    );
+}
