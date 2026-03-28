@@ -12,6 +12,69 @@
 //! All rendering happens in the audio thread. No locks, no allocations.
 
 use moonlitt_engine::engine::Engine;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
+
+/// Thread-safe stereo level meter (peak + RMS).
+/// Written by audio thread, read by main thread via atomic f32-as-u32.
+#[derive(Clone)]
+pub struct LevelMeter {
+    peak_left: Arc<AtomicU32>,
+    peak_right: Arc<AtomicU32>,
+    rms_left: Arc<AtomicU32>,
+    rms_right: Arc<AtomicU32>,
+}
+
+impl LevelMeter {
+    fn new() -> Self {
+        Self {
+            peak_left: Arc::new(AtomicU32::new(0)),
+            peak_right: Arc::new(AtomicU32::new(0)),
+            rms_left: Arc::new(AtomicU32::new(0)),
+            rms_right: Arc::new(AtomicU32::new(0)),
+        }
+    }
+
+    /// Update meter from a rendered buffer. Called on audio thread.
+    fn update(&self, left: &[f32], right: &[f32]) {
+        let mut peak_l: f32 = 0.0;
+        let mut peak_r: f32 = 0.0;
+        let mut sum_sq_l: f32 = 0.0;
+        let mut sum_sq_r: f32 = 0.0;
+        for i in 0..left.len() {
+            let al = left[i].abs();
+            let ar = right[i].abs();
+            if al > peak_l { peak_l = al; }
+            if ar > peak_r { peak_r = ar; }
+            sum_sq_l += left[i] * left[i];
+            sum_sq_r += right[i] * right[i];
+        }
+        let n = left.len().max(1) as f32;
+        let rms_l = (sum_sq_l / n).sqrt();
+        let rms_r = (sum_sq_r / n).sqrt();
+
+        self.peak_left.store(peak_l.to_bits(), Ordering::Relaxed);
+        self.peak_right.store(peak_r.to_bits(), Ordering::Relaxed);
+        self.rms_left.store(rms_l.to_bits(), Ordering::Relaxed);
+        self.rms_right.store(rms_r.to_bits(), Ordering::Relaxed);
+    }
+
+    /// Read peak level (L, R). Called from main thread.
+    pub fn peak(&self) -> (f32, f32) {
+        (
+            f32::from_bits(self.peak_left.load(Ordering::Relaxed)),
+            f32::from_bits(self.peak_right.load(Ordering::Relaxed)),
+        )
+    }
+
+    /// Read RMS level (L, R). Called from main thread.
+    pub fn rms(&self) -> (f32, f32) {
+        (
+            f32::from_bits(self.rms_left.load(Ordering::Relaxed)),
+            f32::from_bits(self.rms_right.load(Ordering::Relaxed)),
+        )
+    }
+}
 
 /// Ring buffer delay line for Plugin Delay Compensation (PDC).
 ///
@@ -98,6 +161,8 @@ pub struct Track {
     scratch_right: Vec<f32>,
     /// PDC delay line — compensates for insert chain latency differences.
     delay_line: DelayLine,
+    /// Level meter (peak + RMS), readable from main thread.
+    pub meter: LevelMeter,
 }
 
 /// A send bus: accumulates audio from tracks, processes through an effect engine.
@@ -118,6 +183,8 @@ pub struct MasterBus {
     pub limiter_threshold: f32,
     left: Vec<f32>,
     right: Vec<f32>,
+    /// Level meter (peak + RMS), readable from main thread.
+    pub meter: LevelMeter,
 }
 
 /// The mixer: owns tracks, send buses, and master.
@@ -147,6 +214,7 @@ impl Mixer {
                 limiter_threshold: 0.95,
                 left: vec![0.0; buffer_size],
                 right: vec![0.0; buffer_size],
+                meter: LevelMeter::new(),
             },
             buffer_size,
             sample_rate,
@@ -202,6 +270,7 @@ impl Mixer {
             scratch_left: vec![0.0; self.buffer_size],
             scratch_right: vec![0.0; self.buffer_size],
             delay_line: DelayLine::new(),
+            meter: LevelMeter::new(),
         });
     }
 
@@ -515,6 +584,9 @@ impl Mixer {
             // Apply pan (constant-power)
             apply_pan(&mut track.left[..chunk], &mut track.right[..chunk], track.pan);
 
+            // Update track meter (post-fader)
+            track.meter.update(&track.left[..chunk], &track.right[..chunk]);
+
             // Sum into master
             for i in 0..chunk {
                 self.master.left[i] += track.left[i];
@@ -563,6 +635,19 @@ impl Mixer {
             output_left[i] = soft_limit(self.master.left[i] * mvol, threshold);
             output_right[i] = soft_limit(self.master.right[i] * mvol, threshold);
         }
+
+        // Update master meter (post-limiter)
+        self.master.meter.update(&output_left[..chunk], &output_right[..chunk]);
+    }
+
+    /// Get the master bus meter (for main thread level reading).
+    pub fn master_meter(&self) -> &LevelMeter {
+        &self.master.meter
+    }
+
+    /// Get a track's meter by ID.
+    pub fn track_meter(&self, track_id: u32) -> Option<&LevelMeter> {
+        self.tracks.iter().find(|t| t.id == track_id).map(|t| &t.meter)
     }
 }
 
