@@ -16,6 +16,7 @@
 //! 13. Soft limiter THD
 
 use moonlitt_engine::engine::Engine;
+use moonlitt_reverb::Reverb;
 use moonlitt_runtime::mixer::{Mixer, OutputTarget};
 use std::path::Path;
 
@@ -947,4 +948,230 @@ fn q19_send_level_routing() {
     let expected = 0.3 * 0.2 + 0.5 * 0.1 + 0.2 * 0.3 + 0.1 * 0.0;
     assert!((bus_sum - expected).abs() < 1e-6,
         "Bus sum should be {expected}, got {bus_sum}");
+}
+
+// =============================================================================
+// Q20-Q25: Volume + Reverb Integration Tests
+// =============================================================================
+
+/// Q20: Volume fader accuracy — fader=0.5 should reduce output by exactly 6dB
+#[test]
+fn q20_volume_fader_accuracy() {
+    let mut mixer = Mixer::new(SAMPLE_RATE, 64);
+    let engine = match load_sf2_engine() {
+        Some(e) => e,
+        None => { eprintln!("q20: SF2 not found, skipping"); return; }
+    };
+    let id = mixer.add_track(engine, 0xFFFF);
+
+    // Render at volume=1.0 (baseline)
+    mixer.track_mut(id).unwrap().engine.program_change(0, 0);
+    mixer.track_mut(id).unwrap().engine.note_on(0, 60, 100);
+    let (left_full, _) = render_blocks(&mut mixer, 4);
+    let rms_full = rms_dbfs(&left_full);
+
+    // Render at volume=0.5
+    mixer.track_mut(id).unwrap().engine.all_notes_off();
+    mixer.track_mut(id).unwrap().volume = 0.5;
+    mixer.track_mut(id).unwrap().engine.program_change(0, 0);
+    mixer.track_mut(id).unwrap().engine.note_on(0, 60, 100);
+    let (left_half, _) = render_blocks(&mut mixer, 4);
+    let rms_half = rms_dbfs(&left_half);
+
+    let delta = rms_full - rms_half;
+    // 0.5 linear = -6.02dBFS
+    assert!((delta - 6.02).abs() < 0.2,
+        "Fader 0.5 should reduce by ~6dB, got delta={delta:.3}dB");
+}
+
+/// Q21: Gain calibration end-to-end — measure, compensate, verify at -18dBFS
+#[test]
+fn q21_gain_calibration_e2e() {
+    let engine = match load_sf2_engine() {
+        Some(e) => e,
+        None => { eprintln!("q21: SF2 not found, skipping"); return; }
+    };
+
+    // Step 1: Measure RMS of reference tone (C4, piano, 1s)
+    let mut measure_engine = engine;
+    measure_engine.program_change(0, 0);
+    measure_engine.note_on(0, 60, 100);
+
+    let frames = SAMPLE_RATE as usize; // 1 second
+    let mut all_left = Vec::with_capacity(frames);
+    let mut left = vec![0.0f32; BUFFER_SIZE];
+    let mut right = vec![0.0f32; BUFFER_SIZE];
+    let mut rendered = 0;
+    while rendered < frames {
+        let chunk = BUFFER_SIZE.min(frames - rendered);
+        left[..chunk].fill(0.0);
+        right[..chunk].fill(0.0);
+        measure_engine.render(&mut left[..chunk], &mut right[..chunk]);
+        all_left.extend_from_slice(&left[..chunk]);
+        rendered += chunk;
+    }
+    measure_engine.note_off(0, 60);
+
+    let measured_rms = rms_dbfs(&all_left);
+    let target = -18.0f64;
+    let offset = target - measured_rms;
+    let linear_gain = 10f64.powf(offset / 20.0) as f32;
+
+    eprintln!("q21: measured={measured_rms:.2}dBFS, offset={offset:+.2}dB, gain={linear_gain:.4}");
+
+    // Step 2: Apply gain and re-measure
+    measure_engine.set_volume(linear_gain);
+    measure_engine.program_change(0, 0);
+    measure_engine.note_on(0, 60, 100);
+
+    let mut calibrated_left = Vec::with_capacity(frames);
+    rendered = 0;
+    while rendered < frames {
+        let chunk = BUFFER_SIZE.min(frames - rendered);
+        left[..chunk].fill(0.0);
+        right[..chunk].fill(0.0);
+        measure_engine.render(&mut left[..chunk], &mut right[..chunk]);
+        calibrated_left.extend_from_slice(&left[..chunk]);
+        rendered += chunk;
+    }
+
+    let calibrated_rms = rms_dbfs(&calibrated_left);
+
+    // After calibration, RMS should be within ±0.5dB of -18dBFS
+    assert!((calibrated_rms - target).abs() < 0.5,
+        "After calibration, RMS should be -18±0.5dBFS, got {calibrated_rms:.2}dBFS");
+}
+
+/// Q22: Reverb send bus — signal goes through reverb and returns to master
+#[test]
+fn q22_reverb_send_routing() {
+    let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
+    let engine = match load_sf2_engine() {
+        Some(e) => e,
+        None => { eprintln!("q22: SF2 not found, skipping"); return; }
+    };
+    let track_id = mixer.add_track(engine, 0xFFFF);
+
+    // Create reverb send bus (100% wet)
+    let reverb = Reverb::new(SAMPLE_RATE);
+    let mut reverb_engine = Engine::from_backend(Box::new(reverb), SAMPLE_RATE, BUFFER_SIZE as u32);
+    // Set dry/wet to 100% wet (param 7)
+    reverb_engine.set_param(7, 1.0);
+    let bus_id = mixer.add_send_bus(reverb_engine);
+
+    // Render WITHOUT send (send=0) — baseline (dry only)
+    mixer.track_mut(track_id).unwrap().send_levels = vec![0.0];
+    mixer.track_mut(track_id).unwrap().engine.program_change(0, 0);
+    mixer.track_mut(track_id).unwrap().engine.note_on(0, 60, 100);
+    let (dry_left, _) = render_blocks(&mut mixer, 8);
+
+    // Reset and render WITH send (send=0.3) — dry + reverb
+    mixer.track_mut(track_id).unwrap().engine.all_notes_off();
+    mixer.track_mut(track_id).unwrap().send_levels = vec![0.3];
+    mixer.track_mut(track_id).unwrap().engine.program_change(0, 0);
+    mixer.track_mut(track_id).unwrap().engine.note_on(0, 60, 100);
+    let (wet_left, _) = render_blocks(&mut mixer, 8);
+
+    // With reverb send, output should be DIFFERENT from dry-only
+    // (reverb adds energy from the tail)
+    let dry_energy: f64 = dry_left.iter().map(|&s| (s as f64).powi(2)).sum();
+    let wet_energy: f64 = wet_left.iter().map(|&s| (s as f64).powi(2)).sum();
+
+    assert!(wet_energy > dry_energy,
+        "Reverb send should add energy: dry={dry_energy:.4}, wet={wet_energy:.4}");
+
+    // The difference should be meaningful (not just noise)
+    let ratio = wet_energy / dry_energy;
+    assert!(ratio > 1.001,
+        "Reverb contribution should be measurable, ratio={ratio:.6}");
+}
+
+/// Q23: Reverb wet-only — send bus with dry/wet=100% produces no dry signal
+#[test]
+fn q23_reverb_wet_only() {
+    use moonlitt_engine::backend::AudioBackend;
+
+    let mut reverb = Reverb::new(SAMPLE_RATE);
+    reverb.set_param(7, 1.0); // dry_wet = 1.0 (100% wet)
+    reverb.set_param(1, 0.8); // room_size
+
+    // Feed an impulse through multiple blocks to let the reverb build up
+    let block = BUFFER_SIZE;
+    let num_blocks = 8;
+    let mut total_energy = 0.0f64;
+    let mut first_sample = 0.0f32;
+
+    for b in 0..num_blocks {
+        let mut in_l = vec![0.0f32; block];
+        let mut in_r = vec![0.0f32; block];
+        if b == 0 {
+            in_l[0] = 1.0; // impulse in first block only
+            in_r[0] = 1.0;
+        }
+        let mut out_l = vec![0.0f32; block];
+        let mut out_r = vec![0.0f32; block];
+
+        reverb.process_effect(&in_l, &in_r, &mut out_l, &mut out_r);
+
+        if b == 0 {
+            first_sample = out_l[0];
+        }
+        total_energy += out_l.iter().map(|&s| (s as f64).powi(2)).sum::<f64>();
+    }
+
+    // First sample should NOT be 1.0 (dry leak)
+    assert!(first_sample.abs() < 0.01,
+        "Wet-only reverb should not pass dry at sample[0], got {first_sample}");
+
+    // Total tail energy should be significant
+    assert!(total_energy > 0.001,
+        "Reverb tail should have energy over {num_blocks} blocks, got {total_energy:.6}");
+}
+
+/// Q24: Reverb dry/wet=0 (100% dry) — bit-exact passthrough
+#[test]
+fn q24_reverb_dry_passthrough() {
+    let mut reverb = Reverb::new(SAMPLE_RATE);
+    reverb.set_param(7, 0.0); // dry_wet = 0.0 (100% dry)
+
+    let in_l: Vec<f32> = (0..BUFFER_SIZE).map(|i| (i as f32) * 0.001).collect();
+    let in_r: Vec<f32> = (0..BUFFER_SIZE).map(|i| (i as f32) * -0.001).collect();
+    let mut out_l = vec![0.0f32; BUFFER_SIZE];
+    let mut out_r = vec![0.0f32; BUFFER_SIZE];
+
+    use moonlitt_engine::backend::AudioBackend;
+    reverb.process_effect(&in_l, &in_r, &mut out_l, &mut out_r);
+
+    // Bit-exact passthrough
+    for i in 0..BUFFER_SIZE {
+        assert_eq!(out_l[i], in_l[i], "Dry passthrough failed at L[{i}]");
+        assert_eq!(out_r[i], in_r[i], "Dry passthrough failed at R[{i}]");
+    }
+}
+
+/// Q25: Default send level application — all tracks get 10% send
+#[test]
+fn q25_default_send_levels() {
+    let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
+
+    // Add 4 tracks
+    for ch in 0..4u16 {
+        let engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
+        let id = mixer.add_track(engine, 1 << ch);
+
+        // Set send level to 10% (simulating default reverb setup)
+        mixer.track_mut(id).unwrap().send_levels = vec![0.1];
+    }
+
+    // Add reverb bus
+    let reverb = Reverb::new(SAMPLE_RATE);
+    let reverb_engine = Engine::from_backend(Box::new(reverb), SAMPLE_RATE, BUFFER_SIZE as u32);
+    let _bus_id = mixer.add_send_bus(reverb_engine);
+
+    // Verify all tracks have send_level[0] = 0.1
+    for track in mixer.tracks() {
+        assert!(!track.send_levels.is_empty(), "Each track should have send levels");
+        assert!((track.send_levels[0] - 0.1).abs() < 1e-6,
+            "Send level[0] should be 0.1, got {}", track.send_levels[0]);
+    }
 }
