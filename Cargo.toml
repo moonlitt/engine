@@ -12,6 +12,7 @@ members = [
     "crates/moonlitt-resampler",
     "crates/moonlitt-test-suite",
     "crates/moonlitt-sampler",
+    "crates/moonlitt-eq",
 ]
 
 [workspace.package]
