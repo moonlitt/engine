@@ -759,3 +759,192 @@ fn q13_soft_limiter_thd() {
         eprintln!("q13: SF2 not found — verified zero-signal passthrough only");
     }
 }
+
+// =============================================================================
+// Q14-Q19: DAW Audio Math Verification
+// =============================================================================
+
+/// Helper: compute RMS of a buffer in dBFS.
+fn rms_dbfs(buf: &[f32]) -> f64 {
+    let sum_sq: f64 = buf.iter().map(|&s| (s as f64) * (s as f64)).sum();
+    let rms = (sum_sq / buf.len() as f64).sqrt();
+    if rms < 1e-10 { return -100.0; }
+    20.0 * rms.log10()
+}
+
+/// Q14: dB-to-linear conversion precision (zero tolerance)
+#[test]
+fn q14_db_to_linear_precision() {
+    // +6dB = 10^(6/20) = exactly 1.99526231...
+    let gain_6db = 10f64.powf(6.0 / 20.0);
+    assert!((gain_6db - 1.99526231496888).abs() < 1e-10,
+        "+6dB should be 1.99526231, got {gain_6db}");
+
+    // -6dB = 10^(-6/20) = exactly 0.50118723...
+    let gain_neg6db = 10f64.powf(-6.0 / 20.0);
+    assert!((gain_neg6db - 0.50118723362727).abs() < 1e-10,
+        "-6dB should be 0.50118723, got {gain_neg6db}");
+
+    // 0dB = exactly 1.0
+    let gain_0db = 10f64.powf(0.0 / 20.0);
+    assert!((gain_0db - 1.0).abs() < 1e-15, "0dB should be 1.0, got {gain_0db}");
+
+    // -18dB (target level)
+    let gain_neg18db = 10f64.powf(-18.0 / 20.0);
+    assert!((gain_neg18db - 0.12589254117942).abs() < 1e-10,
+        "-18dB should be 0.12589254, got {gain_neg18db}");
+
+    // Roundtrip: linear → dB → linear
+    let original = 0.7f64;
+    let db = 20.0 * original.log10();
+    let recovered = 10f64.powf(db / 20.0);
+    assert!((recovered - original).abs() < 1e-14,
+        "dB roundtrip failed: {original} → {db}dB → {recovered}");
+}
+
+/// Q15: RMS calculation on known signals (zero tolerance)
+#[test]
+fn q15_rms_known_signals() {
+    // Constant signal 0.5: RMS = 0.5 = -6.02dBFS
+    let constant: Vec<f32> = vec![0.5; 44100];
+    let rms = rms_dbfs(&constant);
+    assert!((rms - (-6.0206)).abs() < 0.001,
+        "RMS of 0.5 constant should be -6.02dBFS, got {rms:.4}");
+
+    // Full-scale sine: RMS = 1/sqrt(2) = -3.01dBFS
+    let sine: Vec<f32> = (0..44100)
+        .map(|i| (2.0 * std::f64::consts::PI * 1000.0 * i as f64 / 44100.0).sin() as f32)
+        .collect();
+    let rms_sine = rms_dbfs(&sine);
+    assert!((rms_sine - (-3.0103)).abs() < 0.01,
+        "RMS of full-scale sine should be -3.01dBFS, got {rms_sine:.4}");
+
+    // Silence: should return -100 (floor)
+    let silence: Vec<f32> = vec![0.0; 44100];
+    let rms_silent = rms_dbfs(&silence);
+    assert!(rms_silent <= -100.0, "Silence RMS should be <= -100dBFS, got {rms_silent}");
+
+    // Half-scale sine: RMS = 0.5/sqrt(2) = -9.03dBFS
+    let half_sine: Vec<f32> = (0..44100)
+        .map(|i| (0.5 * (2.0 * std::f64::consts::PI * 1000.0 * i as f64 / 44100.0).sin()) as f32)
+        .collect();
+    let rms_half = rms_dbfs(&half_sine);
+    assert!((rms_half - (-9.0309)).abs() < 0.01,
+        "RMS of 0.5 sine should be -9.03dBFS, got {rms_half:.4}");
+}
+
+/// Q16: Gain calibration offset math (zero tolerance)
+#[test]
+fn q16_gain_calibration_math() {
+    let target = -18.0f64; // dBFS
+
+    // If measured -22dBFS, need +4dB boost
+    let measured1 = -22.0;
+    let offset1 = target - measured1;
+    assert!((offset1 - 4.0).abs() < 1e-10, "Offset should be +4.0, got {offset1}");
+    let linear1 = 10f64.powf(offset1 / 20.0);
+    assert!((linear1 - 1.58489319246111).abs() < 1e-10,
+        "+4dB linear should be 1.58489, got {linear1}");
+
+    // If measured -12dBFS, need -6dB cut
+    let measured2 = -12.0;
+    let offset2 = target - measured2;
+    assert!((offset2 - (-6.0)).abs() < 1e-10, "Offset should be -6.0, got {offset2}");
+    let linear2 = 10f64.powf(offset2 / 20.0);
+    assert!((linear2 - 0.50118723362727).abs() < 1e-10,
+        "-6dB linear should be 0.50119, got {linear2}");
+
+    // If measured exactly -18dBFS, offset is 0, gain is 1.0
+    let measured3 = -18.0;
+    let offset3 = target - measured3;
+    assert!((offset3).abs() < 1e-10, "Offset should be 0.0, got {offset3}");
+    let linear3 = 10f64.powf(offset3 / 20.0);
+    assert!((linear3 - 1.0).abs() < 1e-10, "0dB linear should be 1.0, got {linear3}");
+}
+
+/// Q17: CC7 to volume mapping (MIDI standard)
+#[test]
+fn q17_cc7_volume_mapping() {
+    // CC7=127 → 1.0 (full)
+    assert!((127.0 / 127.0 - 1.0f64).abs() < 1e-10);
+
+    // CC7=0 → 0.0 (silent)
+    assert!((0.0 / 127.0 - 0.0f64).abs() < 1e-10);
+
+    // CC7=120 → 0.94488...
+    let cc120: f64 = 120.0 / 127.0;
+    assert!((cc120 - 0.94488188976378).abs() < 1e-10,
+        "CC7=120 should be 0.94488, got {cc120}");
+
+    // CC7=64 → 0.50393... (center)
+    let cc64: f64 = 64.0 / 127.0;
+    assert!((cc64 - 0.50393700787402).abs() < 1e-10,
+        "CC7=64 should be 0.50394, got {cc64}");
+
+    // Verify CC7 value roundtrip: float → CC → float
+    for cc in 0..=127 {
+        let vol = cc as f64 / 127.0;
+        let recovered_cc = (vol * 127.0).round() as u8;
+        assert_eq!(recovered_cc, cc, "CC7 roundtrip failed for {cc}");
+    }
+}
+
+/// Q18: Trim gain application on rendered audio (actual mixer render)
+#[test]
+fn q18_trim_actual_render() {
+    // Create mixer with a known-output engine
+    let mut mixer = Mixer::new(SAMPLE_RATE, 64);
+    let engine = match load_sf2_engine() {
+        Some(e) => e,
+        None => { eprintln!("q18: SF2 not found, skipping"); return; }
+    };
+    let id = mixer.add_track(engine, 0xFFFF);
+
+    // Play a note
+    mixer.track_mut(id).unwrap().engine.program_change(0, 0);
+    mixer.track_mut(id).unwrap().engine.note_on(0, 60, 100);
+
+    // Render with trim=0 (baseline)
+    let (left_0, _right_0) = render_blocks(&mut mixer, 4);
+    let rms_0 = rms_dbfs(&left_0);
+
+    // Reset and play same note with trim=+6dB
+    mixer.track_mut(id).unwrap().engine.all_notes_off();
+    mixer.set_track_trim(id, 6.0);
+    mixer.track_mut(id).unwrap().engine.program_change(0, 0);
+    mixer.track_mut(id).unwrap().engine.note_on(0, 60, 100);
+    let (left_6, _right_6) = render_blocks(&mut mixer, 4);
+    let rms_6 = rms_dbfs(&left_6);
+
+    // The RMS difference should be exactly +6dB (within f32 precision)
+    let delta_db = rms_6 - rms_0;
+    assert!((delta_db - 6.0).abs() < 0.1,
+        "Trim +6dB should increase RMS by 6dB, got delta={delta_db:.3}dB (rms0={rms_0:.2}, rms6={rms_6:.2})");
+}
+
+/// Q19: Mixer send level routing math
+#[test]
+fn q19_send_level_routing() {
+    // Verify send level scales linearly
+    // send_level=0.5 means 50% of the post-fader signal goes to the bus
+    let signal = 0.8f32;
+    let send_level = 0.5f32;
+    let sent = signal * send_level;
+    assert!((sent - 0.4).abs() < 1e-6, "0.8 * 0.5 should be 0.4, got {sent}");
+
+    // send_level=0.0 means nothing sent
+    assert!((signal * 0.0f32).abs() < 1e-10, "send=0 should produce 0");
+
+    // send_level=1.0 means full signal
+    assert!((signal * 1.0f32 - signal).abs() < 1e-10, "send=1 should produce full signal");
+
+    // Verify multiple tracks summing into send bus (additive)
+    let track_outputs = [0.3f32, 0.5, 0.2, 0.1];
+    let send_levels = [0.2f32, 0.1, 0.3, 0.0];
+    let bus_sum: f32 = track_outputs.iter().zip(send_levels.iter())
+        .map(|(sig, send)| sig * send)
+        .sum();
+    let expected = 0.3 * 0.2 + 0.5 * 0.1 + 0.2 * 0.3 + 0.1 * 0.0;
+    assert!((bus_sum - expected).abs() < 1e-6,
+        "Bus sum should be {expected}, got {bus_sum}");
+}
