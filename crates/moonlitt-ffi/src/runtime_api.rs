@@ -280,6 +280,26 @@ pub extern "C" fn moonlitt_mixer_set_insert_bypass(
     }
 }
 
+/// Set a parameter on a specific track's engine.
+#[no_mangle]
+pub extern "C" fn moonlitt_set_param_for_track(
+    rt: *mut RuntimeHandle, track_id: c_int, param_id: c_int, value: c_float,
+) {
+    if let Some(h) = unsafe { rt.as_mut() } {
+        h.runtime.set_param_for_track(track_id as u8, param_id as u16, value);
+    }
+}
+
+/// Set a parameter on a specific insert effect.
+#[no_mangle]
+pub extern "C" fn moonlitt_set_insert_param(
+    rt: *mut RuntimeHandle, track_id: c_int, insert_id: c_int, param_id: c_int, value: c_float,
+) {
+    if let Some(h) = unsafe { rt.as_mut() } {
+        h.runtime.set_insert_param(track_id as u8, insert_id as u8, param_id as u16, value);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Dynamic track/insert/bus management (via command channel)
 // ---------------------------------------------------------------------------

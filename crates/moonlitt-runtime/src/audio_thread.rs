@@ -219,6 +219,12 @@ fn dispatch_to_mixer(mixer: &mut Mixer, event: AudioEvent) {
         AudioEvent::InsertBypass { track_id, insert_id, bypass } => {
             mixer.set_insert_bypass(track_id as u32, insert_id as u32, bypass);
         }
+        AudioEvent::SetParamForTrack { track_id, param_id, value } => {
+            mixer.set_param_for_track(track_id as u32, param_id as u32, value as f64);
+        }
+        AudioEvent::SetInsertParam { track_id, insert_id, param_id, value } => {
+            mixer.set_insert_param(track_id as u32, insert_id as u32, param_id as u32, value as f64);
+        }
         AudioEvent::Stop => mixer.all_notes_off(),
     }
 }

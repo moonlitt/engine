@@ -433,14 +433,25 @@ impl Mixer {
     }
 
     /// Broadcast a parameter change to all tracks.
-    ///
-    /// TODO: Add `set_param_for_track(track_id, id, value)` and a corresponding
-    /// `AudioEvent::SetParamForTrack` variant to allow targeting a specific track.
-    /// The broadcast behavior is correct for single-track setups but imprecise
-    /// for multi-track mixers where each track has a different plugin.
     pub fn set_param(&mut self, id: u32, value: f64) {
         for track in &mut self.tracks {
             track.engine.set_param(id, value);
+        }
+    }
+
+    /// Set a parameter on a specific track's engine.
+    pub fn set_param_for_track(&mut self, track_id: u32, id: u32, value: f64) {
+        if let Some(track) = self.tracks.iter_mut().find(|t| t.id == track_id) {
+            track.engine.set_param(id, value);
+        }
+    }
+
+    /// Set a parameter on a specific insert effect.
+    pub fn set_insert_param(&mut self, track_id: u32, insert_id: u32, id: u32, value: f64) {
+        if let Some(track) = self.tracks.iter_mut().find(|t| t.id == track_id) {
+            if let Some(insert) = track.inserts.iter_mut().find(|i| i.id == insert_id) {
+                insert.engine.set_param(id, value);
+            }
         }
     }
 

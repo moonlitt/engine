@@ -229,6 +229,14 @@ impl Runtime {
         self.send(AudioEvent::InsertBypass { track_id, insert_id, bypass });
     }
 
+    pub fn set_param_for_track(&mut self, track_id: u8, param_id: u16, value: f32) {
+        self.send(AudioEvent::SetParamForTrack { track_id, param_id, value });
+    }
+
+    pub fn set_insert_param(&mut self, track_id: u8, insert_id: u8, param_id: u16, value: f32) {
+        self.send(AudioEvent::SetInsertParam { track_id, insert_id, param_id, value });
+    }
+
     // --- Structural commands (via mpsc command channel) ---
     // These carry heap-allocated data (Engine) and run on the audio thread.
 

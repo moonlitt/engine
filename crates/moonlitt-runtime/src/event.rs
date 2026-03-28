@@ -19,6 +19,9 @@ pub enum AudioEvent {
     MixerMasterVolume(f32),
     // Insert effect control
     InsertBypass { track_id: u8, insert_id: u8, bypass: bool },
+    // Per-track parameter targeting
+    SetParamForTrack { track_id: u8, param_id: u16, value: f32 },
+    SetInsertParam { track_id: u8, insert_id: u8, param_id: u16, value: f32 },
     Stop,
 }
 
