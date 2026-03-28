@@ -55,6 +55,15 @@ impl OxiSynthBackend {
         Self::with_interpolation(sample_rate, InterpolationMethod::Sinc72)
     }
 
+    /// Create from a pre-loaded SoundFont (cloned via Arc — no data copy).
+    pub fn new_with_font(sample_rate: u32, font: SoundFont) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut backend = Self::with_interpolation(sample_rate, InterpolationMethod::SeventhOrder)?;
+        let id = backend.synth.add_font(font, true);
+        backend.font_id = Some(id);
+        backend.synth.set_gain(backend.volume);
+        Ok(backend)
+    }
+
     fn with_interpolation(sample_rate: u32, interpolation: InterpolationMethod) -> Result<Self, Box<dyn std::error::Error>> {
         let synth = Synth::new(SynthDescriptor {
             sample_rate: sample_rate as f32,

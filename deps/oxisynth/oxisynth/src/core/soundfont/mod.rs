@@ -18,6 +18,7 @@ pub(crate) use {
 
 pub use preset::Preset;
 
+#[derive(Clone)]
 pub struct SoundFont {
     presets: Vec<Arc<Preset>>,
 }

@@ -40,6 +40,20 @@ impl Engine {
         }
     }
 
+    /// Create an engine from a pre-loaded SF2 SoundFont (Arc-shared, no data copy).
+    #[cfg(feature = "sf2")]
+    pub fn from_shared_sf2(font: oxisynth::SoundFont, sample_rate: u32, buffer_size: u32) -> Result<Self, EngineError> {
+        let backend = crate::backends::oxisynth::OxiSynthBackend::new_with_font(sample_rate, font)
+            .map_err(|e| EngineError::BackendError(e.to_string()))?;
+        Ok(Self {
+            backend: Some(Box::new(backend)),
+            sample_rate,
+            buffer_size,
+            volume: 1.0,
+            loaded_path: None,
+        })
+    }
+
     /// Auto-detect format by file extension and load.
     /// Load with highest quality interpolation (Sinc72 for SF2).
     /// Use for offline rendering. Real-time uses SeventhOrder by default.

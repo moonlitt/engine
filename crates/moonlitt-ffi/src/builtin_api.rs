@@ -6,10 +6,11 @@
 
 use crate::engine_api::EngineHandle;
 use crate::runtime_api::RuntimeHandle;
+use crate::util::cstr_to_str;
 use moonlitt_engine::engine::Engine;
 use moonlitt_runtime::mixer::Mixer;
 use moonlitt_runtime::Runtime;
-use std::ffi::c_int;
+use std::ffi::{c_char, c_int};
 
 // ---------------------------------------------------------------------------
 // Built-in effect engine factories
@@ -198,6 +199,55 @@ pub extern "C" fn moonlitt_runtime_create_from_mixer(
         None => return std::ptr::null_mut(),
     };
     match Runtime::with_mixer(mixer, buffer_size.max(1) as u32) {
+        Ok(runtime) => Box::into_raw(Box::new(RuntimeHandle { runtime })),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Shared multi-track: load SF2 once, clone for 16 tracks (Arc-shared samples)
+// ---------------------------------------------------------------------------
+
+/// Create a 16-track mixer + runtime from a single SF2 file.
+/// Loads the SF2 ONCE, clones the SoundFont for each channel (Arc-shared sample data).
+/// Memory: ~1× SF2 size instead of 16× SF2 size.
+/// Returns a RuntimeHandle ready to use, or null on failure.
+#[no_mangle]
+pub extern "C" fn moonlitt_multitrack_create(
+    sf2_path: *const c_char,
+    sample_rate: c_int,
+    buffer_size: c_int,
+) -> *mut RuntimeHandle {
+    let path = match unsafe { cstr_to_str(sf2_path) } {
+        Some(p) => p,
+        None => return std::ptr::null_mut(),
+    };
+    let sr = sample_rate.max(1) as u32;
+    let bs = buffer_size.max(1) as u32;
+
+    // Load SF2 once
+    let mut file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let font = match oxisynth::SoundFont::load(&mut file) {
+        Ok(f) => f,
+        Err(_) => return std::ptr::null_mut(),
+    };
+
+    // Create mixer with 16 tracks, each cloning the font (Arc-shared)
+    let mut mixer = Mixer::new(sr, bs as usize);
+    for ch in 0u16..16 {
+        let cloned_font = font.clone(); // Only clones Arc pointers, not sample data
+        let engine = match Engine::from_shared_sf2(cloned_font, sr, bs) {
+            Ok(e) => e,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        mixer.add_track(engine, 1 << ch);
+    }
+
+    // Create runtime from mixer
+    match Runtime::with_mixer(mixer, bs) {
         Ok(runtime) => Box::into_raw(Box::new(RuntimeHandle { runtime })),
         Err(_) => std::ptr::null_mut(),
     }
