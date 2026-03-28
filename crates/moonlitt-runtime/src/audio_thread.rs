@@ -225,6 +225,14 @@ fn dispatch_to_mixer(mixer: &mut Mixer, event: AudioEvent) {
         AudioEvent::SetInsertParam { track_id, insert_id, param_id, value } => {
             mixer.set_insert_param(track_id as u32, insert_id as u32, param_id as u32, value as f64);
         }
+        AudioEvent::MixerTrackRoute { track_id, target_id } => {
+            let target = if target_id == 0xFF {
+                crate::mixer::OutputTarget::Master
+            } else {
+                crate::mixer::OutputTarget::Group(target_id as u32)
+            };
+            mixer.set_track_output(track_id as u32, target);
+        }
         AudioEvent::Stop => mixer.all_notes_off(),
     }
 }

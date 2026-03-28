@@ -237,6 +237,11 @@ impl Runtime {
         self.send(AudioEvent::SetInsertParam { track_id, insert_id, param_id, value });
     }
 
+    /// Route a track's output. target_id = 0xFF for master, else group track ID.
+    pub fn mixer_set_track_route(&mut self, track_id: u8, target_id: u8) {
+        self.send(AudioEvent::MixerTrackRoute { track_id, target_id });
+    }
+
     // --- Structural commands (via mpsc command channel) ---
     // These carry heap-allocated data (Engine) and run on the audio thread.
 

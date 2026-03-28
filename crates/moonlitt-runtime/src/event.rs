@@ -22,6 +22,8 @@ pub enum AudioEvent {
     // Per-track parameter targeting
     SetParamForTrack { track_id: u8, param_id: u16, value: f32 },
     SetInsertParam { track_id: u8, insert_id: u8, param_id: u16, value: f32 },
+    // Track routing (0xFF = master, else = group track ID)
+    MixerTrackRoute { track_id: u8, target_id: u8 },
     Stop,
 }
 

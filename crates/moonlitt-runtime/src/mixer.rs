@@ -130,6 +130,15 @@ impl DelayLine {
     }
 }
 
+/// Where a track routes its output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputTarget {
+    /// Route to master bus (default).
+    Master,
+    /// Route to a group track (submix).
+    Group(u32),
+}
+
 /// A single insert effect slot on a track.
 /// Processed pre-fader in series: Engine → Insert[0] → Insert[1] → ... → Fader.
 pub struct InsertEffect {
@@ -153,9 +162,14 @@ pub struct Track {
     pub send_levels: Vec<f32>,
     /// Insert effect chain (pre-fader, processed in order).
     pub inserts: Vec<InsertEffect>,
+    /// Output routing: Master (default) or Group(track_id) for submixing.
+    pub output_target: OutputTarget,
     // Pre-allocated render buffers
     left: Vec<f32>,
     right: Vec<f32>,
+    // Group input accumulators (used when this track is a submix target)
+    group_in_left: Vec<f32>,
+    group_in_right: Vec<f32>,
     // Scratch buffers for insert chain ping-pong processing
     scratch_left: Vec<f32>,
     scratch_right: Vec<f32>,
@@ -197,6 +211,9 @@ pub struct Mixer {
     next_track_id: u32,
     next_bus_id: u32,
     next_insert_id: u32,
+    /// Pre-computed render order: source tracks first, then group tracks.
+    /// Rebuilt when routing changes. Zero allocation during render().
+    render_order: Vec<usize>,
 }
 
 impl Mixer {
@@ -221,6 +238,7 @@ impl Mixer {
             next_track_id: 0,
             next_bus_id: 0,
             next_insert_id: 0,
+            render_order: Vec::new(),
         }
     }
 
@@ -265,20 +283,68 @@ impl Mixer {
             solo: false,
             send_levels: vec![0.0; self.send_buses.len()],
             inserts: Vec::new(),
+            output_target: OutputTarget::Master,
             left: vec![0.0; self.buffer_size],
             right: vec![0.0; self.buffer_size],
+            group_in_left: vec![0.0; self.buffer_size],
+            group_in_right: vec![0.0; self.buffer_size],
             scratch_left: vec![0.0; self.buffer_size],
             scratch_right: vec![0.0; self.buffer_size],
             delay_line: DelayLine::new(),
             meter: LevelMeter::new(),
         });
+        self.rebuild_render_order();
     }
 
     /// Remove a track by ID. Returns the engine if found.
     pub fn remove_track(&mut self, id: u32) -> Option<Engine> {
+        // Reset any tracks routing to this group
+        for t in &mut self.tracks {
+            if t.output_target == OutputTarget::Group(id) {
+                t.output_target = OutputTarget::Master;
+            }
+        }
         let pos = self.tracks.iter().position(|t| t.id == id)?;
         let track = self.tracks.remove(pos);
+        self.rebuild_render_order();
         Some(track.engine)
+    }
+
+    /// Set a track's output routing (Master or Group).
+    /// Returns false if the target would create a cycle.
+    pub fn set_track_output(&mut self, track_id: u32, target: OutputTarget) -> bool {
+        // Validate: target group must exist and not create a cycle
+        if let OutputTarget::Group(group_id) = target {
+            if group_id == track_id {
+                return false; // Can't route to self
+            }
+            if !self.tracks.iter().any(|t| t.id == group_id) {
+                return false; // Target doesn't exist
+            }
+            // Check for cycles: follow the chain from group_id
+            let mut current = group_id;
+            for _ in 0..self.tracks.len() {
+                let next = self.tracks.iter()
+                    .find(|t| t.id == current)
+                    .map(|t| t.output_target);
+                match next {
+                    Some(OutputTarget::Group(next_id)) => {
+                        if next_id == track_id {
+                            return false; // Cycle detected
+                        }
+                        current = next_id;
+                    }
+                    _ => break, // Reached master or not found
+                }
+            }
+        }
+        if let Some(track) = self.tracks.iter_mut().find(|t| t.id == track_id) {
+            track.output_target = target;
+            self.rebuild_render_order();
+            true
+        } else {
+            false
+        }
     }
 
     /// Add a send bus with an effect engine. Returns the bus ID.
@@ -443,6 +509,26 @@ impl Mixer {
         track.inserts.iter_mut().find(|i| i.id == insert_id)
     }
 
+    /// Rebuild the render order: source tracks first, then group tracks.
+    /// Called automatically when routing or track structure changes.
+    fn rebuild_render_order(&mut self) {
+        self.render_order.clear();
+        // First: tracks that are NOT group targets (source tracks)
+        for (i, track) in self.tracks.iter().enumerate() {
+            let is_target = self.tracks.iter().any(|t| t.output_target == OutputTarget::Group(track.id));
+            if !is_target {
+                self.render_order.push(i);
+            }
+        }
+        // Then: tracks that ARE group targets
+        for (i, track) in self.tracks.iter().enumerate() {
+            let is_target = self.tracks.iter().any(|t| t.output_target == OutputTarget::Group(track.id));
+            if is_target {
+                self.render_order.push(i);
+            }
+        }
+    }
+
     // --- Event routing ---
 
     /// Dispatch a MIDI event to the correct track(s) by channel.
@@ -527,6 +613,10 @@ impl Mixer {
     // --- Rendering ---
 
     /// Render one chunk of audio into an interleaved stereo output buffer.
+    ///
+    /// Two-phase rendering for group track support:
+    /// 1. Source tracks render first, routing to master or group accumulators
+    /// 2. Group tracks render after sources, consuming accumulated input
     pub fn render(&mut self, output_left: &mut [f32], output_right: &mut [f32]) {
         let chunk = output_left.len().min(output_right.len()).min(self.buffer_size);
 
@@ -540,20 +630,36 @@ impl Mixer {
             bus.acc_right[..chunk].fill(0.0);
         }
 
-        // Check if any track has solo enabled
+        // Clear group input accumulators
+        for track in &mut self.tracks {
+            track.group_in_left[..chunk].fill(0.0);
+            track.group_in_right[..chunk].fill(0.0);
+        }
+
         let any_solo = self.tracks.iter().any(|t| t.solo);
 
-        // Render each track
-        for track in &mut self.tracks {
-            // Skip if muted or not soloed
+        // Render all tracks in dependency order (sources before groups).
+        // Use index-based iteration for split borrows during group routing.
+        let order_len = self.render_order.len();
+        for order_i in 0..order_len {
+            let idx = self.render_order[order_i];
+            if idx >= self.tracks.len() { continue; }
+
+            let track = &mut self.tracks[idx];
             let audible = !track.mute && (!any_solo || track.solo);
 
-            // Always render (to keep engine state consistent), but zero if inaudible
+            // Render engine output
             track.left[..chunk].fill(0.0);
             track.right[..chunk].fill(0.0);
             track.engine.render(&mut track.left[..chunk], &mut track.right[..chunk]);
 
-            // Process insert chain (pre-fader)
+            // Add accumulated group input (for group tracks)
+            for k in 0..chunk {
+                track.left[k] += track.group_in_left[k];
+                track.right[k] += track.group_in_right[k];
+            }
+
+            // Insert chain (pre-fader)
             if !track.inserts.is_empty() {
                 process_insert_chain(
                     &mut track.inserts,
@@ -565,45 +671,52 @@ impl Mixer {
                 );
             }
 
-            // Apply PDC delay (compensate for insert chain latency differences)
+            // PDC delay
             track.delay_line.process(&mut track.left[..chunk], &mut track.right[..chunk]);
 
-            if !audible {
-                continue;
-            }
+            if !audible { continue; }
 
-            // Apply volume
+            // Volume (fader)
             let vol = track.volume;
-            for s in &mut track.left[..chunk] {
-                *s *= vol;
-            }
-            for s in &mut track.right[..chunk] {
-                *s *= vol;
-            }
+            for s in &mut track.left[..chunk] { *s *= vol; }
+            for s in &mut track.right[..chunk] { *s *= vol; }
 
-            // Apply pan (constant-power)
+            // Pan (constant-power)
             apply_pan(&mut track.left[..chunk], &mut track.right[..chunk], track.pan);
 
-            // Update track meter (post-fader)
+            // Meter (post-fader)
             track.meter.update(&track.left[..chunk], &track.right[..chunk]);
 
-            // Sum into master
-            for i in 0..chunk {
-                self.master.left[i] += track.left[i];
-                self.master.right[i] += track.right[i];
+            // Route output
+            let output_target = track.output_target;
+            match output_target {
+                OutputTarget::Master => {
+                    for k in 0..chunk {
+                        self.master.left[k] += self.tracks[idx].left[k];
+                        self.master.right[k] += self.tracks[idx].right[k];
+                    }
+                }
+                OutputTarget::Group(group_id) => {
+                    // Accumulate into group track's input buffer (split borrow)
+                    if let Some(gidx) = self.tracks.iter().position(|t| t.id == group_id) {
+                        if gidx != idx {
+                            accumulate_group(&mut self.tracks, idx, gidx, chunk);
+                        }
+                    }
+                }
             }
 
-            // Accumulate into send buses
+            // Send buses (post-fader, always routes regardless of output_target)
             for (bus_idx, bus) in self.send_buses.iter_mut().enumerate() {
-                let send = if bus_idx < track.send_levels.len() {
-                    track.send_levels[bus_idx]
+                let send = if bus_idx < self.tracks[idx].send_levels.len() {
+                    self.tracks[idx].send_levels[bus_idx]
                 } else {
                     0.0
                 };
                 if send > 0.0 {
-                    for i in 0..chunk {
-                        bus.acc_left[i] += track.left[i] * send;
-                        bus.acc_right[i] += track.right[i] * send;
+                    for k in 0..chunk {
+                        bus.acc_left[k] += self.tracks[idx].left[k] * send;
+                        bus.acc_right[k] += self.tracks[idx].right[k] * send;
                     }
                 }
             }
@@ -695,6 +808,28 @@ fn process_insert_chain(
     if in_scratch {
         left[..chunk].copy_from_slice(&scratch_left[..chunk]);
         right[..chunk].copy_from_slice(&scratch_right[..chunk]);
+    }
+}
+
+/// Accumulate source track output into group track's input buffer.
+/// Uses split_at_mut for borrow-checker-safe access to two tracks.
+fn accumulate_group(tracks: &mut [Track], src: usize, dst: usize, chunk: usize) {
+    if src < dst {
+        let (left, right) = tracks.split_at_mut(dst);
+        let s = &left[src];
+        let d = &mut right[0];
+        for k in 0..chunk {
+            d.group_in_left[k] += s.left[k];
+            d.group_in_right[k] += s.right[k];
+        }
+    } else {
+        let (left, right) = tracks.split_at_mut(src);
+        let d = &mut left[dst];
+        let s = &right[0];
+        for k in 0..chunk {
+            d.group_in_left[k] += s.left[k];
+            d.group_in_right[k] += s.right[k];
+        }
     }
 }
 
@@ -1092,5 +1227,83 @@ mod tests {
         // Bypass should trigger recalculation
         mixer.set_insert_bypass(t0, i0, true);
         // No crash, PDC updated
+    }
+
+    // --- Group track / submix tests ---
+
+    #[test]
+    fn test_set_track_output_to_group() {
+        let mut mixer = Mixer::new(44100, 256);
+        let t0 = mixer.add_track(Engine::new(44100, 256), 0x0001);
+        let t1 = mixer.add_track(Engine::new(44100, 256), 0x0002); // group
+
+        assert!(mixer.set_track_output(t0, OutputTarget::Group(t1)));
+        assert_eq!(mixer.track(t0).unwrap().output_target, OutputTarget::Group(t1));
+    }
+
+    #[test]
+    fn test_set_track_output_rejects_self() {
+        let mut mixer = Mixer::new(44100, 256);
+        let t0 = mixer.add_track(Engine::new(44100, 256), 0xFFFF);
+        assert!(!mixer.set_track_output(t0, OutputTarget::Group(t0)));
+    }
+
+    #[test]
+    fn test_set_track_output_rejects_cycle() {
+        let mut mixer = Mixer::new(44100, 256);
+        let t0 = mixer.add_track(Engine::new(44100, 256), 0x0001);
+        let t1 = mixer.add_track(Engine::new(44100, 256), 0x0002);
+        mixer.set_track_output(t0, OutputTarget::Group(t1));
+        // t1 → t0 would create cycle
+        assert!(!mixer.set_track_output(t1, OutputTarget::Group(t0)));
+    }
+
+    #[test]
+    fn test_set_track_output_rejects_nonexistent() {
+        let mut mixer = Mixer::new(44100, 256);
+        let t0 = mixer.add_track(Engine::new(44100, 256), 0xFFFF);
+        assert!(!mixer.set_track_output(t0, OutputTarget::Group(999)));
+    }
+
+    #[test]
+    fn test_group_track_renders_without_crash() {
+        let mut mixer = Mixer::new(44100, 256);
+        let t0 = mixer.add_track(Engine::new(44100, 256), 0x0001);
+        let t1 = mixer.add_track(Engine::new(44100, 256), 0x0002);
+        let group = mixer.add_track(Engine::new(44100, 256), 0x0000); // group (no MIDI)
+
+        mixer.set_track_output(t0, OutputTarget::Group(group));
+        mixer.set_track_output(t1, OutputTarget::Group(group));
+
+        let mut left = vec![0.0; 256];
+        let mut right = vec![0.0; 256];
+        mixer.render(&mut left, &mut right);
+    }
+
+    #[test]
+    fn test_remove_group_target_resets_routing() {
+        let mut mixer = Mixer::new(44100, 256);
+        let t0 = mixer.add_track(Engine::new(44100, 256), 0x0001);
+        let group = mixer.add_track(Engine::new(44100, 256), 0x0000);
+        mixer.set_track_output(t0, OutputTarget::Group(group));
+
+        mixer.remove_track(group);
+        // t0 should be reset to Master
+        assert_eq!(mixer.track(t0).unwrap().output_target, OutputTarget::Master);
+    }
+
+    #[test]
+    fn test_render_order_sources_before_groups() {
+        let mut mixer = Mixer::new(44100, 256);
+        let _t0 = mixer.add_track(Engine::new(44100, 256), 0x0001);
+        let group = mixer.add_track(Engine::new(44100, 256), 0x0000);
+        let _t1 = mixer.add_track(Engine::new(44100, 256), 0x0002);
+
+        mixer.set_track_output(_t0, OutputTarget::Group(group));
+        mixer.set_track_output(_t1, OutputTarget::Group(group));
+
+        // Group should be last in render order
+        let last_idx = *mixer.render_order.last().unwrap();
+        assert_eq!(mixer.tracks[last_idx].id, group);
     }
 }
