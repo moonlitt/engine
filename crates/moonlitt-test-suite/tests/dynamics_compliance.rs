@@ -26,17 +26,6 @@ fn sine_f32(freq: f64, amplitude: f64, num_samples: usize) -> Vec<f32> {
         .collect()
 }
 
-/// Measure RMS of a buffer (f32 samples) returning the linear RMS as f64.
-fn rms_linear(buf: &[f32]) -> f64 {
-    let sum_sq: f64 = buf.iter().map(|&s| (s as f64) * (s as f64)).sum();
-    (sum_sq / buf.len() as f64).sqrt()
-}
-
-/// Convert linear amplitude to dBFS.
-fn lin_to_db(lin: f64) -> f64 {
-    20.0 * lin.log10()
-}
-
 // =============================================================================
 // C6: Release Timing — envelope follower time constant
 // =============================================================================
@@ -145,7 +134,9 @@ fn c7_ratio_precision_static() {
 
 #[test]
 fn c7_ratio_precision_pipeline() {
-    // Verify through full process_effect pipeline after envelope settles
+    // Verify through full process_effect pipeline using DC input.
+    // DC eliminates all RMS measurement artifacts and envelope oscillation —
+    // the detected level is constant, so the envelope converges instantly.
     let mut comp = Compressor::new(SR);
     comp.set_param(0, -20.0); // threshold = -20 dB
     comp.set_param(1, 4.0); // ratio = 4:1
@@ -153,45 +144,52 @@ fn c7_ratio_precision_pipeline() {
     comp.set_param(3, 1000.0); // release = 1s (slow, holds)
     comp.set_param(4, 0.0); // knee = 0
     comp.set_param(5, 0.0); // makeup = 0
-    comp.set_param(6, 20.0); // HPF at 20Hz (minimal filtering)
+    comp.set_param(6, 0.0); // HPF bypassed (identity filter)
 
-    // Input at -10 dBFS peak amplitude
-    let amplitude = 10.0_f64.powf(-10.0 / 20.0);
-    let settle_time = SR as usize * 4; // 4 seconds for envelope to settle
-    let input = sine_f32(1000.0, amplitude, settle_time);
+    // DC input at -10 dBFS
+    let amplitude = 10.0_f64.powf(-10.0 / 20.0); // ≈ 0.316228
+    let settle_time = SR as usize; // 1 second is more than enough for DC
+    let input: Vec<f32> = vec![amplitude as f32; settle_time];
     let silent = vec![0.0f32; settle_time];
     let mut out_l = vec![0.0f32; settle_time];
     let mut out_r = vec![0.0f32; settle_time];
 
     comp.process_effect(&input, &silent, &mut out_l, &mut out_r);
 
-    // Measure RMS of the last 0.5s of output and input
-    let measure_start = settle_time - (SR as usize / 2);
-    let input_rms = rms_linear(&input[measure_start..]);
-    let output_rms = rms_linear(&out_l[measure_start..]);
-
-    let input_db = lin_to_db(input_rms);
-    let output_db = lin_to_db(output_rms);
-    let measured_gain_db = output_db - input_db;
-
-    // Expected gain = -7.5 dB
-    // The envelope should have fully converged after 4 seconds with 0.1ms attack.
-    // Allow f32 rendering tolerance since audio path converts f64 -> f32.
+    // With DC input and bypassed HPF, the detected level is constant at the
+    // input amplitude. The envelope converges within a few attack time constants
+    // (0.1ms attack → ~5 samples). After settling, every output sample should
+    // be input * 10^(gain_db/20).
+    //
+    // Expected: gain_db = -7.5 dB → linear gain = 10^(-7.5/20) ≈ 0.42170
+    // Output = amplitude * linear_gain
     let expected_gain_db = -7.5;
-    let error = (measured_gain_db - expected_gain_db).abs();
+    let expected_linear_gain = 10.0_f64.powf(expected_gain_db / 20.0);
+    let expected_output = (amplitude * expected_linear_gain) as f32;
 
-    // f32 output introduces quantization: relative error < f32::EPSILON on linear gain,
-    // which translates to a very small dB error. The sidechain HPF at 20 Hz slightly
-    // perturbs the detected level, contributing ~0.01 dB of systematic error.
-    // We use 0.02 dB as a practical bound for the full pipeline test
-    // (f32 truncation + sidechain HPF interaction + RMS window estimation).
-    // The pure gain computation is verified to f64::EPSILON in c7_ratio_precision_static.
+    // Check the last sample (fully settled).
+    // Compare in linear domain — f32::EPSILON is the correct bound here.
+    // (dB comparison involves log10 which introduces additional rounding,
+    // so we verify in the native domain of the audio path.)
+    let last_output = out_l[settle_time - 1];
+
+    let rel_error = ((last_output - expected_output) as f64 / expected_output as f64).abs();
     assert!(
-        error < 0.02,
-        "C7 pipeline: expected gain {:.4} dB, got {:.4} dB (error {:.6} dB)",
-        expected_gain_db,
-        measured_gain_db,
-        error
+        rel_error <= f32::EPSILON as f64,
+        "C7 pipeline: output {:.10} vs expected {:.10}, rel error {:.2e} > f32::EPSILON ({:.2e})",
+        last_output,
+        expected_output,
+        rel_error,
+        f32::EPSILON
+    );
+
+    // Log the dB-domain error for diagnostics (not the assertion target)
+    let actual_gain_linear = last_output as f64 / amplitude;
+    let actual_gain_db = 20.0 * actual_gain_linear.log10();
+    let error_db = (actual_gain_db - expected_gain_db).abs();
+    eprintln!(
+        "C7 pipeline: gain = {:.8} dB (error {:.2e} dB), linear rel_error = {:.2e}",
+        actual_gain_db, error_db, rel_error
     );
 }
 

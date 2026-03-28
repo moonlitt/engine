@@ -212,10 +212,17 @@ impl Compressor {
     }
 
     /// Recompute sidechain HPF coefficients.
+    /// When freq is 0, the HPF is bypassed (identity filter).
     fn update_hpf(&mut self) {
-        let sr = self.sample_rate as f64;
-        self.sidechain_hpf[0] = Biquad::design_highpass(sr, self.sidechain_hpf_freq);
-        self.sidechain_hpf[1] = Biquad::design_highpass(sr, self.sidechain_hpf_freq);
+        if self.sidechain_hpf_freq == 0.0 {
+            // Bypass: identity filter (passthrough)
+            self.sidechain_hpf[0] = Biquad::new();
+            self.sidechain_hpf[1] = Biquad::new();
+        } else {
+            let sr = self.sample_rate as f64;
+            self.sidechain_hpf[0] = Biquad::design_highpass(sr, self.sidechain_hpf_freq);
+            self.sidechain_hpf[1] = Biquad::design_highpass(sr, self.sidechain_hpf_freq);
+        }
     }
 
     /// Compute compression gain in dB for a given input level in dB.
@@ -544,7 +551,8 @@ impl AudioBackend for Compressor {
             4 => self.knee_db = value.clamp(0.0, 30.0),
             5 => self.makeup_db = value.clamp(0.0, 30.0),
             6 => {
-                self.sidechain_hpf_freq = value.clamp(20.0, 500.0);
+                // 0 = bypass (identity), 20..500 = active HPF
+                self.sidechain_hpf_freq = if value < 1.0 { 0.0 } else { value.clamp(20.0, 500.0) };
                 self.update_hpf();
             }
             7 => {

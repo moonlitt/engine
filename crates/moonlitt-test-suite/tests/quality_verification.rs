@@ -1194,12 +1194,10 @@ fn p01_parallel_16_track_render() {
 
     let num_tracks = 16;
     let num_blocks = 8;
-    let velocity = 30; // low velocity to avoid limiter engagement
+    let velocity = 10; // very low velocity to keep combined signal below limiter threshold
 
     // --- Combined render: 16 tracks in one mixer ---
     let mut mixer_combined = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
-    // Disable limiter for exact comparison
-    mixer_combined.master_mut().limiter_threshold = 1.0;
 
     for ch in 0..num_tracks as u8 {
         let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
@@ -1215,62 +1213,61 @@ fn p01_parallel_16_track_render() {
     let (combined_left, combined_right) = render_blocks(&mut mixer_combined, num_blocks);
 
     // --- Independent renders: each track in its own mixer ---
-    let mut sum_left = vec![0.0f64; combined_left.len()];
-    let mut sum_right = vec![0.0f64; combined_right.len()];
+    // Render each track individually, collecting f32 output per track.
+    let total_samples = num_blocks * BUFFER_SIZE;
+    let mut independent_lefts = Vec::with_capacity(num_tracks);
+    let mut independent_rights = Vec::with_capacity(num_tracks);
 
     for ch in 0..num_tracks as u8 {
         let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
         engine.load(SF2_PATH).unwrap();
 
         let mut mixer_single = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
-        mixer_single.master_mut().limiter_threshold = 1.0;
         mixer_single.add_track(engine, 1u16 << ch);
         mixer_single.note_on(ch, 48 + ch, velocity);
 
         let (left, right) = render_blocks(&mut mixer_single, num_blocks);
+        independent_lefts.push(left);
+        independent_rights.push(right);
+    }
 
-        for i in 0..left.len() {
-            sum_left[i] += left[i] as f64;
-            sum_right[i] += right[i] as f64;
+    // Sum in the same order as the mixer (track 0, 1, 2, ..., 15) using f32
+    // arithmetic to match the mixer's summation exactly.
+    let mut ref_left = vec![0.0f32; total_samples];
+    let mut ref_right = vec![0.0f32; total_samples];
+    for track_idx in 0..num_tracks {
+        for i in 0..total_samples {
+            ref_left[i] += independent_lefts[track_idx][i];
+            ref_right[i] += independent_rights[track_idx][i];
         }
     }
 
-    // Compare combined vs sum of independent renders
-    let mut max_err_l = 0.0f64;
-    let mut max_err_r = 0.0f64;
-    let mut nonzero_samples = 0;
+    // Verify signal exists
+    let pk = peak(&ref_left).max(peak(&ref_right));
+    assert!(pk > 0.0, "Should have produced audible signal across 16 tracks");
 
-    for i in 0..combined_left.len() {
-        let err_l = (combined_left[i] as f64 - sum_left[i]).abs();
-        let err_r = (combined_right[i] as f64 - sum_right[i]).abs();
-        if err_l > max_err_l { max_err_l = err_l; }
-        if err_r > max_err_r { max_err_r = err_r; }
-        if combined_left[i].abs() > 1e-10 || combined_right[i].abs() > 1e-10 {
-            nonzero_samples += 1;
-        }
+    // Verify combined signal stays below limiter threshold (0.95) so limiter is passthrough
+    let combined_pk = peak(&combined_left).max(peak(&combined_right));
+    eprintln!("p01: combined peak = {combined_pk:.6}, ref peak = {pk:.6}");
+    assert!(
+        combined_pk < 0.95,
+        "Combined signal should stay below limiter threshold (0.95), got {combined_pk}"
+    );
+
+    // Bit-exact comparison: since we sum in f32 in the same order as the mixer,
+    // and the limiter is not engaged, the results must match bit-for-bit.
+    for i in 0..total_samples {
+        assert_eq!(
+            combined_left[i].to_bits(), ref_left[i].to_bits(),
+            "L[{i}] mismatch: combined={:.10e} vs ref={:.10e}",
+            combined_left[i], ref_left[i]
+        );
+        assert_eq!(
+            combined_right[i].to_bits(), ref_right[i].to_bits(),
+            "R[{i}] mismatch: combined={:.10e} vs ref={:.10e}",
+            combined_right[i], ref_right[i]
+        );
     }
-
-    eprintln!(
-        "p01: max_err_l={max_err_l:.2e}, max_err_r={max_err_r:.2e}, nonzero_samples={nonzero_samples}"
-    );
-
-    // With 16 tracks summed, the floating-point addition order matters.
-    // The combined mixer sums in track order; independent sums accumulate in f64.
-    // Relative error per sample should be bounded by num_tracks * f32::EPSILON.
-    let tolerance = (num_tracks as f64) * f32::EPSILON as f64;
-
-    assert!(
-        max_err_l < tolerance,
-        "Left channel per-sample error should be < {tolerance:.2e}, got {max_err_l:.2e}"
-    );
-    assert!(
-        max_err_r < tolerance,
-        "Right channel per-sample error should be < {tolerance:.2e}, got {max_err_r:.2e}"
-    );
-    assert!(
-        nonzero_samples > 0,
-        "Should have produced audible signal across 16 tracks"
-    );
 }
 
 /// P2: Solo exclusivity — only soloed track produces audio.

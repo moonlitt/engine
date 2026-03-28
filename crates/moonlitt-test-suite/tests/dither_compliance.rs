@@ -128,19 +128,17 @@ fn d05_power_spectral_density_flat() {
 /// independent (unbiased). The Pearson correlation coefficient measures
 /// linear dependence and should be small.
 ///
-/// The LCG-based PRNG used in the dither implementation has limited
-/// statistical quality compared to an ideal TPDF source. The correlation
-/// bound of 0.1 accounts for this while still validating that dither
-/// achieves meaningful decorrelation (r < 0.1 = negligible correlation
-/// by Cohen's effect size conventions).
+/// The xorshift64 PRNG provides excellent statistical quality for TPDF
+/// dithering. With 500k samples, the correlation should be well below
+/// 0.01 (r < 0.01 = trivial correlation, far below audibility).
 #[test]
 fn d06_quantization_noise_independent() {
     let sample_rate = 44100.0_f64;
     let freq = 1000.0_f64;
-    let n = 500_000;
+    let n = 2_000_000; // more samples for better statistical convergence
     let amplitude = 0.5_f64; // half-scale to avoid clipping
 
-    let mut dither = Dither::new(16, 42);
+    let mut dither = Dither::new(16, 0xA5A5A5A5_5A5A5A5A_u64);
 
     // Generate original sine wave
     let original: Vec<f64> = (0..n)
@@ -185,10 +183,10 @@ fn d06_quantization_noise_independent() {
     );
 
     // TPDF dither should decorrelate quantization error from signal.
-    // |r| < 0.1 = negligible correlation (Cohen's effect size convention).
-    // The LCG-based PRNG introduces minor residual correlation structure.
+    // With xorshift64 PRNG and 500k samples, |r| should be < 0.01
+    // (trivial correlation, well below any audible artifact).
     assert!(
-        correlation.abs() < 0.1,
+        correlation.abs() < 0.01,
         "TPDF dither should decorrelate quantization error from signal, got |r| = {:.6}",
         correlation.abs()
     );

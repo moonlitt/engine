@@ -9,33 +9,44 @@
 
 /// TPDF dither state. One instance per channel.
 pub struct Dither {
-    /// LCG state for fast, deterministic PRNG.
-    state: u32,
+    /// xorshift64 state for fast, deterministic PRNG with good statistical quality.
+    state: u64,
     /// Dither amplitude = 1.0 / 2^target_bits.
     amplitude: f32,
 }
 
 impl Dither {
     /// Create a new dither with the given target bit depth and seed.
-    pub fn new(target_bits: u32, seed: u32) -> Self {
+    ///
+    /// The TPDF amplitude is set to 1 LSB = 1/2^(target_bits-1) for signals
+    /// in [-1, 1]. The triangular distribution (r1-r2)*amplitude spans ±1 LSB,
+    /// giving 2 LSB peak-to-peak — the correct TPDF width for complete
+    /// decorrelation of quantization error (Lipshitz & Vanderkooy 1992).
+    pub fn new(target_bits: u32, seed: u64) -> Self {
         Self {
-            state: seed,
-            amplitude: 1.0 / (1u64 << target_bits) as f32,
+            // xorshift64 requires non-zero state
+            state: if seed == 0 { 1 } else { seed },
+            amplitude: 1.0 / (1u64 << (target_bits - 1)) as f32,
         }
     }
 
     /// Create a 24-bit dither (macOS CoreAudio default).
-    pub fn new_24bit(seed: u32) -> Self {
+    pub fn new_24bit(seed: u64) -> Self {
         Self::new(24, seed)
     }
 
     /// Generate next uniform random in [0, 1).
     #[inline]
     fn next_uniform(&mut self) -> f32 {
-        // LCG: fast, sufficient for dither (not crypto)
-        self.state = self.state.wrapping_mul(1664525).wrapping_add(1013904223);
-        // Upper bits have better statistical properties
-        (self.state >> 8) as f32 / 16777216.0 // 2^24
+        // xorshift64: deterministic, no allocation, O(1), better statistical
+        // quality than LCG (passes TestU01 SmallCrush).
+        let mut x = self.state;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.state = x;
+        // Use upper 24 bits for uniform [0, 1)
+        ((x >> 40) as u32) as f32 / 16777216.0 // 2^24
     }
 
     /// Apply TPDF dither to a single sample.
@@ -64,8 +75,8 @@ impl StereoDither {
     pub fn new_24bit() -> Self {
         Self {
             // Different seeds for uncorrelated L/R noise
-            left: Dither::new_24bit(0xDEADBEEF),
-            right: Dither::new_24bit(0xCAFEBABE),
+            left: Dither::new_24bit(0xDEADBEEF_CAFEBABE_u64),
+            right: Dither::new_24bit(0xCAFEBABE_DEADBEEF_u64),
         }
     }
 
@@ -95,7 +106,7 @@ mod tests {
         let input = 0.0f32;
         for _ in 0..10000 {
             let output = d.process(input);
-            // TPDF range is [-amplitude, +amplitude], amplitude = 1/2^24 ≈ 6e-8
+            // TPDF range is [-amplitude, +amplitude], amplitude = 1/2^23 ≈ 1.2e-7
             assert!(output.abs() < 2.0 * d.amplitude,
                 "dither output {} exceeds expected range", output);
         }
