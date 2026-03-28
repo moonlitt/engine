@@ -1,0 +1,16 @@
+[package]
+name = "moonlitt-sampler"
+description = "Pure Rust SF2 synthesizer with Sinc 72 interpolation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+soundfont = { path = "../../deps/oxisynth/soundfont-rs" }
+moonlitt-resampler = { path = "../moonlitt-resampler" }
+
+[dev-dependencies]
+approx = "0.5"
+hound = "3"
+rustfft = "6"
