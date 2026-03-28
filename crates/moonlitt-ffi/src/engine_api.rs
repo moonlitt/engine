@@ -417,6 +417,68 @@ pub extern "C" fn moonlitt_engine_param_display(e: *mut EngineHandle, id: c_int,
 }
 
 // ---------------------------------------------------------------------------
+// RMS measurement
+// ---------------------------------------------------------------------------
+
+/// Render a reference tone and measure RMS level in dBFS.
+/// program: GM program (0=piano), note: MIDI note (60=C4),
+/// velocity: 0-127, duration_ms: render length.
+/// Returns dBFS (negative float). Returns -100.0 on error.
+#[no_mangle]
+pub extern "C" fn moonlitt_engine_measure_rms(
+    e: *mut EngineHandle,
+    program: c_int,
+    note: c_int,
+    velocity: c_int,
+    duration_ms: c_int,
+) -> c_float {
+    let handle = match unsafe { e.as_mut() } {
+        Some(h) => h,
+        None => return -100.0,
+    };
+    let engine = match handle.engine.as_mut() {
+        Some(e) => e,
+        None => return -100.0,
+    };
+
+    let sr = engine.sample_rate();
+    let total_frames = (sr as f64 * duration_ms as f64 / 1000.0) as usize;
+    let buf_size = engine.buffer_size() as usize;
+
+    // Program change + note on
+    engine.program_change(0, program.clamp(0, 127) as u8);
+    engine.note_on(0, note.clamp(0, 127) as u8, velocity.clamp(1, 127) as u8);
+
+    let mut sum_sq: f64 = 0.0;
+    let mut count: usize = 0;
+    let mut left = vec![0.0f32; buf_size];
+    let mut right = vec![0.0f32; buf_size];
+
+    let mut rendered = 0;
+    while rendered < total_frames {
+        let chunk = buf_size.min(total_frames - rendered);
+        left[..chunk].fill(0.0);
+        right[..chunk].fill(0.0);
+        engine.render(&mut left[..chunk], &mut right[..chunk]);
+        for i in 0..chunk {
+            let mono = (left[i] as f64 + right[i] as f64) * 0.5;
+            sum_sq += mono * mono;
+            count += 1;
+        }
+        rendered += chunk;
+    }
+
+    // Note off + flush
+    engine.note_off(0, note.clamp(0, 127) as u8);
+    engine.all_notes_off();
+
+    if count == 0 { return -100.0; }
+    let rms = (sum_sq / count as f64).sqrt();
+    if rms < 1e-10 { return -100.0; }
+    (20.0 * rms.log10()) as c_float
+}
+
+// ---------------------------------------------------------------------------
 // Error retrieval
 // ---------------------------------------------------------------------------
 
