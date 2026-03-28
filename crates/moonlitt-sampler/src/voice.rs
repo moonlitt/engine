@@ -1,18 +1,17 @@
-//! Voice — single note playback with Sinc 72 interpolation.
+//! Voice — single note playback with Sinc 72 interpolation + DAHDSR envelope.
 //!
-//! A voice reads through a sample at a calculated playback rate,
-//! using Sinc 72 interpolation for highest quality resampling.
 //! Playback rate = (sample_rate / output_rate) × 2^((note - root_key) / 12)
+//! Each output sample is: interpolated_sample × envelope × amplitude
 
+use crate::envelope::{Envelope, EnvelopeParams};
 use crate::sample::{SampleInfo, SamplePool};
 use moonlitt_resampler::{Quality, SincInterpolator};
 
 pub struct Voice {
     interp: SincInterpolator,
     sample: Option<SampleInfo>,
-    /// Fractional position in sample (in sample's native sample indices).
+    envelope: Envelope,
     position: f64,
-    /// Playback speed: samples consumed per output sample.
     speed: f64,
     output_rate: u32,
     amplitude: f32,
@@ -25,11 +24,11 @@ impl Voice {
         Self::new_standalone(output_rate)
     }
 
-    /// Create a voice without a pool reference (for VoicePool use).
     pub fn new_standalone(output_rate: u32) -> Self {
         Self {
             interp: SincInterpolator::new(Quality::Sinc72),
             sample: None,
+            envelope: Envelope::new(EnvelopeParams::default(), output_rate),
             position: 0.0,
             speed: 1.0,
             output_rate,
@@ -43,7 +42,6 @@ impl Voice {
     }
 
     /// Activate voice with a sample and note parameters.
-    /// Calculates playback speed from pitch difference.
     pub fn note_on(&mut self, sample: SampleInfo, note: u8, velocity: u8) {
         let semitone_diff = note as f64 - sample.root_key as f64
             + sample.pitch_correction as f64 / 100.0;
@@ -55,18 +53,32 @@ impl Voice {
         self.position = 0.0;
         self.sample = Some(sample);
         self.active = true;
+
+        // Start envelope: short attack to avoid click, natural decay
+        self.envelope = Envelope::new(
+            EnvelopeParams {
+                delay: -12000,    // instant
+                attack: -4800,    // ~60ms attack (smooth onset, no click)
+                hold: -12000,     // instant
+                decay: 1200,      // 2s decay
+                sustain: 0.5,     // sustain at 50%
+                release: -2400,   // ~250ms release (smooth tail)
+            },
+            self.output_rate,
+        );
+        self.envelope.note_on();
     }
 
     pub fn is_active(&self) -> bool {
         self.active
     }
 
-    /// Begin release (for Sprint 4, immediately stops; Sprint 5 will use envelope).
+    /// Begin envelope release (smooth fade out instead of abrupt cutoff).
     pub fn note_off(&mut self) {
-        self.active = false;
+        self.envelope.note_off();
     }
 
-    /// Immediately silence (for all-notes-off).
+    /// Immediately silence.
     pub fn silence(&mut self) {
         self.active = false;
         self.sample = None;
@@ -87,6 +99,13 @@ impl Voice {
         let data_len = data.len();
 
         for out in output.iter_mut() {
+            // Check envelope finished
+            if self.envelope.is_finished() {
+                *out = 0.0;
+                self.active = false;
+                continue;
+            }
+
             let int_pos = self.position as usize;
 
             if int_pos >= data_len.saturating_sub(1) {
@@ -96,7 +115,10 @@ impl Voice {
             }
 
             let frac = (self.position - int_pos as f64) as f32;
-            *out = self.amplitude * self.interp.interpolate_safe(data, int_pos, frac);
+            let raw = self.interp.interpolate_safe(data, int_pos, frac);
+            let env = self.envelope.process();
+
+            *out = raw * env * self.amplitude;
             self.position += self.speed;
         }
     }
