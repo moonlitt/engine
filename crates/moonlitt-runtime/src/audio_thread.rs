@@ -200,6 +200,9 @@ fn dispatch_to_mixer(mixer: &mut Mixer, event: AudioEvent) {
             }
         }
         AudioEvent::MixerMasterVolume(v) => mixer.set_master_volume(v),
+        AudioEvent::InsertBypass { track_id, insert_id, bypass } => {
+            mixer.set_insert_bypass(track_id as u32, insert_id as u32, bypass);
+        }
         AudioEvent::Stop => mixer.all_notes_off(),
     }
 }

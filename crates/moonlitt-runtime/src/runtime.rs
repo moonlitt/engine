@@ -204,6 +204,10 @@ impl Runtime {
         self.send(AudioEvent::MixerMasterVolume(volume));
     }
 
+    pub fn mixer_set_insert_bypass(&mut self, track_id: u8, insert_id: u8, bypass: bool) {
+        self.send(AudioEvent::InsertBypass { track_id, insert_id, bypass });
+    }
+
     // --- Transport ---
 
     pub fn play(&self) {

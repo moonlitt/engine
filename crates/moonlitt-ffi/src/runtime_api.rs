@@ -267,6 +267,20 @@ pub extern "C" fn moonlitt_mixer_set_master_volume(rt: *mut RuntimeHandle, vol: 
 }
 
 // ---------------------------------------------------------------------------
+// Insert effect control (lock-free SPSC — single caller only)
+// ---------------------------------------------------------------------------
+
+/// Set bypass state for an insert effect on a track.
+#[no_mangle]
+pub extern "C" fn moonlitt_mixer_set_insert_bypass(
+    rt: *mut RuntimeHandle, track_id: c_int, insert_id: c_int, bypass: c_int,
+) {
+    if let Some(h) = unsafe { rt.as_mut() } {
+        h.runtime.mixer_set_insert_bypass(track_id as u8, insert_id as u8, bypass != 0);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // MIDI device listing
 // ---------------------------------------------------------------------------
 

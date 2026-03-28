@@ -17,6 +17,8 @@ pub enum AudioEvent {
     MixerTrackSolo { track_id: u8, solo: bool },
     MixerTrackSend { track_id: u8, bus_id: u8, level: f32 },
     MixerMasterVolume(f32),
+    // Insert effect control
+    InsertBypass { track_id: u8, insert_id: u8, bypass: bool },
     Stop,
 }
 

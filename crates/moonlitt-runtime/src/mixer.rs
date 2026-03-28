@@ -13,6 +13,14 @@
 
 use moonlitt_engine::engine::Engine;
 
+/// A single insert effect slot on a track.
+/// Processed pre-fader in series: Engine → Insert[0] → Insert[1] → ... → Fader.
+pub struct InsertEffect {
+    pub id: u32,
+    pub engine: Engine,
+    pub bypass: bool,
+}
+
 /// A single track: one engine + channel strip.
 pub struct Track {
     pub id: u32,
@@ -26,9 +34,14 @@ pub struct Track {
     pub solo: bool,
     /// Send levels: one per send bus.
     pub send_levels: Vec<f32>,
+    /// Insert effect chain (pre-fader, processed in order).
+    pub inserts: Vec<InsertEffect>,
     // Pre-allocated render buffers
     left: Vec<f32>,
     right: Vec<f32>,
+    // Scratch buffers for insert chain ping-pong processing
+    scratch_left: Vec<f32>,
+    scratch_right: Vec<f32>,
 }
 
 /// A send bus: accumulates audio from tracks, processes through an effect engine.
@@ -60,6 +73,7 @@ pub struct Mixer {
     sample_rate: u32,
     next_track_id: u32,
     next_bus_id: u32,
+    next_insert_id: u32,
 }
 
 impl Mixer {
@@ -82,6 +96,7 @@ impl Mixer {
             sample_rate,
             next_track_id: 0,
             next_bus_id: 0,
+            next_insert_id: 0,
         }
     }
 
@@ -98,8 +113,11 @@ impl Mixer {
             mute: false,
             solo: false,
             send_levels: vec![0.0; self.send_buses.len()],
+            inserts: Vec::new(),
             left: vec![0.0; self.buffer_size],
             right: vec![0.0; self.buffer_size],
+            scratch_left: vec![0.0; self.buffer_size],
+            scratch_right: vec![0.0; self.buffer_size],
         });
         id
     }
@@ -156,6 +174,50 @@ impl Mixer {
 
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
+    }
+
+    // --- Insert effect management ---
+
+    /// Add an insert effect to a track. Returns the insert ID, or None if track not found.
+    pub fn add_insert(&mut self, track_id: u32, engine: Engine) -> Option<u32> {
+        let track = self.tracks.iter_mut().find(|t| t.id == track_id)?;
+        let id = self.next_insert_id;
+        self.next_insert_id += 1;
+        track.inserts.push(InsertEffect {
+            id,
+            engine,
+            bypass: false,
+        });
+        Some(id)
+    }
+
+    /// Remove an insert effect from a track. Returns the engine if found.
+    pub fn remove_insert(&mut self, track_id: u32, insert_id: u32) -> Option<Engine> {
+        let track = self.tracks.iter_mut().find(|t| t.id == track_id)?;
+        let pos = track.inserts.iter().position(|i| i.id == insert_id)?;
+        let insert = track.inserts.remove(pos);
+        Some(insert.engine)
+    }
+
+    /// Set bypass state for an insert effect.
+    pub fn set_insert_bypass(&mut self, track_id: u32, insert_id: u32, bypass: bool) {
+        if let Some(track) = self.tracks.iter_mut().find(|t| t.id == track_id) {
+            if let Some(insert) = track.inserts.iter_mut().find(|i| i.id == insert_id) {
+                insert.bypass = bypass;
+            }
+        }
+    }
+
+    /// Get the insert chain for a track (for inspection/parameter control).
+    pub fn track_insert(&self, track_id: u32, insert_id: u32) -> Option<&InsertEffect> {
+        let track = self.tracks.iter().find(|t| t.id == track_id)?;
+        track.inserts.iter().find(|i| i.id == insert_id)
+    }
+
+    /// Get a mutable reference to an insert effect (for parameter control).
+    pub fn track_insert_mut(&mut self, track_id: u32, insert_id: u32) -> Option<&mut InsertEffect> {
+        let track = self.tracks.iter_mut().find(|t| t.id == track_id)?;
+        track.inserts.iter_mut().find(|i| i.id == insert_id)
     }
 
     // --- Event routing ---
@@ -257,6 +319,18 @@ impl Mixer {
             track.right[..chunk].fill(0.0);
             track.engine.render(&mut track.left[..chunk], &mut track.right[..chunk]);
 
+            // Process insert chain (pre-fader)
+            if !track.inserts.is_empty() {
+                process_insert_chain(
+                    &mut track.inserts,
+                    &mut track.left,
+                    &mut track.right,
+                    &mut track.scratch_left,
+                    &mut track.scratch_right,
+                    chunk,
+                );
+            }
+
             if !audible {
                 continue;
             }
@@ -321,6 +395,53 @@ impl Mixer {
             output_left[i] = soft_limit(self.master.left[i] * mvol, threshold);
             output_right[i] = soft_limit(self.master.right[i] * mvol, threshold);
         }
+    }
+}
+
+/// Process insert effect chain using ping-pong buffers.
+///
+/// Alternates between track buffers (left/right) and scratch buffers to avoid
+/// allocation. If the result ends up in scratch, copies back to track buffers.
+///
+/// Split borrows: `inserts`, `left/right`, and `scratch_left/scratch_right` are
+/// disjoint fields of Track, passed separately to satisfy the borrow checker.
+fn process_insert_chain(
+    inserts: &mut [InsertEffect],
+    left: &mut [f32],
+    right: &mut [f32],
+    scratch_left: &mut [f32],
+    scratch_right: &mut [f32],
+    chunk: usize,
+) {
+    let mut in_scratch = false;
+    for insert in inserts.iter_mut() {
+        if insert.bypass {
+            continue;
+        }
+        if !in_scratch {
+            // Read from left/right, write to scratch
+            insert.engine.process_effect(
+                &left[..chunk],
+                &right[..chunk],
+                &mut scratch_left[..chunk],
+                &mut scratch_right[..chunk],
+            );
+            in_scratch = true;
+        } else {
+            // Read from scratch, write to left/right
+            insert.engine.process_effect(
+                &scratch_left[..chunk],
+                &scratch_right[..chunk],
+                &mut left[..chunk],
+                &mut right[..chunk],
+            );
+            in_scratch = false;
+        }
+    }
+    // If final result is in scratch, copy back to track buffers
+    if in_scratch {
+        left[..chunk].copy_from_slice(&scratch_left[..chunk]);
+        right[..chunk].copy_from_slice(&scratch_right[..chunk]);
     }
 }
 
@@ -442,5 +563,180 @@ mod tests {
         mixer.render(&mut left, &mut right);
         // Muted track contributes nothing
         assert!(left.iter().all(|&s| s == 0.0));
+    }
+
+    // --- Insert effect tests ---
+
+    #[test]
+    fn test_add_insert() {
+        let mut mixer = Mixer::new(44100, 256);
+        let engine = Engine::new(44100, 256);
+        let track_id = mixer.add_track(engine, 0xFFFF);
+
+        let effect = Engine::new(44100, 256);
+        let insert_id = mixer.add_insert(track_id, effect);
+        assert!(insert_id.is_some());
+        assert_eq!(mixer.track(track_id).unwrap().inserts.len(), 1);
+    }
+
+    #[test]
+    fn test_add_insert_invalid_track() {
+        let mut mixer = Mixer::new(44100, 256);
+        let effect = Engine::new(44100, 256);
+        assert!(mixer.add_insert(999, effect).is_none());
+    }
+
+    #[test]
+    fn test_remove_insert() {
+        let mut mixer = Mixer::new(44100, 256);
+        let engine = Engine::new(44100, 256);
+        let track_id = mixer.add_track(engine, 0xFFFF);
+
+        let effect = Engine::new(44100, 256);
+        let insert_id = mixer.add_insert(track_id, effect).unwrap();
+        assert_eq!(mixer.track(track_id).unwrap().inserts.len(), 1);
+
+        let removed = mixer.remove_insert(track_id, insert_id);
+        assert!(removed.is_some());
+        assert_eq!(mixer.track(track_id).unwrap().inserts.len(), 0);
+    }
+
+    #[test]
+    fn test_remove_insert_invalid() {
+        let mut mixer = Mixer::new(44100, 256);
+        let engine = Engine::new(44100, 256);
+        let track_id = mixer.add_track(engine, 0xFFFF);
+        assert!(mixer.remove_insert(track_id, 999).is_none());
+        assert!(mixer.remove_insert(999, 0).is_none());
+    }
+
+    #[test]
+    fn test_insert_bypass() {
+        let mut mixer = Mixer::new(44100, 256);
+        let engine = Engine::new(44100, 256);
+        let track_id = mixer.add_track(engine, 0xFFFF);
+
+        let effect = Engine::new(44100, 256);
+        let insert_id = mixer.add_insert(track_id, effect).unwrap();
+
+        // Default: not bypassed
+        assert!(!mixer.track(track_id).unwrap().inserts[0].bypass);
+
+        mixer.set_insert_bypass(track_id, insert_id, true);
+        assert!(mixer.track(track_id).unwrap().inserts[0].bypass);
+
+        mixer.set_insert_bypass(track_id, insert_id, false);
+        assert!(!mixer.track(track_id).unwrap().inserts[0].bypass);
+    }
+
+    #[test]
+    fn test_insert_ids_are_unique() {
+        let mut mixer = Mixer::new(44100, 256);
+        let engine = Engine::new(44100, 256);
+        let track_id = mixer.add_track(engine, 0xFFFF);
+
+        let id1 = mixer.add_insert(track_id, Engine::new(44100, 256)).unwrap();
+        let id2 = mixer.add_insert(track_id, Engine::new(44100, 256)).unwrap();
+        let id3 = mixer.add_insert(track_id, Engine::new(44100, 256)).unwrap();
+        assert_ne!(id1, id2);
+        assert_ne!(id2, id3);
+    }
+
+    #[test]
+    fn test_insert_chain_renders_without_crash() {
+        let mut mixer = Mixer::new(44100, 256);
+        let engine = Engine::new(44100, 256);
+        let track_id = mixer.add_track(engine, 0xFFFF);
+
+        // Add 3 inserts (no-backend engines = they zero the output, simulating effects)
+        mixer.add_insert(track_id, Engine::new(44100, 256));
+        mixer.add_insert(track_id, Engine::new(44100, 256));
+        mixer.add_insert(track_id, Engine::new(44100, 256));
+
+        let mut left = vec![0.0; 256];
+        let mut right = vec![0.0; 256];
+        mixer.render(&mut left, &mut right);
+        // Should not crash
+    }
+
+    #[test]
+    fn test_insert_chain_all_bypassed() {
+        let mut mixer = Mixer::new(44100, 256);
+        let engine = Engine::new(44100, 256);
+        let track_id = mixer.add_track(engine, 0xFFFF);
+
+        let id1 = mixer.add_insert(track_id, Engine::new(44100, 256)).unwrap();
+        let id2 = mixer.add_insert(track_id, Engine::new(44100, 256)).unwrap();
+        mixer.set_insert_bypass(track_id, id1, true);
+        mixer.set_insert_bypass(track_id, id2, true);
+
+        let mut left = vec![0.0; 256];
+        let mut right = vec![0.0; 256];
+        mixer.render(&mut left, &mut right);
+        // All bypassed = same as no inserts
+    }
+
+    #[test]
+    fn test_process_insert_chain_passthrough_when_empty() {
+        // With no inserts, audio should be unmodified
+        let mut left = vec![0.5; 64];
+        let mut right = vec![0.3; 64];
+        let mut scratch_l = vec![0.0; 64];
+        let mut scratch_r = vec![0.0; 64];
+        let mut inserts: Vec<InsertEffect> = vec![];
+
+        process_insert_chain(&mut inserts, &mut left, &mut right, &mut scratch_l, &mut scratch_r, 64);
+
+        assert!(left.iter().all(|&s| (s - 0.5).abs() < f32::EPSILON));
+        assert!(right.iter().all(|&s| (s - 0.3).abs() < f32::EPSILON));
+    }
+
+    #[test]
+    fn test_process_insert_chain_all_bypassed_passthrough() {
+        let mut left = vec![0.5; 64];
+        let mut right = vec![0.3; 64];
+        let mut scratch_l = vec![0.0; 64];
+        let mut scratch_r = vec![0.0; 64];
+        let mut inserts = vec![
+            InsertEffect { id: 0, engine: Engine::new(44100, 64), bypass: true },
+            InsertEffect { id: 1, engine: Engine::new(44100, 64), bypass: true },
+        ];
+
+        process_insert_chain(&mut inserts, &mut left, &mut right, &mut scratch_l, &mut scratch_r, 64);
+
+        // All bypassed = audio unchanged
+        assert!(left.iter().all(|&s| (s - 0.5).abs() < f32::EPSILON));
+        assert!(right.iter().all(|&s| (s - 0.3).abs() < f32::EPSILON));
+    }
+
+    #[test]
+    fn test_track_insert_accessor() {
+        let mut mixer = Mixer::new(44100, 256);
+        let engine = Engine::new(44100, 256);
+        let track_id = mixer.add_track(engine, 0xFFFF);
+        let insert_id = mixer.add_insert(track_id, Engine::new(44100, 256)).unwrap();
+
+        assert!(mixer.track_insert(track_id, insert_id).is_some());
+        assert!(mixer.track_insert(track_id, 999).is_none());
+        assert!(mixer.track_insert(999, insert_id).is_none());
+    }
+
+    #[test]
+    fn test_multiple_tracks_with_inserts() {
+        let mut mixer = Mixer::new(44100, 256);
+        let t1 = mixer.add_track(Engine::new(44100, 256), 0x0001);
+        let t2 = mixer.add_track(Engine::new(44100, 256), 0x0002);
+
+        mixer.add_insert(t1, Engine::new(44100, 256));
+        mixer.add_insert(t1, Engine::new(44100, 256));
+        mixer.add_insert(t2, Engine::new(44100, 256));
+
+        assert_eq!(mixer.track(t1).unwrap().inserts.len(), 2);
+        assert_eq!(mixer.track(t2).unwrap().inserts.len(), 1);
+
+        let mut left = vec![0.0; 256];
+        let mut right = vec![0.0; 256];
+        mixer.render(&mut left, &mut right);
+        // Should not crash with multiple tracks each having inserts
     }
 }
