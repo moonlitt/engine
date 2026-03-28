@@ -10,6 +10,7 @@ pub mod envelope;
 pub mod filter;
 mod sample;
 mod voice;
+pub mod voicepool;
 
 pub use sample::SamplePool;
 pub use voice::Voice;

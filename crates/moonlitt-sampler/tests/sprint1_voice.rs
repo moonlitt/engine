@@ -53,8 +53,13 @@ fn t2_find_sample_for_note() {
     assert!(sample_info.is_some(), "Should find sample for C4 in Grand Piano");
 
     let info = sample_info.unwrap();
-    eprintln!("Sample for C4: '{}', root={}, rate={}Hz, len={} samples",
-        info.name, info.root_key, info.sample_rate, info.len());
+    eprintln!("Sample for C4: '{}', root={}, pitchadj={} cents, rate={}Hz, len={} samples",
+        info.name, info.root_key, info.pitch_correction, info.sample_rate, info.len());
+
+    // Verify: if root_key=60 and note=60, expected freq depends on pitch_correction
+    let correction_semitones = info.pitch_correction as f64 / 100.0;
+    let expected_freq = 261.626 * 2.0f64.powf(correction_semitones / 12.0);
+    eprintln!("Expected freq with correction: {expected_freq:.3}Hz");
 
     assert!(info.sample_rate > 0, "Sample rate should be positive");
     assert!(info.len() > 0, "Sample should have data");

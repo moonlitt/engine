@@ -21,7 +21,12 @@ pub struct Voice {
 
 impl Voice {
     pub fn new(pool: &SamplePool, output_rate: u32) -> Self {
-        let _ = pool; // pool reference for future use
+        let _ = pool;
+        Self::new_standalone(output_rate)
+    }
+
+    /// Create a voice without a pool reference (for VoicePool use).
+    pub fn new_standalone(output_rate: u32) -> Self {
         Self {
             interp: SincInterpolator::new(Quality::Sinc72),
             sample: None,
@@ -54,6 +59,18 @@ impl Voice {
 
     pub fn is_active(&self) -> bool {
         self.active
+    }
+
+    /// Begin release (for Sprint 4, immediately stops; Sprint 5 will use envelope).
+    pub fn note_off(&mut self) {
+        self.active = false;
+    }
+
+    /// Immediately silence (for all-notes-off).
+    pub fn silence(&mut self) {
+        self.active = false;
+        self.sample = None;
+        self.position = 0.0;
     }
 
     /// Render mono audio into the output buffer.
