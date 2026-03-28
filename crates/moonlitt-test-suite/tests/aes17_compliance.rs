@@ -71,23 +71,6 @@ fn power_spectrum(signal: &[f32]) -> Vec<f64> {
         .collect()
 }
 
-/// Compute the biquad transfer function magnitude at a given frequency.
-///
-/// H(e^{jw}) = (b0 + b1*e^{-jw} + b2*e^{-2jw}) / (1 + a1*e^{-jw} + a2*e^{-2jw})
-///
-/// Returns |H(e^{jw})| (linear magnitude).
-fn biquad_magnitude_at(coeffs: &BiquadCoeffs, freq: f64, sample_rate: f64) -> f64 {
-    let w = 2.0 * PI * freq / sample_rate;
-
-    let ejw = Complex::new(0.0, -w).exp();
-    let e2jw = Complex::new(0.0, -2.0 * w).exp();
-
-    let num = Complex::new(coeffs.b0, 0.0) + Complex::new(coeffs.b1, 0.0) * ejw + Complex::new(coeffs.b2, 0.0) * e2jw;
-    let den = Complex::new(1.0, 0.0) + Complex::new(coeffs.a1, 0.0) * ejw + Complex::new(coeffs.a2, 0.0) * e2jw;
-
-    (num / den).norm()
-}
-
 /// Create a ParametricEq with bypass=true.
 fn eq_bypassed() -> ParametricEq {
     let mut eq = ParametricEq::new(SAMPLE_RATE);
