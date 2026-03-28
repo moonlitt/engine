@@ -100,10 +100,37 @@ impl Mixer {
         }
     }
 
+    // --- ID counter accessors (for Runtime pre-assignment) ---
+
+    pub fn next_track_id(&self) -> u32 {
+        self.next_track_id
+    }
+
+    pub fn next_bus_id(&self) -> u32 {
+        self.next_bus_id
+    }
+
+    pub fn next_insert_id(&self) -> u32 {
+        self.next_insert_id
+    }
+
     /// Add a track with an engine and a channel mask. Returns the track ID.
     pub fn add_track(&mut self, engine: Engine, channel_mask: u16) -> u32 {
         let id = self.next_track_id;
         self.next_track_id += 1;
+        self.add_track_inner(id, engine, channel_mask);
+        id
+    }
+
+    /// Add a track with a pre-assigned ID (for Runtime command channel).
+    pub fn add_track_with_id(&mut self, id: u32, engine: Engine, channel_mask: u16) {
+        if id >= self.next_track_id {
+            self.next_track_id = id + 1;
+        }
+        self.add_track_inner(id, engine, channel_mask);
+    }
+
+    fn add_track_inner(&mut self, id: u32, engine: Engine, channel_mask: u16) {
         self.tracks.push(Track {
             id,
             engine,
@@ -119,7 +146,6 @@ impl Mixer {
             scratch_left: vec![0.0; self.buffer_size],
             scratch_right: vec![0.0; self.buffer_size],
         });
-        id
     }
 
     /// Remove a track by ID. Returns the engine if found.
@@ -133,6 +159,19 @@ impl Mixer {
     pub fn add_send_bus(&mut self, engine: Engine) -> u32 {
         let id = self.next_bus_id;
         self.next_bus_id += 1;
+        self.add_send_bus_inner(id, engine);
+        id
+    }
+
+    /// Add a send bus with a pre-assigned ID (for Runtime command channel).
+    pub fn add_send_bus_with_id(&mut self, id: u32, engine: Engine) {
+        if id >= self.next_bus_id {
+            self.next_bus_id = id + 1;
+        }
+        self.add_send_bus_inner(id, engine);
+    }
+
+    fn add_send_bus_inner(&mut self, id: u32, engine: Engine) {
         let bs = self.buffer_size;
         self.send_buses.push(SendBus {
             id,
@@ -147,7 +186,6 @@ impl Mixer {
         for track in &mut self.tracks {
             track.send_levels.push(0.0);
         }
-        id
     }
 
     // --- Accessors ---
@@ -189,6 +227,20 @@ impl Mixer {
             bypass: false,
         });
         Some(id)
+    }
+
+    /// Add an insert with a pre-assigned ID (for Runtime command channel).
+    pub fn add_insert_with_id(&mut self, track_id: u32, insert_id: u32, engine: Engine) {
+        if insert_id >= self.next_insert_id {
+            self.next_insert_id = insert_id + 1;
+        }
+        if let Some(track) = self.tracks.iter_mut().find(|t| t.id == track_id) {
+            track.inserts.push(InsertEffect {
+                id: insert_id,
+                engine,
+                bypass: false,
+            });
+        }
     }
 
     /// Remove an insert effect from a track. Returns the engine if found.

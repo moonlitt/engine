@@ -281,6 +281,91 @@ pub extern "C" fn moonlitt_mixer_set_insert_bypass(
 }
 
 // ---------------------------------------------------------------------------
+// Dynamic track/insert/bus management (via command channel)
+// ---------------------------------------------------------------------------
+
+/// Add a track from an engine handle at runtime. Returns track ID, or -1 on error.
+/// The engine is consumed on success (taken from the handle).
+#[no_mangle]
+pub extern "C" fn moonlitt_runtime_add_track(
+    rt: *mut RuntimeHandle, engine_handle: *mut EngineHandle, channel_mask: c_int,
+) -> c_int {
+    let rt = match unsafe { rt.as_mut() } {
+        Some(r) => r,
+        None => return -1,
+    };
+    let eh = match unsafe { engine_handle.as_mut() } {
+        Some(h) => h,
+        None => return -1,
+    };
+    let engine = match eh.engine.take() {
+        Some(e) => e,
+        None => return -1,
+    };
+    rt.runtime.add_track(engine, channel_mask as u16) as c_int
+}
+
+/// Remove a track at runtime. Notes are silenced before removal.
+#[no_mangle]
+pub extern "C" fn moonlitt_runtime_remove_track(rt: *mut RuntimeHandle, track_id: c_int) {
+    if let Some(h) = unsafe { rt.as_mut() } {
+        h.runtime.remove_track(track_id as u32);
+    }
+}
+
+/// Add an insert effect to a track at runtime. Returns insert ID, or -1 on error.
+/// The engine is consumed on success.
+#[no_mangle]
+pub extern "C" fn moonlitt_runtime_add_insert(
+    rt: *mut RuntimeHandle, track_id: c_int, engine_handle: *mut EngineHandle,
+) -> c_int {
+    let rt = match unsafe { rt.as_mut() } {
+        Some(r) => r,
+        None => return -1,
+    };
+    let eh = match unsafe { engine_handle.as_mut() } {
+        Some(h) => h,
+        None => return -1,
+    };
+    let engine = match eh.engine.take() {
+        Some(e) => e,
+        None => return -1,
+    };
+    rt.runtime.add_insert(track_id as u32, engine) as c_int
+}
+
+/// Remove an insert effect from a track at runtime.
+#[no_mangle]
+pub extern "C" fn moonlitt_runtime_remove_insert(
+    rt: *mut RuntimeHandle, track_id: c_int, insert_id: c_int,
+) {
+    if let Some(h) = unsafe { rt.as_mut() } {
+        h.runtime.remove_insert(track_id as u32, insert_id as u32);
+    }
+}
+
+/// Add a send bus at runtime. Returns bus ID, or -1 on error.
+/// The engine is consumed on success.
+#[no_mangle]
+pub extern "C" fn moonlitt_runtime_add_send_bus(
+    rt: *mut RuntimeHandle, engine_handle: *mut EngineHandle,
+) -> c_int {
+    let rt = match unsafe { rt.as_mut() } {
+        Some(r) => r,
+        None => return -1,
+    };
+    let eh = match unsafe { engine_handle.as_mut() } {
+        Some(h) => h,
+        None => return -1,
+    };
+    let engine = match eh.engine.take() {
+        Some(e) => e,
+        None => return -1,
+    };
+    rt.runtime.add_send_bus(engine) as c_int
+}
+
+// ---------------------------------------------------------------------------
 // MIDI device listing
 // ---------------------------------------------------------------------------
 

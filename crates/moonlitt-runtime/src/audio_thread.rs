@@ -3,7 +3,13 @@ use crate::mixer::Mixer;
 use crate::sequencer::Sequencer;
 use crate::transport::Transport;
 use rtrb::Consumer;
+use std::sync::mpsc;
 use std::sync::Arc;
+
+/// A structural command that mutates the Mixer (e.g. add/remove track).
+/// Sent via mpsc channel (not the SPSC ring buffer) because these carry
+/// heap-allocated data (Engine) that can't fit in a Copy event.
+pub(crate) type MixerCommand = Box<dyn FnOnce(&mut Mixer) + Send>;
 
 /// A delayed event waiting to be dispatched at the right sample.
 #[derive(Clone, Copy)]
@@ -18,6 +24,8 @@ struct PendingEvent {
 pub(crate) struct AudioThread {
     pub mixer: Mixer,
     pub consumer: Consumer<TimedEvent>,
+    /// Receiver for structural commands (add/remove tracks, inserts, buses).
+    pub command_rx: mpsc::Receiver<MixerCommand>,
     pub sequencer: Option<Sequencer>,
     pub transport: Arc<Transport>,
     /// Pre-allocated sequencer event buffer
@@ -33,6 +41,7 @@ impl AudioThread {
     pub fn new(
         mixer: Mixer,
         consumer: Consumer<TimedEvent>,
+        command_rx: mpsc::Receiver<MixerCommand>,
         sequencer: Option<Sequencer>,
         transport: Arc<Transport>,
         buffer_size: usize,
@@ -40,6 +49,7 @@ impl AudioThread {
         Self {
             mixer,
             consumer,
+            command_rx,
             sequencer,
             transport,
             seq_events: Vec::with_capacity(64),
@@ -58,7 +68,13 @@ impl AudioThread {
         while offset < frames_needed {
             let chunk = (frames_needed - offset).min(buffer_size);
 
-            // 1. Drain event queue — separate immediate and delayed
+            // 1. Drain structural commands (add/remove tracks, inserts, buses).
+            // Processed BEFORE MIDI events so new tracks are ready to receive notes.
+            while let Ok(cmd) = self.command_rx.try_recv() {
+                cmd(&mut self.mixer);
+            }
+
+            // 2. Drain event queue — separate immediate and delayed
             while let Ok(timed) = self.consumer.pop() {
                 if timed.delay_samples == 0 {
                     dispatch_to_mixer(&mut self.mixer, timed.event);
@@ -71,7 +87,7 @@ impl AudioThread {
                 // else: drop the delayed event — better than allocating on audio thread
             }
 
-            // 2. Advance sequencer (at chunk boundaries)
+            // 3. Advance sequencer (at chunk boundaries)
             if let Some(ref mut seq) = self.sequencer {
                 if self.transport.is_playing() {
                     self.seq_events.clear();
@@ -89,7 +105,7 @@ impl AudioThread {
                 }
             }
 
-            // 3. Render with sample-accurate event insertion
+            // 4. Render with sample-accurate event insertion
             if self.pending.is_empty() {
                 // Fast path: no delayed events
                 self.mixer

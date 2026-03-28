@@ -1,5 +1,5 @@
 use crate::audio_output::AudioOutput;
-use crate::audio_thread::AudioThread;
+use crate::audio_thread::{AudioThread, MixerCommand};
 use crate::event::{AudioEvent, TimedEvent};
 use crate::midi_input::{MidiDeviceInfo, MidiInputConnection};
 use crate::mixer::Mixer;
@@ -7,18 +7,27 @@ use crate::transport::Transport;
 use moonlitt_engine::engine::Engine;
 use rtrb::RingBuffer;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc;
 use std::sync::Arc;
 
 pub struct Runtime {
     producer: rtrb::Producer<TimedEvent>,
+    /// Channel for structural commands (add/remove tracks, inserts, buses).
+    command_tx: mpsc::Sender<MixerCommand>,
     audio_output: Option<AudioOutput>,
     #[allow(dead_code)]
     midi_connection: Option<MidiInputConnection>,
     transport: Arc<Transport>,
     #[allow(dead_code)]
     buffer_size: u32,
+    #[allow(dead_code)]
+    sample_rate: u32,
     /// Counter for events dropped due to ring buffer overflow.
     dropped_events: Arc<AtomicU64>,
+    /// Pre-assigned ID counters (synchronized with Mixer on audio thread).
+    next_track_id: u32,
+    next_bus_id: u32,
+    next_insert_id: u32,
 }
 
 impl Runtime {
@@ -49,14 +58,21 @@ impl Runtime {
 
     /// Create a runtime with a pre-configured Mixer.
     pub fn with_mixer(mixer: Mixer, buffer_size: u32) -> Result<Self, String> {
+        let sample_rate = mixer.sample_rate();
+        let next_track_id = mixer.next_track_id();
+        let next_bus_id = mixer.next_bus_id();
+        let next_insert_id = mixer.next_insert_id();
+
         // Ring buffer capacity: 1024 events. Sufficient for real-time MIDI at
         // typical rates; events are drained every audio callback (~5ms).
         let (producer, consumer) = RingBuffer::new(1024);
+        let (command_tx, command_rx) = mpsc::channel();
         let transport = Arc::new(Transport::new());
 
         let audio_thread = AudioThread::new(
             mixer,
             consumer,
+            command_rx,
             None,
             transport.clone(),
             buffer_size as usize,
@@ -66,11 +82,16 @@ impl Runtime {
 
         Ok(Self {
             producer,
+            command_tx,
             audio_output: Some(audio_output),
             midi_connection: None,
             transport,
             buffer_size,
+            sample_rate,
             dropped_events: Arc::new(AtomicU64::new(0)),
+            next_track_id,
+            next_bus_id,
+            next_insert_id,
         })
     }
 
@@ -206,6 +227,56 @@ impl Runtime {
 
     pub fn mixer_set_insert_bypass(&mut self, track_id: u8, insert_id: u8, bypass: bool) {
         self.send(AudioEvent::InsertBypass { track_id, insert_id, bypass });
+    }
+
+    // --- Structural commands (via mpsc command channel) ---
+    // These carry heap-allocated data (Engine) and run on the audio thread.
+
+    /// Add a track at runtime. Returns the pre-assigned track ID.
+    pub fn add_track(&mut self, engine: Engine, channel_mask: u16) -> u32 {
+        let id = self.next_track_id;
+        self.next_track_id += 1;
+        let _ = self.command_tx.send(Box::new(move |mixer| {
+            mixer.add_track_with_id(id, engine, channel_mask);
+        }));
+        id
+    }
+
+    /// Remove a track at runtime. Notes are silenced before removal.
+    pub fn remove_track(&mut self, track_id: u32) {
+        let _ = self.command_tx.send(Box::new(move |mixer| {
+            if let Some(track) = mixer.track_mut(track_id) {
+                track.engine.all_notes_off();
+            }
+            mixer.remove_track(track_id);
+        }));
+    }
+
+    /// Add an insert effect to a track at runtime. Returns the pre-assigned insert ID.
+    pub fn add_insert(&mut self, track_id: u32, engine: Engine) -> u32 {
+        let id = self.next_insert_id;
+        self.next_insert_id += 1;
+        let _ = self.command_tx.send(Box::new(move |mixer| {
+            mixer.add_insert_with_id(track_id, id, engine);
+        }));
+        id
+    }
+
+    /// Remove an insert effect from a track at runtime.
+    pub fn remove_insert(&mut self, track_id: u32, insert_id: u32) {
+        let _ = self.command_tx.send(Box::new(move |mixer| {
+            mixer.remove_insert(track_id, insert_id);
+        }));
+    }
+
+    /// Add a send bus at runtime. Returns the pre-assigned bus ID.
+    pub fn add_send_bus(&mut self, engine: Engine) -> u32 {
+        let id = self.next_bus_id;
+        self.next_bus_id += 1;
+        let _ = self.command_tx.send(Box::new(move |mixer| {
+            mixer.add_send_bus_with_id(id, engine);
+        }));
+        id
     }
 
     // --- Transport ---
