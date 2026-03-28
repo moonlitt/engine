@@ -6,6 +6,7 @@
 //! Replaces OxiSynth with a from-scratch implementation
 //! where every line of DSP code is ours.
 
+pub mod envelope;
 mod sample;
 mod voice;
 
