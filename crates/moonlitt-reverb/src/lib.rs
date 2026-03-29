@@ -7,6 +7,9 @@
 
 mod allpass;
 mod comb;
+pub mod dattorro;
+mod mod_allpass;
 mod reverb;
 
+pub use dattorro::DattorroReverb;
 pub use reverb::Reverb;
