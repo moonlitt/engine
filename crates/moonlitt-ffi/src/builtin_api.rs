@@ -51,7 +51,7 @@ pub extern "C" fn moonlitt_builtin_create_compressor(
     }))
 }
 
-/// Create a stereo reverb engine (Freeverb algorithm).
+/// Create a stereo reverb engine (Dattorro plate reverb algorithm).
 #[no_mangle]
 pub extern "C" fn moonlitt_builtin_create_reverb(
     sample_rate: c_int,
@@ -59,8 +59,75 @@ pub extern "C" fn moonlitt_builtin_create_reverb(
 ) -> *mut EngineHandle {
     let sr = sample_rate.max(1) as u32;
     let bs = buffer_size.max(1) as u32;
-    let reverb = moonlitt_reverb::Reverb::new(sr);
+    let reverb = moonlitt_reverb::DattorroReverb::new(sr);
     let engine = Engine::from_backend(Box::new(reverb), sr, bs);
+    Box::into_raw(Box::new(EngineHandle {
+        engine: Some(engine),
+        last_error: None,
+        last_error_cstring: None,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// WAV loader: reads a mono WAV file and returns f32 samples.
+// Uses hound for robust PCM-16, PCM-24, PCM-32 and IEEE-float-32 support.
+// ---------------------------------------------------------------------------
+
+fn load_wav_mono(path: &str) -> Option<Vec<f32>> {
+    let mut reader = hound::WavReader::open(path).ok()?;
+    let spec = reader.spec();
+
+    match (spec.sample_format, spec.bits_per_sample) {
+        (hound::SampleFormat::Float, 32) => {
+            let samples: Vec<f32> = reader
+                .samples::<f32>()
+                .step_by(spec.channels as usize)   // take first channel (mono/L)
+                .filter_map(|s| s.ok())
+                .collect();
+            if samples.is_empty() { None } else { Some(samples) }
+        }
+        (hound::SampleFormat::Int, bits) => {
+            let scale = 1.0 / (1u64 << (bits - 1)) as f32;
+            let samples: Vec<f32> = reader
+                .samples::<i32>()
+                .step_by(spec.channels as usize)
+                .filter_map(|s| s.ok())
+                .map(|s| s as f32 * scale)
+                .collect();
+            if samples.is_empty() { None } else { Some(samples) }
+        }
+        _ => None,
+    }
+}
+
+/// Create a convolution reverb engine from a mono WAV impulse response file.
+///
+/// `ir_path`     — UTF-8 path to a WAV file (PCM-16/24/32 or IEEE float-32, any channel count;
+///                 only the first channel is used as the mono IR).
+/// `sample_rate` — playback sample rate in Hz.
+/// `buffer_size` — processing block size (determines FFT partition size and PDC latency).
+///
+/// Returns an EngineHandle on success, or null if the file cannot be read or parsed.
+#[no_mangle]
+pub extern "C" fn moonlitt_builtin_create_convolver(
+    ir_path: *const c_char,
+    sample_rate: c_int,
+    buffer_size: c_int,
+) -> *mut EngineHandle {
+    let path = match unsafe { cstr_to_str(ir_path) } {
+        Some(p) => p,
+        None => return std::ptr::null_mut(),
+    };
+    let sr = sample_rate.max(1) as u32;
+    let bs = buffer_size.max(1) as usize;
+
+    let ir = match load_wav_mono(path) {
+        Some(s) => s,
+        None => return std::ptr::null_mut(),
+    };
+
+    let conv = moonlitt_convolver::Convolver::from_ir(&ir, sr, bs);
+    let engine = Engine::from_backend(Box::new(conv), sr, bs as u32);
     Box::into_raw(Box::new(EngineHandle {
         engine: Some(engine),
         last_error: None,

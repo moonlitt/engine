@@ -15,4 +15,6 @@ moonlitt-runtime = { path = "../moonlitt-runtime" }
 moonlitt-eq = { path = "../moonlitt-eq" }
 moonlitt-compressor = { path = "../moonlitt-compressor" }
 moonlitt-reverb = { path = "../moonlitt-reverb" }
+moonlitt-convolver = { path = "../moonlitt-convolver" }
+hound = "3"
 oxisynth = { path = "../../deps/oxisynth/oxisynth" }
