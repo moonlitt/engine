@@ -15,6 +15,7 @@ members = [
     "crates/moonlitt-eq",
     "crates/moonlitt-compressor",
     "crates/moonlitt-reverb",
+    "crates/moonlitt-convolver",
 ]
 
 [workspace.package]

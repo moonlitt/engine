@@ -1,0 +1,11 @@
+[package]
+name = "moonlitt-convolver"
+description = "FFT partitioned convolution reverb -- overlap-add algorithm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+moonlitt-core = { path = "../moonlitt-core" }
+rustfft = "6"
