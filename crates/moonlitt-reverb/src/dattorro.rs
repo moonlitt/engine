@@ -11,6 +11,7 @@
 //!
 //! Zero tolerance: bypass = bit-exact, dry=100% = bit-exact.
 
+use crate::mod_allpass::ModAllpass;
 use moonlitt_core::{AudioBackend, BackendInfo, BackendType, ParamFlags, ParamInfo};
 
 // ---------------------------------------------------------------------------
@@ -36,13 +37,244 @@ const PARAM_DECAY_DIFFUSION_2: u32 = 13;
 const PARAM_COUNT: u32 = 14;
 
 // ---------------------------------------------------------------------------
-// Stub: DattorroReverb
+// Dattorro 1997 Table 2 — delay lengths at 44100 Hz
+// ---------------------------------------------------------------------------
+
+// Input diffusion allpasses
+const INPUT_AP1_LEN: usize = 142;
+const INPUT_AP2_LEN: usize = 107;
+const INPUT_AP3_LEN: usize = 379;
+const INPUT_AP4_LEN: usize = 277;
+
+// Left tank
+const L_MOD_AP_LEN: usize = 672;
+const L_DELAY1_LEN: usize = 4453;
+const L_AP_LEN: usize = 1800;
+const L_DELAY2_LEN: usize = 3720;
+
+// Right tank
+const R_MOD_AP_LEN: usize = 908;
+const R_DELAY1_LEN: usize = 4217;
+const R_AP_LEN: usize = 2656;
+const R_DELAY2_LEN: usize = 3163;
+
+// ---------------------------------------------------------------------------
+// Output tap positions (Dattorro 1997 Table 1)
+// ---------------------------------------------------------------------------
+
+// Left output taps
+const L_TAP_FROM_L_DELAY1_A: usize = 266;
+const L_TAP_FROM_L_DELAY1_B: usize = 2974;
+const L_TAP_FROM_L_AP: usize = 1913; // subtracted
+const L_TAP_FROM_L_DELAY2: usize = 1996;
+const L_TAP_FROM_R_DELAY1: usize = 1990; // subtracted
+const L_TAP_FROM_R_AP: usize = 187;  // subtracted
+const L_TAP_FROM_R_DELAY2: usize = 1066; // subtracted
+
+// Right output taps
+const R_TAP_FROM_R_DELAY1_A: usize = 353;
+const R_TAP_FROM_R_DELAY1_B: usize = 3627;
+const R_TAP_FROM_R_AP: usize = 1228; // subtracted
+const R_TAP_FROM_R_DELAY2: usize = 2111;
+const R_TAP_FROM_L_DELAY1: usize = 2673; // subtracted
+const R_TAP_FROM_L_AP: usize = 335;  // subtracted
+const R_TAP_FROM_L_DELAY2: usize = 121; // subtracted
+
+// ---------------------------------------------------------------------------
+// Simple allpass (non-modulated, for input diffusion)
+// ---------------------------------------------------------------------------
+
+struct SimpleAllpass {
+    buffer: Vec<f32>,
+    index: usize,
+    feedback: f32,
+}
+
+impl SimpleAllpass {
+    fn new(size: usize, feedback: f32) -> Self {
+        Self {
+            buffer: vec![0.0; size.max(1)],
+            index: 0,
+            feedback,
+        }
+    }
+
+    #[inline]
+    fn set_feedback(&mut self, feedback: f32) {
+        self.feedback = feedback;
+    }
+
+    #[inline]
+    fn process(&mut self, input: f32) -> f32 {
+        let delayed = self.buffer[self.index];
+        let output = -self.feedback * input + delayed;
+        self.buffer[self.index] = input + self.feedback * delayed;
+        self.index += 1;
+        if self.index >= self.buffer.len() {
+            self.index = 0;
+        }
+        output
+    }
+
+    /// Read from the internal buffer at an offset behind the write head.
+    /// Offset wraps modularly within the buffer.
+    #[inline]
+    fn read_at(&self, offset: usize) -> f32 {
+        let len = self.buffer.len();
+        let off = offset % len;
+        let pos = if self.index >= off {
+            self.index - off
+        } else {
+            len - (off - self.index)
+        };
+        self.buffer[pos]
+    }
+
+    fn clear(&mut self) {
+        self.buffer.fill(0.0);
+        self.index = 0;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Delay line (simple ring buffer)
+// ---------------------------------------------------------------------------
+
+struct DelayLine {
+    buffer: Vec<f32>,
+    write_index: usize,
+}
+
+impl DelayLine {
+    fn new(size: usize) -> Self {
+        Self {
+            buffer: vec![0.0; size.max(1)],
+            write_index: 0,
+        }
+    }
+
+    /// Write a sample and return the oldest sample (full delay length).
+    #[inline]
+    fn process(&mut self, input: f32) -> f32 {
+        let output = self.buffer[self.write_index];
+        self.buffer[self.write_index] = input;
+        self.write_index += 1;
+        if self.write_index >= self.buffer.len() {
+            self.write_index = 0;
+        }
+        output
+    }
+
+    /// Read from a tap at `offset` samples behind the write head.
+    /// Offset wraps modularly within the buffer.
+    #[inline]
+    fn read_at(&self, offset: usize) -> f32 {
+        let len = self.buffer.len();
+        let off = offset % len;
+        let pos = if self.write_index >= off {
+            self.write_index - off
+        } else {
+            len - (off - self.write_index)
+        };
+        self.buffer[pos]
+    }
+
+    fn clear(&mut self) {
+        self.buffer.fill(0.0);
+        self.write_index = 0;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// One-pole lowpass (damping filter)
+// ---------------------------------------------------------------------------
+
+struct OnePoleLP {
+    prev: f32,
+    damp: f32, // coefficient: 0=no filtering, 1=max filtering
+}
+
+impl OnePoleLP {
+    fn new(damp: f32) -> Self {
+        Self { prev: 0.0, damp }
+    }
+
+    #[inline]
+    fn process(&mut self, input: f32) -> f32 {
+        // y[n] = (1 - damp) * x[n] + damp * y[n-1]
+        self.prev = (1.0 - self.damp) * input + self.damp * self.prev;
+        self.prev
+    }
+
+    fn clear(&mut self) {
+        self.prev = 0.0;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Predelay ring buffer
+// ---------------------------------------------------------------------------
+
+struct PreDelay {
+    buffer: Vec<f32>,
+    write_index: usize,
+    delay_samples: usize,
+}
+
+impl PreDelay {
+    fn new(max_samples: usize) -> Self {
+        Self {
+            buffer: vec![0.0; max_samples.max(1)],
+            write_index: 0,
+            delay_samples: 0,
+        }
+    }
+
+    fn set_delay(&mut self, samples: usize) {
+        self.delay_samples = samples.min(self.buffer.len() - 1);
+    }
+
+    #[inline]
+    fn process(&mut self, input: f32) -> f32 {
+        let len = self.buffer.len();
+        // Read from delay_samples behind write head
+        let read_index = if self.write_index >= self.delay_samples {
+            self.write_index - self.delay_samples
+        } else {
+            len - (self.delay_samples - self.write_index)
+        };
+        let output = self.buffer[read_index % len];
+        self.buffer[self.write_index] = input;
+        self.write_index += 1;
+        if self.write_index >= len {
+            self.write_index = 0;
+        }
+        output
+    }
+
+    fn clear(&mut self) {
+        self.buffer.fill(0.0);
+        self.write_index = 0;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helper: scale delay length from 44100 Hz reference
+// ---------------------------------------------------------------------------
+
+#[inline]
+fn scale_delay(base: usize, sample_rate: u32) -> usize {
+    (base as f64 * sample_rate as f64 / 44100.0).round() as usize
+}
+
+// ---------------------------------------------------------------------------
+// DattorroReverb
 // ---------------------------------------------------------------------------
 
 /// Dattorro plate reverb (Dattorro 1997).
 ///
-/// **Current state: STUB.** `process_effect` does passthrough only.
-/// This exists so TDD RED tests compile and the expected failures are visible.
+/// Full implementation of Figure 1: input diffusion, two cross-fed tanks
+/// with modulated allpasses, damping lowpass filters, and multi-tap output.
 pub struct DattorroReverb {
     sample_rate: u32,
 
@@ -61,13 +293,89 @@ pub struct DattorroReverb {
     input_diffusion_2: f64,
     decay_diffusion_1: f64,
     decay_diffusion_2: f64,
+
+    // Pre-delay
+    predelay: PreDelay,
+
+    // Input diffusion: 4 allpasses in series
+    input_ap1: SimpleAllpass,
+    input_ap2: SimpleAllpass,
+    input_ap3: SimpleAllpass,
+    input_ap4: SimpleAllpass,
+
+    // Left tank
+    l_mod_ap: ModAllpass,
+    l_delay1: DelayLine,
+    l_damp: OnePoleLP,
+    l_ap: SimpleAllpass,
+    l_delay2: DelayLine,
+
+    // Right tank
+    r_mod_ap: ModAllpass,
+    r_delay1: DelayLine,
+    r_damp: OnePoleLP,
+    r_ap: SimpleAllpass,
+    r_delay2: DelayLine,
+
+    // Cross-feedback storage
+    l_tank_out: f32,
+    r_tank_out: f32,
+
+    // LFO state
+    lfo_phase: f64,
+
+    // Scaled tap positions
+    l_tap_l_delay1_a: usize,
+    l_tap_l_delay1_b: usize,
+    l_tap_l_ap: usize,
+    l_tap_l_delay2: usize,
+    l_tap_r_delay1: usize,
+    l_tap_r_ap: usize,
+    l_tap_r_delay2: usize,
+
+    r_tap_r_delay1_a: usize,
+    r_tap_r_delay1_b: usize,
+    r_tap_r_ap: usize,
+    r_tap_r_delay2: usize,
+    r_tap_l_delay1: usize,
+    r_tap_l_ap: usize,
+    r_tap_l_delay2: usize,
 }
 
 impl DattorroReverb {
     /// Create a new Dattorro plate reverb at the given sample rate.
     pub fn new(sample_rate: u32) -> Self {
-        Self {
-            sample_rate,
+        let sr = sample_rate;
+
+        // Max predelay: 200ms
+        let max_predelay = (0.2 * sr as f64).ceil() as usize + 1;
+
+        // Scale all delay lengths
+        let input_ap1_len = scale_delay(INPUT_AP1_LEN, sr);
+        let input_ap2_len = scale_delay(INPUT_AP2_LEN, sr);
+        let input_ap3_len = scale_delay(INPUT_AP3_LEN, sr);
+        let input_ap4_len = scale_delay(INPUT_AP4_LEN, sr);
+
+        let l_mod_ap_len = scale_delay(L_MOD_AP_LEN, sr);
+        let l_delay1_len = scale_delay(L_DELAY1_LEN, sr);
+        let l_ap_len = scale_delay(L_AP_LEN, sr);
+        let l_delay2_len = scale_delay(L_DELAY2_LEN, sr);
+
+        let r_mod_ap_len = scale_delay(R_MOD_AP_LEN, sr);
+        let r_delay1_len = scale_delay(R_DELAY1_LEN, sr);
+        let r_ap_len = scale_delay(R_AP_LEN, sr);
+        let r_delay2_len = scale_delay(R_DELAY2_LEN, sr);
+
+        // Default coefficients
+        let diff1: f32 = 0.75;
+        let diff2: f32 = 0.625;
+        let decay_diff1: f32 = 0.7;
+        let decay_diff2: f32 = 0.5;
+        let damp: f32 = 0.5;
+
+        let mut reverb = Self {
+            sample_rate: sr,
+
             predelay_ms: 0.0,
             decay: 0.5,
             damping: 0.5,
@@ -82,12 +390,84 @@ impl DattorroReverb {
             input_diffusion_2: 0.625,
             decay_diffusion_1: 0.7,
             decay_diffusion_2: 0.5,
-        }
+
+            predelay: PreDelay::new(max_predelay),
+
+            input_ap1: SimpleAllpass::new(input_ap1_len, diff1),
+            input_ap2: SimpleAllpass::new(input_ap2_len, diff1),
+            input_ap3: SimpleAllpass::new(input_ap3_len, diff2),
+            input_ap4: SimpleAllpass::new(input_ap4_len, diff2),
+
+            l_mod_ap: ModAllpass::new(l_mod_ap_len, decay_diff1),
+            l_delay1: DelayLine::new(l_delay1_len),
+            l_damp: OnePoleLP::new(damp),
+            l_ap: SimpleAllpass::new(l_ap_len, decay_diff2),
+            l_delay2: DelayLine::new(l_delay2_len),
+
+            r_mod_ap: ModAllpass::new(r_mod_ap_len, decay_diff1),
+            r_delay1: DelayLine::new(r_delay1_len),
+            r_damp: OnePoleLP::new(damp),
+            r_ap: SimpleAllpass::new(r_ap_len, decay_diff2),
+            r_delay2: DelayLine::new(r_delay2_len),
+
+            l_tank_out: 0.0,
+            r_tank_out: 0.0,
+
+            lfo_phase: 0.0,
+
+            // Tap positions (will be set below)
+            l_tap_l_delay1_a: 0,
+            l_tap_l_delay1_b: 0,
+            l_tap_l_ap: 0,
+            l_tap_l_delay2: 0,
+            l_tap_r_delay1: 0,
+            l_tap_r_ap: 0,
+            l_tap_r_delay2: 0,
+
+            r_tap_r_delay1_a: 0,
+            r_tap_r_delay1_b: 0,
+            r_tap_r_ap: 0,
+            r_tap_r_delay2: 0,
+            r_tap_l_delay1: 0,
+            r_tap_l_ap: 0,
+            r_tap_l_delay2: 0,
+        };
+
+        reverb.update_taps();
+        reverb
+    }
+
+    /// Recalculate scaled tap positions for current sample rate.
+    fn update_taps(&mut self) {
+        let sr = self.sample_rate;
+
+        self.l_tap_l_delay1_a = scale_delay(L_TAP_FROM_L_DELAY1_A, sr);
+        self.l_tap_l_delay1_b = scale_delay(L_TAP_FROM_L_DELAY1_B, sr);
+        self.l_tap_l_ap = scale_delay(L_TAP_FROM_L_AP, sr);
+        self.l_tap_l_delay2 = scale_delay(L_TAP_FROM_L_DELAY2, sr);
+        self.l_tap_r_delay1 = scale_delay(L_TAP_FROM_R_DELAY1, sr);
+        self.l_tap_r_ap = scale_delay(L_TAP_FROM_R_AP, sr);
+        self.l_tap_r_delay2 = scale_delay(L_TAP_FROM_R_DELAY2, sr);
+
+        self.r_tap_r_delay1_a = scale_delay(R_TAP_FROM_R_DELAY1_A, sr);
+        self.r_tap_r_delay1_b = scale_delay(R_TAP_FROM_R_DELAY1_B, sr);
+        self.r_tap_r_ap = scale_delay(R_TAP_FROM_R_AP, sr);
+        self.r_tap_r_delay2 = scale_delay(R_TAP_FROM_R_DELAY2, sr);
+        self.r_tap_l_delay1 = scale_delay(R_TAP_FROM_L_DELAY1, sr);
+        self.r_tap_l_ap = scale_delay(R_TAP_FROM_L_AP, sr);
+        self.r_tap_l_delay2 = scale_delay(R_TAP_FROM_L_DELAY2, sr);
+    }
+
+    /// Update predelay from ms to samples.
+    fn update_predelay(&mut self) {
+        let samples =
+            (self.predelay_ms / 1000.0 * self.sample_rate as f64).round() as usize;
+        self.predelay.set_delay(samples);
     }
 }
 
 // ---------------------------------------------------------------------------
-// AudioBackend implementation (STUB — passthrough only)
+// AudioBackend implementation
 // ---------------------------------------------------------------------------
 
 impl AudioBackend for DattorroReverb {
@@ -104,7 +484,25 @@ impl AudioBackend for DattorroReverb {
     }
 
     fn unload(&mut self) {
-        // STUB: nothing to clear yet
+        // Clear all delay buffers
+        self.predelay.clear();
+        self.input_ap1.clear();
+        self.input_ap2.clear();
+        self.input_ap3.clear();
+        self.input_ap4.clear();
+        self.l_mod_ap.clear();
+        self.l_delay1.clear();
+        self.l_damp.clear();
+        self.l_ap.clear();
+        self.l_delay2.clear();
+        self.r_mod_ap.clear();
+        self.r_delay1.clear();
+        self.r_damp.clear();
+        self.r_ap.clear();
+        self.r_delay2.clear();
+        self.l_tank_out = 0.0;
+        self.r_tank_out = 0.0;
+        self.lfo_phase = 0.0;
     }
 
     // MIDI — reverb is an effect, these are no-ops.
@@ -128,14 +526,127 @@ impl AudioBackend for DattorroReverb {
     ) {
         let len = in_l.len().min(in_r.len()).min(out_l.len()).min(out_r.len());
 
-        // STUB: passthrough (bypass and dry_100 tests will pass; others will fail)
-        out_l[..len].copy_from_slice(&in_l[..len]);
-        out_r[..len].copy_from_slice(&in_r[..len]);
+        // Bypass: bit-exact copy
+        if self.bypass {
+            out_l[..len].copy_from_slice(&in_l[..len]);
+            out_r[..len].copy_from_slice(&in_r[..len]);
+            return;
+        }
+
+        // dry_wet=0 means 100% dry: bit-exact copy
+        if self.dry_wet == 0.0 {
+            out_l[..len].copy_from_slice(&in_l[..len]);
+            out_r[..len].copy_from_slice(&in_r[..len]);
+            return;
+        }
+
+        let decay = self.decay as f32;
+        let wet = self.dry_wet as f32;
+        let dry = 1.0 - wet;
+        let width = self.stereo_width as f32;
+
+        // LFO parameters: mod_depth is 0-1, scaled to 0-16 samples max excursion
+        let mod_depth = self.mod_depth as f32 * 16.0;
+        let lfo_inc = self.mod_rate / self.sample_rate as f64;
+
+        // Update damping coefficient
+        let damp_coeff = self.damping as f32;
+        self.l_damp.damp = damp_coeff;
+        self.r_damp.damp = damp_coeff;
+
+        // Update input diffusion coefficients
+        let diff1 = self.diffusion as f32;
+        let diff2 = self.input_diffusion_2 as f32;
+        self.input_ap1.set_feedback(diff1);
+        self.input_ap2.set_feedback(diff1);
+        self.input_ap3.set_feedback(diff2);
+        self.input_ap4.set_feedback(diff2);
+
+        // Update decay diffusion coefficients
+        let dd1 = self.decay_diffusion_1 as f32;
+        let dd2 = self.decay_diffusion_2 as f32;
+        self.l_mod_ap.set_feedback(dd1);
+        self.r_mod_ap.set_feedback(dd1);
+        self.l_ap.set_feedback(dd2);
+        self.r_ap.set_feedback(dd2);
+
+        for i in 0..len {
+            // 1. Mono sum input
+            let mono_in = (in_l[i] + in_r[i]) * 0.5;
+
+            // 2. Pre-delay
+            let pre_delayed = self.predelay.process(mono_in);
+
+            // 3. Input diffusion: 4 allpasses in series
+            let d1 = self.input_ap1.process(pre_delayed);
+            let d2 = self.input_ap2.process(d1);
+            let d3 = self.input_ap3.process(d2);
+            let diffused = self.input_ap4.process(d3);
+
+            // 4. LFO for tank modulation
+            let lfo_l = (self.lfo_phase * std::f64::consts::TAU).sin() as f32 * mod_depth;
+            let lfo_r =
+                ((self.lfo_phase + 0.5) * std::f64::consts::TAU).sin() as f32 * mod_depth;
+            self.lfo_phase += lfo_inc;
+            if self.lfo_phase >= 1.0 {
+                self.lfo_phase -= 1.0;
+            }
+
+            // 5. Left tank: input = diffused + decay * right_tank_out (cross-feedback)
+            let l_in = diffused + decay * self.r_tank_out;
+            let l_mod = self.l_mod_ap.process(l_in, lfo_l);
+            let l_d1 = self.l_delay1.process(l_mod);
+            let l_damped = self.l_damp.process(l_d1);
+            let l_decayed = l_damped * decay;
+            let l_ap_out = self.l_ap.process(l_decayed);
+            let l_d2 = self.l_delay2.process(l_ap_out);
+            // Store for cross-feedback next sample
+            let new_l_tank_out = l_d2;
+
+            // 6. Right tank: input = diffused + decay * left_tank_out (cross-feedback)
+            let r_in = diffused + decay * self.l_tank_out;
+            let r_mod = self.r_mod_ap.process(r_in, lfo_r);
+            let r_d1 = self.r_delay1.process(r_mod);
+            let r_damped = self.r_damp.process(r_d1);
+            let r_decayed = r_damped * decay;
+            let r_ap_out = self.r_ap.process(r_decayed);
+            let r_d2 = self.r_delay2.process(r_ap_out);
+            let new_r_tank_out = r_d2;
+
+            // Update cross-feedback state
+            self.l_tank_out = new_l_tank_out;
+            self.r_tank_out = new_r_tank_out;
+
+            // 7. Output taps (Dattorro 1997, Table 1)
+            // Left output = sum of taps from both tanks
+            let tap_l = self.l_delay1.read_at(self.l_tap_l_delay1_a)
+                + self.l_delay1.read_at(self.l_tap_l_delay1_b)
+                - self.l_ap.read_at(self.l_tap_l_ap)
+                + self.l_delay2.read_at(self.l_tap_l_delay2)
+                - self.r_delay1.read_at(self.l_tap_r_delay1)
+                - self.r_ap.read_at(self.l_tap_r_ap)
+                - self.r_delay2.read_at(self.l_tap_r_delay2);
+
+            // Right output = sum of taps from both tanks (mirror)
+            let tap_r = self.r_delay1.read_at(self.r_tap_r_delay1_a)
+                + self.r_delay1.read_at(self.r_tap_r_delay1_b)
+                - self.r_ap.read_at(self.r_tap_r_ap)
+                + self.r_delay2.read_at(self.r_tap_r_delay2)
+                - self.l_delay1.read_at(self.r_tap_l_delay1)
+                - self.l_ap.read_at(self.r_tap_l_ap)
+                - self.l_delay2.read_at(self.r_tap_l_delay2);
+
+            // 8. Stereo width crossfade
+            let wet_l = tap_l * (0.5 + 0.5 * width) + tap_r * (0.5 - 0.5 * width);
+            let wet_r = tap_r * (0.5 + 0.5 * width) + tap_l * (0.5 - 0.5 * width);
+
+            // 9. Dry/wet mix
+            out_l[i] = in_l[i] * dry + wet_l * wet;
+            out_r[i] = in_r[i] * dry + wet_r * wet;
+        }
     }
 
-    fn set_volume(&mut self, _volume: f32) {
-        // STUB
-    }
+    fn set_volume(&mut self, _volume: f32) {}
 
     fn sample_rate(&self) -> u32 {
         self.sample_rate
@@ -318,7 +829,10 @@ impl AudioBackend for DattorroReverb {
 
     fn set_param(&mut self, id: u32, value: f64) {
         match id {
-            PARAM_PREDELAY => self.predelay_ms = value.clamp(0.0, 200.0),
+            PARAM_PREDELAY => {
+                self.predelay_ms = value.clamp(0.0, 200.0);
+                self.update_predelay();
+            }
             PARAM_DECAY => self.decay = value.clamp(0.0, 1.0),
             PARAM_DAMPING => self.damping = value.clamp(0.0, 1.0),
             PARAM_DIFFUSION => self.diffusion = value.clamp(0.0, 1.0),
