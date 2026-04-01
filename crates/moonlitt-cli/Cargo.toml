@@ -11,6 +11,7 @@ name = "moonlitt"
 path = "src/main.rs"
 
 [dependencies]
+moonlitt-core = { path = "../moonlitt-core" }
 moonlitt-engine = { path = "../moonlitt-engine", features = ["sf2", "vst3", "clap"] }
 moonlitt-runtime = { path = "../moonlitt-runtime" }
 clap = { version = "4", features = ["derive"] }

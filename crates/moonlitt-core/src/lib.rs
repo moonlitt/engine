@@ -9,10 +9,12 @@
 mod caps;
 mod event;
 mod host;
+mod null_backend;
 
 pub use caps::BackendCaps;
 pub use event::{AudioEvent, TimedEvent};
 pub use host::{AudioCallback, AudioHost};
+pub use null_backend::NullBackend;
 
 /// All backends implement this trait. Public — community can extend.
 pub trait AudioBackend: Send {

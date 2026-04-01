@@ -1,4 +1,4 @@
-use moonlitt_engine::engine::Engine;
+use moonlitt_core::AudioBackend;
 use moonlitt_runtime::Runtime;
 use std::thread;
 use std::time::Duration;
@@ -15,8 +15,8 @@ fn is_no_device_error(msg: &str) -> bool {
 
 /// Try to create and start a Runtime, returning None only if no audio device
 /// is present. Panics on any other error to surface real regressions.
-fn try_create_runtime(engine: Engine) -> Option<Runtime> {
-    match Runtime::new(engine) {
+fn try_create_runtime(backend: Box<dyn AudioBackend>, sample_rate: u32, buffer_size: u32) -> Option<Runtime> {
+    match Runtime::new(backend, sample_rate, buffer_size) {
         Ok(rt) => match rt.start() {
             Ok(()) => Some(rt),
             Err(e) => {
@@ -28,7 +28,7 @@ fn try_create_runtime(engine: Engine) -> Option<Runtime> {
                 }
             }
         },
-        Err((e, _engine)) => {
+        Err((e, _backend)) => {
             if is_no_device_error(&e) {
                 eprintln!("No audio device, skipping: {e}");
                 None
@@ -41,15 +41,14 @@ fn try_create_runtime(engine: Engine) -> Option<Runtime> {
 
 #[test]
 fn runtime_start_stop() {
-    let mut engine = Engine::new(44100, 256);
-    // Load SF2 for a simple test
     let sf2 = "/Users/wangyan/Desktop/stardew valley mods/mods/piano-block/assets/soundfonts/GeneralUser_GS.sf2";
     if !std::path::Path::new(sf2).exists() {
         return;
     }
-    engine.load(sf2).unwrap();
 
-    let mut rt = match try_create_runtime(engine) {
+    let backend = moonlitt_engine::create(sf2, 44100, 256).unwrap();
+
+    let mut rt = match try_create_runtime(backend, 44100, 256) {
         Some(rt) => rt,
         None => return,
     };

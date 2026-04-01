@@ -1,7 +1,6 @@
 mod wav;
 
 use clap::{Parser, Subcommand};
-use moonlitt_engine::engine::Engine;
 
 #[derive(Parser)]
 #[command(name = "moonlitt", about = "Audio engine CLI for scanning, playing, and rendering")]
@@ -114,8 +113,7 @@ fn main() {
 }
 
 fn cmd_scan(_dir: Option<String>) {
-    let engine = Engine::new(44100, 256);
-    let plugins = engine.scan_plugins();
+    let plugins = moonlitt_engine::scan_plugins(44100, 256);
 
     if plugins.is_empty() {
         println!("No plugins found.");
@@ -131,25 +129,21 @@ fn cmd_scan(_dir: Option<String>) {
 }
 
 fn cmd_info(path: &str) {
-    let mut engine = Engine::new(44100, 256);
-    match engine.load(path) {
-        Ok(()) => {
-            if let Some(info) = engine.backend_info() {
-                println!("Backend:    {}", info.name);
-                println!("Type:       {:?}", info.backend_type);
-                println!(
-                    "Extensions: {}",
-                    info.extensions.join(", ")
-                );
-            }
-            let presets = engine.presets();
-            println!("Presets:    {}", presets.len());
-        }
+    let backend = match moonlitt_engine::create(path, 44100, 256) {
+        Ok(b) => b,
         Err(e) => {
             eprintln!("Error loading {path}: {e}");
             std::process::exit(1);
         }
-    }
+    };
+
+    let info = backend.info();
+    println!("Backend:    {}", info.name);
+    println!("Type:       {:?}", info.backend_type);
+    println!("Extensions: {}", info.extensions.join(", "));
+
+    let presets = backend.presets();
+    println!("Presets:    {}", presets.len());
 }
 
 fn cmd_play(
@@ -161,11 +155,13 @@ fn cmd_play(
     sample_rate: u32,
     buffer_size: u32,
 ) {
-    let mut engine = Engine::new(sample_rate, buffer_size);
-    if let Err(e) = engine.load(path) {
-        eprintln!("Error loading {path}: {e}");
-        std::process::exit(1);
-    }
+    let mut backend = match moonlitt_engine::create(path, sample_rate, buffer_size) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("Error loading {path}: {e}");
+            std::process::exit(1);
+        }
+    };
 
     let total_samples = (sample_rate as f32 * duration) as usize;
     let num_buffers = total_samples.div_ceil(buffer_size as usize);
@@ -179,13 +175,13 @@ fn cmd_play(
     let mut left = vec![0.0f32; buffer_size as usize];
     let mut right = vec![0.0f32; buffer_size as usize];
 
-    engine.note_on(0, note, velocity);
+    backend.note_on(0, note, velocity);
 
     for i in 0..num_buffers {
         if i == note_off_buffer {
-            engine.note_off(0, note);
+            backend.note_off(0, note);
         }
-        engine.render(&mut left, &mut right);
+        backend.render(&mut left, &mut right);
         all_left.extend_from_slice(&left);
         all_right.extend_from_slice(&right);
     }
@@ -220,13 +216,15 @@ fn cmd_play_live(path: &str, note: u8, velocity: u8, duration: f32, sample_rate:
     use std::thread;
     use std::time::Duration;
 
-    let mut engine = Engine::new(sample_rate, buffer_size);
-    if let Err(e) = engine.load(path) {
-        eprintln!("Error: {e}");
-        std::process::exit(1);
-    }
+    let backend = match moonlitt_engine::create(path, sample_rate, buffer_size) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    };
 
-    let mut rt = match Runtime::new(engine) {
+    let mut rt = match Runtime::new(backend, sample_rate, buffer_size) {
         Ok(r) => r,
         Err((e, _)) => {
             eprintln!("Audio error: {e}");
@@ -253,13 +251,15 @@ fn cmd_live(path: &str) {
     use moonlitt_runtime::Runtime;
     use std::time::Duration;
 
-    let mut engine = Engine::new(44100, 256);
-    if let Err(e) = engine.load(path) {
-        eprintln!("Error: {e}");
-        std::process::exit(1);
-    }
+    let backend = match moonlitt_engine::create(path, 44100, 256) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    };
 
-    let mut rt = match Runtime::new(engine) {
+    let mut rt = match Runtime::new(backend, 44100, 256) {
         Ok(r) => r,
         Err((e, _)) => {
             eprintln!("Audio error: {e}");
@@ -445,22 +445,24 @@ fn cmd_midi_live(midi_path: &str, sound_path: &str) {
 
     println!("MIDI: {} notes, {:.1}s", notes.len(), duration);
 
-    let mut engine = Engine::new(44100, 256);
-    if let Err(e) = engine.load(sound_path) {
-        eprintln!("Error loading {sound_path}: {e}");
-        std::process::exit(1);
-    }
-    println!("Sound: {}", engine.backend_info().map(|i| i.name.clone()).unwrap_or_default());
+    let mut backend = match moonlitt_engine::create(sound_path, 44100, 256) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("Error loading {sound_path}: {e}");
+            std::process::exit(1);
+        }
+    };
+    println!("Sound: {}", backend.info().name);
 
     // Send program changes
     let mut sent_programs = std::collections::HashSet::new();
     for &(_, ch, prog) in &program_changes {
         if sent_programs.insert((ch, prog)) {
-            engine.program_change(ch, prog);
+            backend.program_change(ch, prog);
         }
     }
 
-    let mut rt = match Runtime::new(engine) {
+    let mut rt = match Runtime::new(backend, 44100, 256) {
         Ok(r) => r,
         Err((e, _)) => { eprintln!("Audio error: {e}"); std::process::exit(1); }
     };
@@ -519,18 +521,20 @@ fn cmd_midi_render(midi_path: &str, sound_path: &str, output: &str) {
 
     let sample_rate = 44100u32;
     let buffer_size = 256u32;
-    let mut engine = Engine::new(sample_rate, buffer_size);
     // Offline rendering uses highest quality (Sinc72 for SF2)
-    if let Err(e) = engine.load_high_quality(sound_path) {
-        eprintln!("Error loading {sound_path}: {e}");
-        std::process::exit(1);
-    }
+    let mut backend = match moonlitt_engine::create_high_quality(sound_path, sample_rate, buffer_size) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("Error loading {sound_path}: {e}");
+            std::process::exit(1);
+        }
+    };
 
     // Send initial program changes
     let mut sent = std::collections::HashSet::new();
     for &(_, ch, prog) in &program_changes {
         if sent.insert((ch, prog)) {
-            engine.program_change(ch, prog);
+            backend.program_change(ch, prog);
         }
     }
 
@@ -552,7 +556,7 @@ fn cmd_midi_render(midi_path: &str, sound_path: &str, output: &str) {
         // Note-offs
         pending_offs.retain(|&(off_time, ch, note)| {
             if off_time <= buf_end {
-                engine.note_off(ch, note);
+                backend.note_off(ch, note);
                 false
             } else {
                 true
@@ -562,12 +566,12 @@ fn cmd_midi_render(midi_path: &str, sound_path: &str, output: &str) {
         // Note-ons
         while note_idx < notes.len() && notes[note_idx].time_sec <= buf_end {
             let n = &notes[note_idx];
-            engine.note_on(n.channel, n.note, n.velocity);
+            backend.note_on(n.channel, n.note, n.velocity);
             pending_offs.push((n.time_sec + n.duration_sec, n.channel, n.note));
             note_idx += 1;
         }
 
-        engine.render(&mut left, &mut right);
+        backend.render(&mut left, &mut right);
         all_left.extend_from_slice(&left);
         all_right.extend_from_slice(&right);
     }
@@ -589,13 +593,15 @@ fn cmd_midi_render(midi_path: &str, sound_path: &str, output: &str) {
 }
 
 fn cmd_presets(path: &str) {
-    let mut engine = Engine::new(44100, 256);
-    if let Err(e) = engine.load(path) {
-        eprintln!("Error loading {path}: {e}");
-        std::process::exit(1);
-    }
+    let backend = match moonlitt_engine::create(path, 44100, 256) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("Error loading {path}: {e}");
+            std::process::exit(1);
+        }
+    };
 
-    let presets = engine.presets();
+    let presets = backend.presets();
     if presets.is_empty() {
         println!("No presets found.");
         return;

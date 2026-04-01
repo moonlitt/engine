@@ -2,7 +2,8 @@
 //!
 //! Zero tolerance: machine epsilon only.
 
-use moonlitt_engine::engine::Engine;
+
+use moonlitt_core::AudioBackend;
 use moonlitt_effects::ParametricEq;
 use moonlitt_runtime::mixer::Mixer;
 use std::path::Path;
@@ -15,14 +16,12 @@ const BUFFER_SIZE: usize = 256;
 // Helpers
 // =============================================================================
 
-fn load_sf2_engine() -> Option<Engine> {
+fn load_sf2_engine() -> Option<Box<dyn AudioBackend>> {
     if !Path::new(SF2_PATH).exists() {
         eprintln!("SF2 not found at {SF2_PATH}, skipping test");
         return None;
     }
-    let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-    engine.load(SF2_PATH).ok()?;
-    Some(engine)
+    moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).ok()
 }
 
 fn render_blocks(mixer: &mut Mixer, num_blocks: usize) -> (Vec<f32>, Vec<f32>) {
@@ -110,8 +109,7 @@ fn g07_pan_law_constant_power() {
     }
 
     // Render the raw engine output once (no pan applied = reference)
-    let mut engine_ref = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-    engine_ref.load(SF2_PATH).unwrap();
+    let engine_ref = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
     let mut mixer_ref = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
     mixer_ref.master_mut().limiter_threshold = 1.0;
     let id_ref = mixer_ref.add_track(engine_ref, 0xFFFF);
@@ -210,9 +208,7 @@ fn g08_signal_chain_order() {
 
     // Render with trim=+6dB, flat EQ insert
     let engine1 = {
-        let mut e = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-        e.load(SF2_PATH).unwrap();
-        e
+        moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap()
     };
     let mut mixer_trim = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
     mixer_trim.master_mut().limiter_threshold = 1.0;
@@ -221,7 +217,7 @@ fn g08_signal_chain_order() {
 
     // Add a flat EQ insert (all bands disabled = passthrough)
     let eq = ParametricEq::new(SAMPLE_RATE);
-    let eq_engine = Engine::from_backend(Box::new(eq), SAMPLE_RATE, BUFFER_SIZE as u32);
+    let eq_engine = Box::new(eq) as Box<dyn AudioBackend>;
     mixer_trim.add_insert(id1, eq_engine);
 
     mixer_trim.note_on(0, 60, 100);
@@ -241,16 +237,14 @@ fn g08_signal_chain_order() {
     // Set fader=0.0 with send=1.0. Send bus should receive zero signal.
 
     let engine2 = {
-        let mut e = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-        e.load(SF2_PATH).unwrap();
-        e
+        moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap()
     };
     let mut mixer_send = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
     mixer_send.master_mut().limiter_threshold = 1.0;
     let id2 = mixer_send.add_track(engine2, 0xFFFF);
 
     // Add a send bus with a no-backend engine (acts as passthrough accumulator)
-    let send_engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
+    let send_engine = Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>;
     let _bus_id = mixer_send.add_send_bus(send_engine);
 
     // Set fader=0.0 and send=1.0
@@ -280,9 +274,7 @@ fn g08_signal_chain_order() {
 
     // --- Part 3: Verify fader > 0 with send produces signal ---
     let engine3 = {
-        let mut e = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-        e.load(SF2_PATH).unwrap();
-        e
+        moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap()
     };
     let mut mixer_send2 = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
     mixer_send2.master_mut().limiter_threshold = 1.0;
@@ -290,7 +282,7 @@ fn g08_signal_chain_order() {
 
     // Add send bus with passthrough reverb to actually see the bus output
     let reverb = moonlitt_effects::Reverb::new(SAMPLE_RATE);
-    let mut reverb_engine = Engine::from_backend(Box::new(reverb), SAMPLE_RATE, BUFFER_SIZE as u32);
+    let mut reverb_engine = Box::new(reverb) as Box<dyn AudioBackend>;
     reverb_engine.set_param(7, 1.0); // 100% wet
     let _bus_id2 = mixer_send2.add_send_bus(reverb_engine);
 

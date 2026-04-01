@@ -1,17 +1,21 @@
-//! Engine FFI — opaque handle wrapping `moonlitt_engine::Engine`.
+//! Engine FFI — opaque handle wrapping `Box<dyn AudioBackend>`.
 //!
 //! All functions are NULL-safe. Functions that can fail return `c_int`
 //! (0 = success, non-zero = error) and store the error message internally
 //! for retrieval via `moonlitt_engine_get_error`.
 
 use crate::util::{cstr_to_str, debug_warn_midi_range, json_escape, to_c_string};
-use moonlitt_engine::engine::Engine;
+use moonlitt_core::AudioBackend;
 use std::ffi::{c_char, c_float, c_int};
 
 /// Opaque engine handle exposed to C callers.
-/// Stores the engine plus the last error message for `get_error`.
+/// Stores the backend plus configuration and error state.
 pub struct EngineHandle {
-    pub(crate) engine: Option<Engine>,
+    pub(crate) backend: Option<Box<dyn AudioBackend>>,
+    pub(crate) sample_rate: u32,
+    pub(crate) buffer_size: u32,
+    /// Path of the loaded file (for session persistence and FFI reload).
+    pub(crate) loaded_path: Option<String>,
     pub(crate) last_error: Option<String>,
     /// Cached CString for FFI error retrieval. The pointer returned by
     /// `get_error` remains valid until the next engine operation that
@@ -38,12 +42,15 @@ impl EngineHandle {
 // Lifecycle
 // ---------------------------------------------------------------------------
 
-/// Create a new engine. Returns an opaque pointer, or null on failure.
+/// Create a new engine handle. Returns an opaque pointer.
+/// The handle has no backend loaded — call `moonlitt_engine_load` next.
 #[no_mangle]
 pub extern "C" fn moonlitt_engine_create(sample_rate: c_int, buffer_size: c_int) -> *mut EngineHandle {
-    let engine = Engine::new(sample_rate.max(1) as u32, buffer_size.max(1) as u32);
     let handle = Box::new(EngineHandle {
-        engine: Some(engine),
+        backend: None,
+        sample_rate: sample_rate.max(1) as u32,
+        buffer_size: buffer_size.max(1) as u32,
+        loaded_path: None,
         last_error: None,
         last_error_cstring: None,
     });
@@ -79,15 +86,16 @@ pub extern "C" fn moonlitt_engine_load(e: *mut EngineHandle, path: *const c_char
             return 1;
         }
     };
-    let engine = match handle.engine.as_mut() {
-        Some(eng) => eng,
-        None => {
-            handle.set_error("engine already consumed by runtime".into());
-            return 1;
-        }
-    };
-    match engine.load(path) {
-        Ok(()) => {
+    // Cannot load if backend was already consumed by runtime
+    if handle.backend.is_some() || handle.loaded_path.is_some() {
+        // Unload existing first (allow reloading)
+        handle.backend = None;
+        handle.loaded_path = None;
+    }
+    match moonlitt_engine::create(path, handle.sample_rate, handle.buffer_size) {
+        Ok(backend) => {
+            handle.backend = Some(backend);
+            handle.loaded_path = Some(path.to_string());
             handle.clear_error();
             0
         }
@@ -102,9 +110,11 @@ pub extern "C" fn moonlitt_engine_load(e: *mut EngineHandle, path: *const c_char
 #[no_mangle]
 pub extern "C" fn moonlitt_engine_unload(e: *mut EngineHandle) {
     if let Some(handle) = unsafe { e.as_mut() } {
-        if let Some(engine) = handle.engine.as_mut() {
-            engine.unload();
+        if let Some(ref mut backend) = handle.backend {
+            backend.unload();
         }
+        handle.backend = None;
+        handle.loaded_path = None;
     }
 }
 
@@ -112,10 +122,7 @@ pub extern "C" fn moonlitt_engine_unload(e: *mut EngineHandle) {
 #[no_mangle]
 pub extern "C" fn moonlitt_engine_is_loaded(e: *mut EngineHandle) -> c_int {
     match unsafe { e.as_ref() } {
-        Some(handle) => match handle.engine.as_ref() {
-            Some(engine) => engine.is_loaded() as c_int,
-            None => 0,
-        },
+        Some(handle) => handle.backend.is_some() as c_int,
         None => 0,
     }
 }
@@ -127,14 +134,14 @@ pub extern "C" fn moonlitt_engine_is_loaded(e: *mut EngineHandle) -> c_int {
 #[no_mangle]
 pub extern "C" fn moonlitt_engine_note_on(e: *mut EngineHandle, ch: c_int, note: c_int, vel: c_int) {
     if let Some(handle) = unsafe { e.as_mut() } {
-        if let Some(engine) = handle.engine.as_mut() {
+        if let Some(backend) = handle.backend.as_mut() {
             debug_warn_midi_range("engine_note_on", "ch", ch, 0, 15);
             debug_warn_midi_range("engine_note_on", "note", note, 0, 127);
             debug_warn_midi_range("engine_note_on", "vel", vel, 0, 127);
             let ch = (ch.max(0) as u8).min(15);
             let note = (note.max(0) as u8).min(127);
             let vel = (vel.max(0) as u8).min(127);
-            engine.note_on(ch, note, vel);
+            backend.note_on(ch, note, vel);
         }
     }
 }
@@ -142,12 +149,12 @@ pub extern "C" fn moonlitt_engine_note_on(e: *mut EngineHandle, ch: c_int, note:
 #[no_mangle]
 pub extern "C" fn moonlitt_engine_note_off(e: *mut EngineHandle, ch: c_int, note: c_int) {
     if let Some(handle) = unsafe { e.as_mut() } {
-        if let Some(engine) = handle.engine.as_mut() {
+        if let Some(backend) = handle.backend.as_mut() {
             debug_warn_midi_range("engine_note_off", "ch", ch, 0, 15);
             debug_warn_midi_range("engine_note_off", "note", note, 0, 127);
             let ch = (ch.max(0) as u8).min(15);
             let note = (note.max(0) as u8).min(127);
-            engine.note_off(ch, note);
+            backend.note_off(ch, note);
         }
     }
 }
@@ -155,14 +162,14 @@ pub extern "C" fn moonlitt_engine_note_off(e: *mut EngineHandle, ch: c_int, note
 #[no_mangle]
 pub extern "C" fn moonlitt_engine_cc(e: *mut EngineHandle, ch: c_int, cc: c_int, val: c_int) {
     if let Some(handle) = unsafe { e.as_mut() } {
-        if let Some(engine) = handle.engine.as_mut() {
+        if let Some(backend) = handle.backend.as_mut() {
             debug_warn_midi_range("engine_cc", "ch", ch, 0, 15);
             debug_warn_midi_range("engine_cc", "cc", cc, 0, 127);
             debug_warn_midi_range("engine_cc", "val", val, 0, 127);
             let ch = (ch.max(0) as u8).min(15);
             let cc = (cc.max(0) as u8).min(127);
             let val = (val.max(0) as u8).min(127);
-            engine.cc(ch, cc, val);
+            backend.cc(ch, cc, val);
         }
     }
 }
@@ -170,12 +177,12 @@ pub extern "C" fn moonlitt_engine_cc(e: *mut EngineHandle, ch: c_int, cc: c_int,
 #[no_mangle]
 pub extern "C" fn moonlitt_engine_pitch_bend(e: *mut EngineHandle, ch: c_int, val: c_int) {
     if let Some(handle) = unsafe { e.as_mut() } {
-        if let Some(engine) = handle.engine.as_mut() {
+        if let Some(backend) = handle.backend.as_mut() {
             debug_warn_midi_range("engine_pitch_bend", "ch", ch, 0, 15);
             debug_warn_midi_range("engine_pitch_bend", "val", val, -8192, 8191);
             let ch = (ch.max(0) as u8).min(15);
             let val = (val.clamp(-8192, 8191)) as i16;
-            engine.pitch_bend(ch, val);
+            backend.pitch_bend(ch, val);
         }
     }
 }
@@ -183,12 +190,12 @@ pub extern "C" fn moonlitt_engine_pitch_bend(e: *mut EngineHandle, ch: c_int, va
 #[no_mangle]
 pub extern "C" fn moonlitt_engine_program_change(e: *mut EngineHandle, ch: c_int, prog: c_int) {
     if let Some(handle) = unsafe { e.as_mut() } {
-        if let Some(engine) = handle.engine.as_mut() {
+        if let Some(backend) = handle.backend.as_mut() {
             debug_warn_midi_range("engine_program_change", "ch", ch, 0, 15);
             debug_warn_midi_range("engine_program_change", "prog", prog, 0, 127);
             let ch = (ch.max(0) as u8).min(15);
             let prog = (prog.max(0) as u8).min(127);
-            engine.program_change(ch, prog);
+            backend.program_change(ch, prog);
         }
     }
 }
@@ -196,8 +203,8 @@ pub extern "C" fn moonlitt_engine_program_change(e: *mut EngineHandle, ch: c_int
 #[no_mangle]
 pub extern "C" fn moonlitt_engine_all_notes_off(e: *mut EngineHandle) {
     if let Some(handle) = unsafe { e.as_mut() } {
-        if let Some(engine) = handle.engine.as_mut() {
-            engine.all_notes_off();
+        if let Some(backend) = handle.backend.as_mut() {
+            backend.all_notes_off();
         }
     }
 }
@@ -225,8 +232,8 @@ pub extern "C" fn moonlitt_engine_render(
     let n = frames as usize;
     let left_slice = unsafe { std::slice::from_raw_parts_mut(left, n) };
     let right_slice = unsafe { std::slice::from_raw_parts_mut(right, n) };
-    match handle.engine.as_mut() {
-        Some(engine) => engine.render(left_slice, right_slice),
+    match handle.backend.as_mut() {
+        Some(backend) => backend.render(left_slice, right_slice),
         None => {
             left_slice.fill(0.0);
             right_slice.fill(0.0);
@@ -237,8 +244,8 @@ pub extern "C" fn moonlitt_engine_render(
 #[no_mangle]
 pub extern "C" fn moonlitt_engine_set_volume(e: *mut EngineHandle, volume: c_float) {
     if let Some(handle) = unsafe { e.as_mut() } {
-        if let Some(engine) = handle.engine.as_mut() {
-            engine.set_volume(volume);
+        if let Some(backend) = handle.backend.as_mut() {
+            backend.set_volume(volume);
         }
     }
 }
@@ -255,11 +262,7 @@ pub extern "C" fn moonlitt_engine_scan_plugins(e: *mut EngineHandle) -> *mut c_c
         Some(h) => h,
         None => return to_c_string("[]"),
     };
-    let engine = match handle.engine.as_ref() {
-        Some(eng) => eng,
-        None => return to_c_string("[]"),
-    };
-    let plugins = engine.scan_plugins();
+    let plugins = moonlitt_engine::scan_plugins(handle.sample_rate, handle.buffer_size);
     let entries: Vec<String> = plugins
         .iter()
         .map(|p| {
@@ -287,11 +290,11 @@ pub extern "C" fn moonlitt_engine_get_presets(e: *mut EngineHandle) -> *mut c_ch
         Some(h) => h,
         None => return to_c_string("[]"),
     };
-    let engine = match handle.engine.as_ref() {
-        Some(eng) => eng,
+    let backend = match handle.backend.as_ref() {
+        Some(b) => b,
         None => return to_c_string("[]"),
     };
-    let presets = engine.presets();
+    let presets = backend.presets();
     let entries: Vec<String> = presets
         .iter()
         .map(|p| {
@@ -313,14 +316,14 @@ pub extern "C" fn moonlitt_engine_load_preset(e: *mut EngineHandle, id: c_int) -
         Some(h) => h,
         None => return 1,
     };
-    let engine = match handle.engine.as_mut() {
-        Some(eng) => eng,
+    let backend = match handle.backend.as_mut() {
+        Some(b) => b,
         None => {
-            handle.set_error("engine already consumed by runtime".into());
+            handle.set_error("no backend loaded".into());
             return 1;
         }
     };
-    match engine.load_preset(id) {
+    match backend.load_preset(id) {
         Ok(()) => {
             handle.clear_error();
             0
@@ -340,8 +343,8 @@ pub extern "C" fn moonlitt_engine_load_preset(e: *mut EngineHandle, id: c_int) -
 #[no_mangle]
 pub extern "C" fn moonlitt_engine_param_count(e: *mut EngineHandle) -> c_int {
     match unsafe { e.as_ref() } {
-        Some(h) => match h.engine.as_ref() {
-            Some(eng) => eng.param_count() as c_int,
+        Some(h) => match h.backend.as_ref() {
+            Some(b) => b.param_count() as c_int,
             None => 0,
         },
         None => 0,
@@ -356,13 +359,13 @@ pub extern "C" fn moonlitt_engine_param_info_json(e: *mut EngineHandle) -> *mut 
         Some(h) => h,
         None => return to_c_string("[]"),
     };
-    let engine = match handle.engine.as_ref() {
-        Some(eng) => eng,
+    let backend = match handle.backend.as_ref() {
+        Some(b) => b,
         None => return to_c_string("[]"),
     };
-    let count = engine.param_count();
+    let count = backend.param_count();
     let entries: Vec<String> = (0..count)
-        .filter_map(|i| engine.param_info(i))
+        .filter_map(|i| backend.param_info(i))
         .map(|p| {
             format!(
                 r#"{{"id":{},"name":"{}","group":"{}","min":{},"max":{},"default":{},"step_count":{},"flags":{}}}"#,
@@ -382,8 +385,8 @@ pub extern "C" fn moonlitt_engine_param_info_json(e: *mut EngineHandle) -> *mut 
 #[no_mangle]
 pub extern "C" fn moonlitt_engine_get_param(e: *mut EngineHandle, id: c_int) -> f64 {
     match unsafe { e.as_ref() } {
-        Some(h) => match h.engine.as_ref() {
-            Some(eng) => eng.get_param(id as u32).unwrap_or(f64::NAN),
+        Some(h) => match h.backend.as_ref() {
+            Some(b) => b.get_param(id as u32).unwrap_or(f64::NAN),
             None => f64::NAN,
         },
         None => f64::NAN,
@@ -394,8 +397,8 @@ pub extern "C" fn moonlitt_engine_get_param(e: *mut EngineHandle, id: c_int) -> 
 #[no_mangle]
 pub extern "C" fn moonlitt_engine_set_param(e: *mut EngineHandle, id: c_int, value: f64) {
     if let Some(h) = unsafe { e.as_mut() } {
-        if let Some(eng) = h.engine.as_mut() {
-            eng.set_param(id as u32, value);
+        if let Some(b) = h.backend.as_mut() {
+            b.set_param(id as u32, value);
         }
     }
 }
@@ -405,9 +408,9 @@ pub extern "C" fn moonlitt_engine_set_param(e: *mut EngineHandle, id: c_int, val
 #[no_mangle]
 pub extern "C" fn moonlitt_engine_param_display(e: *mut EngineHandle, id: c_int, value: f64) -> *mut c_char {
     match unsafe { e.as_ref() } {
-        Some(h) => match h.engine.as_ref() {
-            Some(eng) => {
-                let s = eng.param_display(id as u32, value).unwrap_or_default();
+        Some(h) => match h.backend.as_ref() {
+            Some(b) => {
+                let s = b.param_display(id as u32, value).unwrap_or_default();
                 to_c_string(&s)
             }
             None => to_c_string(""),
@@ -436,18 +439,18 @@ pub extern "C" fn moonlitt_engine_measure_rms(
         Some(h) => h,
         None => return -100.0,
     };
-    let engine = match handle.engine.as_mut() {
-        Some(e) => e,
+    let backend = match handle.backend.as_mut() {
+        Some(b) => b,
         None => return -100.0,
     };
 
-    let sr = engine.sample_rate();
+    let sr = handle.sample_rate;
     let total_frames = (sr as f64 * duration_ms as f64 / 1000.0) as usize;
-    let buf_size = engine.buffer_size() as usize;
+    let buf_size = handle.buffer_size as usize;
 
     // Program change + note on
-    engine.program_change(0, program.clamp(0, 127) as u8);
-    engine.note_on(0, note.clamp(0, 127) as u8, velocity.clamp(1, 127) as u8);
+    backend.program_change(0, program.clamp(0, 127) as u8);
+    backend.note_on(0, note.clamp(0, 127) as u8, velocity.clamp(1, 127) as u8);
 
     let mut sum_sq: f64 = 0.0;
     let mut count: usize = 0;
@@ -459,7 +462,7 @@ pub extern "C" fn moonlitt_engine_measure_rms(
         let chunk = buf_size.min(total_frames - rendered);
         left[..chunk].fill(0.0);
         right[..chunk].fill(0.0);
-        engine.render(&mut left[..chunk], &mut right[..chunk]);
+        backend.render(&mut left[..chunk], &mut right[..chunk]);
         for i in 0..chunk {
             let mono = (left[i] as f64 + right[i] as f64) * 0.5;
             sum_sq += mono * mono;
@@ -469,8 +472,8 @@ pub extern "C" fn moonlitt_engine_measure_rms(
     }
 
     // Note off + flush
-    engine.note_off(0, note.clamp(0, 127) as u8);
-    engine.all_notes_off();
+    backend.note_off(0, note.clamp(0, 127) as u8);
+    backend.all_notes_off();
 
     if count == 0 { return -100.0; }
     let rms = (sum_sq / count as f64).sqrt();

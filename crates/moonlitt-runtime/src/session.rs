@@ -4,11 +4,12 @@
 //! track routing, volumes, pans, send levels, insert chains, and
 //! backend state (plugin state blobs where supported).
 //!
-//! Engine source files are referenced by path — they're re-loaded on restore.
+//! Backend source files are referenced by path — they're re-loaded on restore.
 
 use crate::mixer::{InsertEffect, Mixer, SendBus, Track};
 use base64::Engine as Base64Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use moonlitt_core::AudioBackend;
 use serde::{Deserialize, Serialize};
 
 /// Session file format version.
@@ -62,10 +63,10 @@ pub struct SendBusState {
     pub source: SourceState,
 }
 
-/// Captures how to reconstruct an engine: file path + optional state blob.
+/// Captures how to reconstruct a backend: file path + optional state blob.
 #[derive(Serialize, Deserialize)]
 pub struct SourceState {
-    /// File path used to load the engine (SF2, VST3, CLAP).
+    /// File path used to load the backend (SF2, VST3, CLAP).
     pub path: Option<String>,
     /// Base64-encoded backend state (plugin presets, etc.).
     /// None if the backend doesn't support state save.
@@ -79,7 +80,7 @@ pub struct SourceState {
 impl Session {
     /// Capture a snapshot of the mixer's current state.
     ///
-    /// This reads mixer parameters and engine state. Must be called from
+    /// This reads mixer parameters and backend state. Must be called from
     /// the same thread that owns the mixer (typically via command channel
     /// or before the audio thread starts).
     pub fn from_mixer(mixer: &Mixer) -> Self {
@@ -95,14 +96,14 @@ impl Session {
                 mute: t.mute,
                 solo: t.solo,
                 send_levels: t.send_levels.clone(),
-                source: source_from_engine(&t.engine),
+                source: source_from_track(t),
                 inserts: t
                     .inserts
                     .iter()
                     .map(|i| InsertState {
                         id: i.id,
                         bypass: i.bypass,
-                        source: source_from_engine(&i.engine),
+                        source: source_from_insert(i),
                     })
                     .collect(),
             })
@@ -114,7 +115,7 @@ impl Session {
             .map(|b| SendBusState {
                 id: b.id,
                 level: b.level,
-                source: source_from_engine(&b.engine),
+                source: source_from_send_bus(b),
             })
             .collect();
 
@@ -156,11 +157,9 @@ impl Session {
 
     /// Restore a mixer from this session.
     ///
-    /// Creates a new Mixer, loads engines from source paths, restores
+    /// Creates a new Mixer, loads backends from source paths, restores
     /// state, and applies all mixing parameters.
     pub fn restore(&self, buffer_size: usize) -> Result<Mixer, Box<dyn std::error::Error>> {
-        use moonlitt_engine::engine::Engine;
-
         let mut mixer = Mixer::new(self.sample_rate, buffer_size);
 
         // Restore master
@@ -169,8 +168,8 @@ impl Session {
 
         // Restore tracks
         for ts in &self.tracks {
-            let engine = restore_engine(&ts.source, self.sample_rate, buffer_size as u32)?;
-            mixer.add_track_with_id(ts.id, engine, ts.channel_mask);
+            let (backend, source_path) = restore_backend(&ts.source, self.sample_rate, buffer_size as u32)?;
+            mixer.add_track_with_id(ts.id, backend, source_path, ts.channel_mask);
 
             if let Some(track) = mixer.track_mut(ts.id) {
                 track.volume = ts.volume;
@@ -183,9 +182,9 @@ impl Session {
 
             // Restore inserts
             for is in &ts.inserts {
-                let insert_engine =
-                    restore_engine(&is.source, self.sample_rate, buffer_size as u32)?;
-                mixer.add_insert_with_id(ts.id, is.id, insert_engine);
+                let (insert_backend, insert_source_path) =
+                    restore_backend(&is.source, self.sample_rate, buffer_size as u32)?;
+                mixer.add_insert_with_id(ts.id, is.id, insert_backend, insert_source_path);
                 if is.bypass {
                     mixer.set_insert_bypass(ts.id, is.id, true);
                 }
@@ -194,9 +193,9 @@ impl Session {
 
         // Restore send buses
         for bs in &self.send_buses {
-            let engine = restore_engine(&bs.source, self.sample_rate, buffer_size as u32)?;
-            mixer.add_send_bus_with_id(bs.id, engine);
-            // Set bus level (need accessor)
+            let (backend, source_path) = restore_backend(&bs.source, self.sample_rate, buffer_size as u32)?;
+            mixer.add_send_bus_with_id(bs.id, backend, source_path);
+            // Set bus level
             if let Some(bus) = mixer.send_bus_mut(bs.id) {
                 bus.level = bs.level;
             }
@@ -210,38 +209,60 @@ impl Session {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn source_from_engine(engine: &moonlitt_engine::engine::Engine) -> SourceState {
-    let state = engine.save_state().map(|data| BASE64.encode(&data));
+fn source_from_track(track: &Track) -> SourceState {
+    let state = track.backend.save_state().ok().map(|data| BASE64.encode(&data));
     SourceState {
-        path: engine.loaded_path().map(|s| s.to_string()),
+        path: track.source_path.clone(),
         state,
     }
 }
 
-fn restore_engine(
+fn source_from_insert(insert: &InsertEffect) -> SourceState {
+    let state = insert.backend.save_state().ok().map(|data| BASE64.encode(&data));
+    SourceState {
+        path: insert.source_path.clone(),
+        state,
+    }
+}
+
+fn source_from_send_bus(bus: &SendBus) -> SourceState {
+    let state = bus.backend.save_state().ok().map(|data| BASE64.encode(&data));
+    SourceState {
+        path: bus.source_path.clone(),
+        state,
+    }
+}
+
+fn restore_backend(
     source: &SourceState,
     sample_rate: u32,
     buffer_size: u32,
-) -> Result<moonlitt_engine::engine::Engine, Box<dyn std::error::Error>> {
-    let mut engine = moonlitt_engine::engine::Engine::new(sample_rate, buffer_size);
+) -> Result<(Box<dyn AudioBackend>, Option<String>), Box<dyn std::error::Error>> {
+    let source_path = source.path.clone();
 
-    if let Some(ref path) = source.path {
-        engine
-            .load(path)
-            .map_err(|e| -> Box<dyn std::error::Error> { e.to_string().into() })?;
-    }
+    let mut backend: Box<dyn AudioBackend> = if let Some(ref path) = source.path {
+        moonlitt_engine::create(path, sample_rate, buffer_size)
+            .map_err(|e| -> Box<dyn std::error::Error> { e.to_string().into() })?
+    } else {
+        Box::new(moonlitt_core::NullBackend::new(sample_rate))
+    };
 
     if let Some(ref state_b64) = source.state {
         let data = BASE64.decode(state_b64)?;
-        let _ = engine.load_state(&data); // Best effort — state may not be supported
+        let _ = backend.load_state(&data); // Best effort — state may not be supported
     }
 
-    Ok(engine)
+    Ok((backend, source_path))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use moonlitt_core::NullBackend;
+
+    fn null(sr: u32) -> Box<dyn AudioBackend> {
+        Box::new(NullBackend::new(sr))
+    }
 
     #[test]
     fn test_session_roundtrip_empty_mixer() {
@@ -259,11 +280,9 @@ mod tests {
 
     #[test]
     fn test_session_roundtrip_with_tracks() {
-        use moonlitt_engine::engine::Engine;
-
         let mut mixer = Mixer::new(44100, 256);
-        let t0 = mixer.add_track(Engine::new(44100, 256), 0x0001);
-        let t1 = mixer.add_track(Engine::new(44100, 256), 0x0002);
+        let t0 = mixer.add_track(null(44100), 0x0001);
+        let t1 = mixer.add_track(null(44100), 0x0002);
 
         mixer.track_mut(t0).unwrap().volume = 0.8;
         mixer.track_mut(t0).unwrap().pan = -0.5;
@@ -282,11 +301,9 @@ mod tests {
 
     #[test]
     fn test_session_roundtrip_with_inserts() {
-        use moonlitt_engine::engine::Engine;
-
         let mut mixer = Mixer::new(44100, 256);
-        let t0 = mixer.add_track(Engine::new(44100, 256), 0xFFFF);
-        let i0 = mixer.add_insert(t0, Engine::new(44100, 256)).unwrap();
+        let t0 = mixer.add_track(null(44100), 0xFFFF);
+        let i0 = mixer.add_insert(t0, null(44100)).unwrap();
         mixer.set_insert_bypass(t0, i0, true);
 
         let session = Session::from_mixer(&mixer);
@@ -316,11 +333,9 @@ mod tests {
 
     #[test]
     fn test_session_send_levels() {
-        use moonlitt_engine::engine::Engine;
-
         let mut mixer = Mixer::new(44100, 256);
-        let t0 = mixer.add_track(Engine::new(44100, 256), 0xFFFF);
-        mixer.add_send_bus(Engine::new(44100, 256));
+        let t0 = mixer.add_track(null(44100), 0xFFFF);
+        mixer.add_send_bus(null(44100));
 
         // Set send level
         mixer.track_mut(t0).unwrap().send_levels[0] = 0.6;
@@ -332,11 +347,9 @@ mod tests {
 
     #[test]
     fn test_session_restore_mixer() {
-        use moonlitt_engine::engine::Engine;
-
         let mut mixer = Mixer::new(44100, 256);
-        mixer.add_track(Engine::new(44100, 256), 0x0001);
-        mixer.add_track(Engine::new(44100, 256), 0x0002);
+        mixer.add_track(null(44100), 0x0001);
+        mixer.add_track(null(44100), 0x0002);
         mixer.track_mut(0).unwrap().volume = 0.5;
         mixer.set_master_volume(0.9);
 

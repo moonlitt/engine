@@ -24,8 +24,8 @@ pub struct RuntimeHandle {
 
 /// Create a runtime from an engine handle.
 ///
-/// **Ownership semantics**: the engine is only consumed on success.
-/// If runtime creation fails (e.g. no audio device), the engine is
+/// **Ownership semantics**: the backend is only consumed on success.
+/// If runtime creation fails (e.g. no audio device), the backend is
 /// put back into the handle and the caller may retry or continue
 /// using the engine for offline rendering.
 ///
@@ -38,23 +38,26 @@ pub extern "C" fn moonlitt_runtime_create(engine_handle: *mut EngineHandle) -> *
         None => return std::ptr::null_mut(),
     };
 
-    // Take ownership of the engine, leaving None behind.
-    let engine = match handle.engine.take() {
-        Some(e) => e,
+    // Take ownership of the backend, leaving None behind.
+    let backend = match handle.backend.take() {
+        Some(b) => b,
         None => {
-            handle.last_error_set("engine already consumed or null");
+            handle.last_error_set("backend already consumed or null");
             return std::ptr::null_mut();
         }
     };
 
-    match Runtime::new(engine) {
+    let sample_rate = handle.sample_rate;
+    let buffer_size = handle.buffer_size;
+
+    match Runtime::new(backend, sample_rate, buffer_size) {
         Ok(runtime) => {
             let rt = Box::new(RuntimeHandle { runtime });
             Box::into_raw(rt)
         }
-        Err((err, engine)) => {
-            // Put the engine back — caller can retry or use it for offline rendering.
-            handle.engine = Some(engine);
+        Err((err, backend)) => {
+            // Put the backend back — caller can retry or use it for offline rendering.
+            handle.backend = Some(backend);
             handle.last_error_set(&err);
             std::ptr::null_mut()
         }
@@ -289,7 +292,7 @@ pub extern "C" fn moonlitt_mixer_set_insert_bypass(
     }
 }
 
-/// Set a parameter on a specific track's engine.
+/// Set a parameter on a specific track's backend.
 #[no_mangle]
 pub extern "C" fn moonlitt_set_param_for_track(
     rt: *mut RuntimeHandle, track_id: c_int, param_id: c_int, value: c_float,
@@ -314,7 +317,7 @@ pub extern "C" fn moonlitt_set_insert_param(
 // ---------------------------------------------------------------------------
 
 /// Add a track from an engine handle at runtime. Returns track ID, or -1 on error.
-/// The engine is consumed on success (taken from the handle).
+/// The backend is consumed on success (taken from the handle).
 #[no_mangle]
 pub extern "C" fn moonlitt_runtime_add_track(
     rt: *mut RuntimeHandle, engine_handle: *mut EngineHandle, channel_mask: c_int,
@@ -327,11 +330,11 @@ pub extern "C" fn moonlitt_runtime_add_track(
         Some(h) => h,
         None => return -1,
     };
-    let engine = match eh.engine.take() {
-        Some(e) => e,
+    let backend = match eh.backend.take() {
+        Some(b) => b,
         None => return -1,
     };
-    rt.runtime.add_track(engine, channel_mask as u16) as c_int
+    rt.runtime.add_track(backend, channel_mask as u16) as c_int
 }
 
 /// Remove a track at runtime. Notes are silenced before removal.
@@ -343,7 +346,7 @@ pub extern "C" fn moonlitt_runtime_remove_track(rt: *mut RuntimeHandle, track_id
 }
 
 /// Add an insert effect to a track at runtime. Returns insert ID, or -1 on error.
-/// The engine is consumed on success.
+/// The backend is consumed on success.
 #[no_mangle]
 pub extern "C" fn moonlitt_runtime_add_insert(
     rt: *mut RuntimeHandle, track_id: c_int, engine_handle: *mut EngineHandle,
@@ -356,11 +359,11 @@ pub extern "C" fn moonlitt_runtime_add_insert(
         Some(h) => h,
         None => return -1,
     };
-    let engine = match eh.engine.take() {
-        Some(e) => e,
+    let backend = match eh.backend.take() {
+        Some(b) => b,
         None => return -1,
     };
-    rt.runtime.add_insert(track_id as u32, engine) as c_int
+    rt.runtime.add_insert(track_id as u32, backend) as c_int
 }
 
 /// Remove an insert effect from a track at runtime.
@@ -374,7 +377,7 @@ pub extern "C" fn moonlitt_runtime_remove_insert(
 }
 
 /// Add a send bus at runtime. Returns bus ID, or -1 on error.
-/// The engine is consumed on success.
+/// The backend is consumed on success.
 #[no_mangle]
 pub extern "C" fn moonlitt_runtime_add_send_bus(
     rt: *mut RuntimeHandle, engine_handle: *mut EngineHandle,
@@ -387,14 +390,14 @@ pub extern "C" fn moonlitt_runtime_add_send_bus(
         Some(h) => h,
         None => return -1,
     };
-    let engine = match eh.engine.take() {
-        Some(e) => e,
+    let backend = match eh.backend.take() {
+        Some(b) => b,
         None => return -1,
     };
-    rt.runtime.add_send_bus(engine) as c_int
+    rt.runtime.add_send_bus(backend) as c_int
 }
 
-/// Set a parameter on a send bus effect engine.
+/// Set a parameter on a send bus effect backend.
 #[no_mangle]
 pub extern "C" fn moonlitt_mixer_set_send_bus_param(
     rt: *mut RuntimeHandle, bus_id: c_int, param_id: c_int, value: c_float,

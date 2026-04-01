@@ -1,11 +1,11 @@
-//! End-to-end tests: Engine -> Runtime -> real audio output.
+//! End-to-end tests: Backend -> Runtime -> real audio output.
 //!
 //! These tests verify the full pipeline with real plugins.
 //! They skip gracefully if:
 //! - The required plugin is not installed
 //! - No audio output device is available
 
-use moonlitt_engine::engine::Engine;
+use moonlitt_core::AudioBackend;
 use moonlitt_runtime::Runtime;
 use std::thread;
 use std::time::Duration;
@@ -29,8 +29,8 @@ fn is_no_device_error(msg: &str) -> bool {
 
 /// Try to create and start a Runtime, returning None only if no audio device
 /// is present. Panics on any other error to surface real regressions.
-fn try_create_runtime(engine: Engine) -> Option<Runtime> {
-    match Runtime::new(engine) {
+fn try_create_runtime(backend: Box<dyn AudioBackend>, sample_rate: u32, buffer_size: u32) -> Option<Runtime> {
+    match Runtime::new(backend, sample_rate, buffer_size) {
         Ok(rt) => match rt.start() {
             Ok(()) => Some(rt),
             Err(e) => {
@@ -42,7 +42,7 @@ fn try_create_runtime(engine: Engine) -> Option<Runtime> {
                 }
             }
         },
-        Err((e, _engine)) => {
+        Err((e, _backend)) => {
             if is_no_device_error(&e) {
                 eprintln!("No audio device, skipping: {e}");
                 None
@@ -53,7 +53,7 @@ fn try_create_runtime(engine: Engine) -> Option<Runtime> {
     }
 }
 
-/// Full pipeline: Pianoteq VST3 -> Engine -> Runtime -> cpal audio output.
+/// Full pipeline: Pianoteq VST3 -> Backend -> Runtime -> cpal audio output.
 #[test]
 fn e2e_pianoteq_runtime() {
     if !has_file(VST3_PATH) {
@@ -61,14 +61,11 @@ fn e2e_pianoteq_runtime() {
         return;
     }
 
-    let mut engine = Engine::new(44100, 256);
-    engine.load(VST3_PATH).unwrap();
-    assert!(engine.is_loaded());
-
-    let info = engine.backend_info().unwrap();
+    let backend = moonlitt_engine::create(VST3_PATH, 44100, 256).unwrap();
+    let info = backend.info();
     eprintln!("Backend: {} ({:?})", info.name, info.backend_type);
 
-    let mut rt = match try_create_runtime(engine) {
+    let mut rt = match try_create_runtime(backend, 44100, 256) {
         Some(rt) => rt,
         None => return,
     };
@@ -101,10 +98,9 @@ fn e2e_sf2_polyphony_stress() {
         return;
     }
 
-    let mut engine = Engine::new(44100, 256);
-    engine.load(SF2_PATH).unwrap();
+    let backend = moonlitt_engine::create(SF2_PATH, 44100, 256).unwrap();
 
-    let mut rt = match try_create_runtime(engine) {
+    let mut rt = match try_create_runtime(backend, 44100, 256) {
         Some(rt) => rt,
         None => return,
     };
@@ -133,10 +129,9 @@ fn e2e_volume_control() {
         return;
     }
 
-    let mut engine = Engine::new(44100, 256);
-    engine.load(SF2_PATH).unwrap();
+    let backend = moonlitt_engine::create(SF2_PATH, 44100, 256).unwrap();
 
-    let mut rt = match try_create_runtime(engine) {
+    let mut rt = match try_create_runtime(backend, 44100, 256) {
         Some(rt) => rt,
         None => return,
     };
@@ -162,10 +157,9 @@ fn e2e_transport_controls() {
         return;
     }
 
-    let mut engine = Engine::new(44100, 256);
-    engine.load(SF2_PATH).unwrap();
+    let backend = moonlitt_engine::create(SF2_PATH, 44100, 256).unwrap();
 
-    let mut rt = match try_create_runtime(engine) {
+    let mut rt = match try_create_runtime(backend, 44100, 256) {
         Some(rt) => rt,
         None => return,
     };

@@ -1,323 +1,130 @@
-//! Engine — the main entry point for moonlitt audio.
+//! Engine — factory functions for creating audio backends.
 //!
-//! Auto-detects file format by extension, creates the right backend,
-//! and delegates all operations to it.
+//! Auto-detects file format by extension and creates the right backend.
+//! Returns `Box<dyn AudioBackend>` directly — no proxy wrapper.
 
-use crate::backend::{AudioBackend, BackendInfo, PresetInfo};
+use crate::backend::AudioBackend;
 use crate::error::EngineError;
-use crate::plugin_info::{PluginFormat, PluginInfo};
+use crate::plugin_info::PluginInfo;
+#[cfg(any(feature = "vst3", feature = "clap"))]
+use crate::plugin_info::PluginFormat;
 use std::path::Path;
 
-pub struct Engine {
-    backend: Option<Box<dyn AudioBackend>>,
-    sample_rate: u32,
-    buffer_size: u32,
-    volume: f32,
-    /// Path of the loaded file (for session save/restore).
-    loaded_path: Option<String>,
+/// Create an audio backend by auto-detecting format from file extension.
+///
+/// Supports `.sf2` (SoundFont), `.vst3` (VST3 plugin), `.clap` (CLAP plugin).
+#[allow(unused_variables)]
+pub fn create(path: &str, sample_rate: u32, buffer_size: u32) -> Result<Box<dyn AudioBackend>, EngineError> {
+    let ext = Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase());
+
+    match ext.as_deref() {
+        #[cfg(feature = "sf2")]
+        Some("sf2") => {
+            let mut backend = crate::backends::oxisynth::OxiSynthBackend::new(sample_rate)
+                .map_err(|e| EngineError::BackendError(e.to_string()))?;
+            backend
+                .load(path)
+                .map_err(|e| EngineError::BackendError(e.to_string()))?;
+            Ok(Box::new(backend))
+        }
+        #[cfg(feature = "vst3")]
+        Some("vst3") => {
+            let mut backend =
+                crate::backends::vst3::Vst3Backend::new(sample_rate, buffer_size)
+                    .map_err(|e| EngineError::BackendError(e.to_string()))?;
+            backend
+                .load(path)
+                .map_err(|e| EngineError::BackendError(e.to_string()))?;
+            Ok(Box::new(backend))
+        }
+        #[cfg(feature = "clap")]
+        Some("clap") => {
+            let mut backend =
+                crate::backends::clap::ClapBackend::new(sample_rate, buffer_size)
+                    .map_err(|e| EngineError::BackendError(e.to_string()))?;
+            backend
+                .load(path)
+                .map_err(|e| EngineError::BackendError(e.to_string()))?;
+            Ok(Box::new(backend))
+        }
+        Some(ext) => Err(EngineError::UnsupportedFormat(ext.to_string())),
+        None => Err(EngineError::UnsupportedFormat("no file extension".into())),
+    }
 }
 
-impl Engine {
-    /// Create a new engine with the given sample rate and buffer size.
-    pub fn new(sample_rate: u32, buffer_size: u32) -> Self {
-        Self {
-            backend: None,
-            sample_rate,
-            buffer_size,
-            volume: 1.0,
-            loaded_path: None,
-        }
-    }
-
-    /// Create an engine with a pre-built AudioBackend (for built-in effects).
-    pub fn from_backend(backend: Box<dyn AudioBackend>, sample_rate: u32, buffer_size: u32) -> Self {
-        Self {
-            backend: Some(backend),
-            sample_rate,
-            buffer_size,
-            volume: 1.0,
-            loaded_path: None,
-        }
-    }
-
-    /// Create an engine from a pre-loaded SF2 SoundFont (Arc-shared, no data copy).
+/// Create an audio backend with highest quality interpolation (Sinc72 for SF2).
+/// Use for offline rendering. Real-time uses SeventhOrder by default.
+pub fn create_high_quality(path: &str, sample_rate: u32, buffer_size: u32) -> Result<Box<dyn AudioBackend>, EngineError> {
     #[cfg(feature = "sf2")]
-    pub fn from_shared_sf2(font: oxisynth::SoundFont, sample_rate: u32, buffer_size: u32) -> Result<Self, EngineError> {
-        let backend = crate::backends::oxisynth::OxiSynthBackend::new_with_font(sample_rate, font)
+    if path.to_lowercase().ends_with(".sf2") {
+        let mut backend = crate::backends::oxisynth::OxiSynthBackend::new_high_quality(sample_rate)
             .map_err(|e| EngineError::BackendError(e.to_string()))?;
-        Ok(Self {
-            backend: Some(Box::new(backend)),
-            sample_rate,
-            buffer_size,
-            volume: 1.0,
-            loaded_path: None,
-        })
+        backend.load(path).map_err(|e| EngineError::BackendError(e.to_string()))?;
+        return Ok(Box::new(backend));
     }
+    create(path, sample_rate, buffer_size)
+}
 
-    /// Auto-detect format by file extension and load.
-    /// Load with highest quality interpolation (Sinc72 for SF2).
-    /// Use for offline rendering. Real-time uses SeventhOrder by default.
-    pub fn load_high_quality(&mut self, path: &str) -> Result<(), EngineError> {
-        #[cfg(feature = "sf2")]
-        if path.to_lowercase().ends_with(".sf2") {
-            let mut backend = crate::backends::oxisynth::OxiSynthBackend::new_high_quality(self.sample_rate)
-                .map_err(|e| EngineError::BackendError(e.to_string()))?;
-            backend.load(path).map_err(|e| EngineError::BackendError(e.to_string()))?;
-            backend.set_volume(self.volume);
-            self.backend = Some(Box::new(backend));
-            self.loaded_path = Some(path.to_string());
-            return Ok(());
-        }
-        self.load(path)
-    }
+/// Create an audio backend from a pre-loaded SF2 SoundFont (Arc-shared, no data copy).
+#[cfg(feature = "sf2")]
+pub fn create_from_shared_sf2(font: oxisynth::SoundFont, sample_rate: u32) -> Result<Box<dyn AudioBackend>, EngineError> {
+    let backend = crate::backends::oxisynth::OxiSynthBackend::new_with_font(sample_rate, font)
+        .map_err(|e| EngineError::BackendError(e.to_string()))?;
+    Ok(Box::new(backend))
+}
 
-    pub fn load(&mut self, path: &str) -> Result<(), EngineError> {
-        let ext = Path::new(path)
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|e| e.to_lowercase());
+/// Return the list of file extensions supported by the engine.
+#[allow(clippy::vec_init_then_push)]
+pub fn supported_formats() -> Vec<&'static str> {
+    let mut formats = Vec::new();
+    #[cfg(feature = "sf2")]
+    formats.push("sf2");
+    #[cfg(feature = "vst3")]
+    formats.push("vst3");
+    #[cfg(feature = "clap")]
+    formats.push("clap");
+    formats
+}
 
-        match ext.as_deref() {
-            #[cfg(feature = "sf2")]
-            Some("sf2") => {
-                let mut backend = crate::backends::oxisynth::OxiSynthBackend::new(self.sample_rate)
-                    .map_err(|e| EngineError::BackendError(e.to_string()))?;
-                backend
-                    .load(path)
-                    .map_err(|e| EngineError::BackendError(e.to_string()))?;
-                backend.set_volume(self.volume);
-                self.backend = Some(Box::new(backend));
-                self.loaded_path = Some(path.to_string());
-                Ok(())
-            }
-            #[cfg(feature = "vst3")]
-            Some("vst3") => {
-                let mut backend =
-                    crate::backends::vst3::Vst3Backend::new(self.sample_rate, self.buffer_size)
-                        .map_err(|e| EngineError::BackendError(e.to_string()))?;
-                backend
-                    .load(path)
-                    .map_err(|e| EngineError::BackendError(e.to_string()))?;
-                self.backend = Some(Box::new(backend));
-                self.loaded_path = Some(path.to_string());
-                Ok(())
-            }
-            #[cfg(feature = "clap")]
-            Some("clap") => {
-                let mut backend =
-                    crate::backends::clap::ClapBackend::new(self.sample_rate, self.buffer_size)
-                        .map_err(|e| EngineError::BackendError(e.to_string()))?;
-                backend
-                    .load(path)
-                    .map_err(|e| EngineError::BackendError(e.to_string()))?;
-                self.backend = Some(Box::new(backend));
-                self.loaded_path = Some(path.to_string());
-                Ok(())
-            }
-            Some(ext) => Err(EngineError::UnsupportedFormat(ext.to_string())),
-            None => Err(EngineError::UnsupportedFormat("no file extension".into())),
-        }
-    }
+/// Scan system paths for available plugins (VST3, CLAP, SF2).
+#[allow(unused_variables, unused_mut)]
+pub fn scan_plugins(sample_rate: u32, buffer_size: u32) -> Vec<PluginInfo> {
+    let mut plugins = Vec::new();
 
-    /// Unload current backend.
-    pub fn unload(&mut self) {
-        if let Some(ref mut backend) = self.backend {
-            backend.unload();
-        }
-        self.backend = None;
-        self.loaded_path = None;
-    }
-
-    /// Path of the currently loaded file (for session persistence).
-    pub fn loaded_path(&self) -> Option<&str> {
-        self.loaded_path.as_deref()
-    }
-
-    /// Is a backend loaded and ready?
-    pub fn is_loaded(&self) -> bool {
-        self.backend.is_some()
-    }
-
-    /// Get backend info.
-    pub fn backend_info(&self) -> Option<BackendInfo> {
-        self.backend.as_ref().map(|b| b.info())
-    }
-
-    // --- MIDI pass-through ---
-
-    pub fn note_on(&mut self, channel: u8, note: u8, velocity: u8) {
-        if let Some(ref mut backend) = self.backend {
-            backend.note_on(channel, note, velocity);
-        }
-    }
-
-    pub fn note_off(&mut self, channel: u8, note: u8) {
-        if let Some(ref mut backend) = self.backend {
-            backend.note_off(channel, note);
-        }
-    }
-
-    pub fn cc(&mut self, channel: u8, cc: u8, value: u8) {
-        if let Some(ref mut backend) = self.backend {
-            backend.cc(channel, cc, value);
-        }
-    }
-
-    pub fn pitch_bend(&mut self, channel: u8, value: i16) {
-        if let Some(ref mut backend) = self.backend {
-            backend.pitch_bend(channel, value);
-        }
-    }
-
-    pub fn program_change(&mut self, channel: u8, program: u8) {
-        if let Some(ref mut backend) = self.backend {
-            backend.program_change(channel, program);
-        }
-    }
-
-    pub fn all_notes_off(&mut self) {
-        if let Some(ref mut backend) = self.backend {
-            backend.all_notes_off();
-        }
-    }
-
-    // --- Audio ---
-
-    /// Render one buffer of audio. Fills with silence if no backend.
-    pub fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
-        if let Some(ref mut backend) = self.backend {
-            backend.render(left, right);
-        } else {
-            left.fill(0.0);
-            right.fill(0.0);
-        }
-    }
-
-    /// Process audio as an effect (audio in → audio out).
-    pub fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
-        if let Some(ref mut backend) = self.backend {
-            backend.process_effect(in_l, in_r, out_l, out_r);
-        } else {
-            out_l.fill(0.0);
-            out_r.fill(0.0);
-        }
-    }
-
-    pub fn sample_rate(&self) -> u32 {
-        self.sample_rate
-    }
-
-    pub fn buffer_size(&self) -> u32 {
-        self.buffer_size
-    }
-
-    /// Report processing latency in samples (for PDC).
-    pub fn latency(&self) -> u32 {
-        self.backend.as_ref().map(|b| b.latency()).unwrap_or(0)
-    }
-
-    pub fn set_volume(&mut self, volume: f32) {
-        self.volume = volume;
-        if let Some(ref mut backend) = self.backend {
-            backend.set_volume(volume);
-        }
-    }
-
-    // --- Parameters ---
-
-    pub fn param_count(&self) -> u32 {
-        self.backend.as_ref().map(|b| b.param_count()).unwrap_or(0)
-    }
-
-    pub fn param_info(&self, index: u32) -> Option<crate::backend::ParamInfo> {
-        self.backend.as_ref()?.param_info(index)
-    }
-
-    pub fn get_param(&self, id: u32) -> Option<f64> {
-        self.backend.as_ref()?.get_param(id)
-    }
-
-    pub fn set_param(&mut self, id: u32, value: f64) {
-        if let Some(ref mut backend) = self.backend {
-            backend.set_param(id, value);
-        }
-    }
-
-    pub fn param_display(&self, id: u32, value: f64) -> Option<String> {
-        self.backend.as_ref()?.param_display(id, value)
-    }
-
-    // --- Plugin scanning ---
-
-    /// Scan system paths for available plugins (VST3, CLAP, SF2).
-    pub fn scan_plugins(&self) -> Vec<PluginInfo> {
-        let mut plugins = Vec::new();
-
-        #[cfg(feature = "vst3")]
-        {
-            if let Ok(host) = moonlitt_vst3::Vst3Host::new(self.sample_rate, self.buffer_size) {
-                if let Ok(vst3_plugins) = host.scan() {
-                    for p in vst3_plugins {
-                        plugins.push(PluginInfo {
-                            name: p.name,
-                            path: p.path.to_string_lossy().into_owned(),
-                            format: PluginFormat::Vst3,
-                        });
-                    }
+    #[cfg(feature = "vst3")]
+    {
+        if let Ok(host) = moonlitt_vst3::Vst3Host::new(sample_rate, buffer_size) {
+            if let Ok(vst3_plugins) = host.scan() {
+                for p in vst3_plugins {
+                    plugins.push(PluginInfo {
+                        name: p.name,
+                        path: p.path.to_string_lossy().into_owned(),
+                        format: PluginFormat::Vst3,
+                    });
                 }
             }
         }
+    }
 
-        #[cfg(feature = "clap")]
-        {
-            if let Ok(host) = moonlitt_clap::ClapHost::new(self.sample_rate, self.buffer_size) {
-                if let Ok(clap_plugins) = host.scan() {
-                    for p in clap_plugins {
-                        plugins.push(PluginInfo {
-                            name: p.name,
-                            path: p.path.to_string_lossy().into_owned(),
-                            format: PluginFormat::Clap,
-                        });
-                    }
+    #[cfg(feature = "clap")]
+    {
+        if let Ok(host) = moonlitt_clap::ClapHost::new(sample_rate, buffer_size) {
+            if let Ok(clap_plugins) = host.scan() {
+                for p in clap_plugins {
+                    plugins.push(PluginInfo {
+                        name: p.name,
+                        path: p.path.to_string_lossy().into_owned(),
+                        format: PluginFormat::Clap,
+                    });
                 }
             }
         }
-
-        // TODO: scan for SF2 files in common directories
-
-        plugins
     }
 
-    // --- Presets ---
+    // TODO: scan for SF2 files in common directories
 
-    pub fn presets(&self) -> Vec<PresetInfo> {
-        self.backend
-            .as_ref()
-            .map(|b| b.presets())
-            .unwrap_or_default()
-    }
-
-    pub fn load_preset(&mut self, id: i32) -> Result<(), EngineError> {
-        match self.backend.as_mut() {
-            Some(backend) => backend
-                .load_preset(id)
-                .map_err(|e| EngineError::BackendError(e.to_string())),
-            None => Err(EngineError::NoBackendLoaded),
-        }
-    }
-
-    /// Save backend state (plugin state, presets, etc.).
-    pub fn save_state(&self) -> Option<Vec<u8>> {
-        self.backend.as_ref()?.save_state().ok()
-    }
-
-    /// Restore backend state.
-    pub fn load_state(&mut self, data: &[u8]) -> Result<(), EngineError> {
-        match self.backend.as_mut() {
-            Some(backend) => backend
-                .load_state(data)
-                .map_err(|e| EngineError::BackendError(e.to_string())),
-            None => Err(EngineError::NoBackendLoaded),
-        }
-    }
+    plugins
 }

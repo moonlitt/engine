@@ -4,7 +4,7 @@ use crate::event::{AudioEvent, TimedEvent};
 use crate::midi_input::{MidiDeviceInfo, MidiInputConnection};
 use crate::mixer::Mixer;
 use crate::transport::Transport;
-use moonlitt_engine::engine::Engine;
+use moonlitt_core::AudioBackend;
 use rtrb::RingBuffer;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
@@ -31,29 +31,26 @@ pub struct Runtime {
 }
 
 impl Runtime {
-    /// Create a runtime with a single engine (backward compatible).
-    /// The engine is placed in a Mixer as the sole track handling all 16 channels.
+    /// Create a runtime with a single backend (backward compatible).
+    /// The backend is placed in a Mixer as the sole track handling all 16 channels.
     ///
     /// Audio device and config compatibility are checked BEFORE consuming the
-    /// engine. On failure the engine is returned via the error tuple so the
+    /// backend. On failure the backend is returned via the error tuple so the
     /// caller can retry or continue using it for offline rendering.
-    pub fn new(engine: Engine) -> Result<Self, (String, Engine)> {
-        let buffer_size = engine.buffer_size();
-        let sample_rate = engine.sample_rate();
-
+    pub fn new(backend: Box<dyn AudioBackend>, sample_rate: u32, buffer_size: u32) -> Result<Self, (String, Box<dyn AudioBackend>)> {
         // Pre-check audio device AND config compatibility BEFORE consuming
-        // the engine into a Mixer. This ensures the engine is not lost on
+        // the backend into a Mixer. This ensures the backend is not lost on
         // predictable failures (no device, incompatible config).
         if let Err(e) = AudioOutput::pre_check(sample_rate) {
-            return Err((e, engine));
+            return Err((e, backend));
         }
 
-        // Device + config validated — safe to consume engine into mixer.
+        // Device + config validated — safe to consume backend into mixer.
         let mut mixer = Mixer::new(sample_rate, buffer_size as usize);
-        mixer.add_track(engine, 0xFFFF); // all 16 channels
+        mixer.add_track(backend, 0xFFFF); // all 16 channels
 
         Self::with_mixer(mixer, buffer_size)
-            .map_err(|e| (e, Engine::new(sample_rate, buffer_size)))
+            .map_err(|e| (e, Box::new(moonlitt_core::NullBackend::new(sample_rate)) as Box<dyn AudioBackend>))
     }
 
     /// Create a runtime with a pre-configured Mixer.
@@ -254,11 +251,11 @@ impl Runtime {
     // These carry heap-allocated data (Engine) and run on the audio thread.
 
     /// Add a track at runtime. Returns the pre-assigned track ID.
-    pub fn add_track(&mut self, engine: Engine, channel_mask: u16) -> u32 {
+    pub fn add_track(&mut self, backend: Box<dyn AudioBackend>, channel_mask: u16) -> u32 {
         let id = self.next_track_id;
         self.next_track_id += 1;
         let _ = self.command_tx.send(Box::new(move |mixer| {
-            mixer.add_track_with_id(id, engine, channel_mask);
+            mixer.add_track_with_id(id, backend, None, channel_mask);
         }));
         id
     }
@@ -267,18 +264,18 @@ impl Runtime {
     pub fn remove_track(&mut self, track_id: u32) {
         let _ = self.command_tx.send(Box::new(move |mixer| {
             if let Some(track) = mixer.track_mut(track_id) {
-                track.engine.all_notes_off();
+                track.backend.all_notes_off();
             }
             mixer.remove_track(track_id);
         }));
     }
 
     /// Add an insert effect to a track at runtime. Returns the pre-assigned insert ID.
-    pub fn add_insert(&mut self, track_id: u32, engine: Engine) -> u32 {
+    pub fn add_insert(&mut self, track_id: u32, backend: Box<dyn AudioBackend>) -> u32 {
         let id = self.next_insert_id;
         self.next_insert_id += 1;
         let _ = self.command_tx.send(Box::new(move |mixer| {
-            mixer.add_insert_with_id(track_id, id, engine);
+            mixer.add_insert_with_id(track_id, id, backend, None);
         }));
         id
     }
@@ -291,11 +288,11 @@ impl Runtime {
     }
 
     /// Add a send bus at runtime. Returns the pre-assigned bus ID.
-    pub fn add_send_bus(&mut self, engine: Engine) -> u32 {
+    pub fn add_send_bus(&mut self, backend: Box<dyn AudioBackend>) -> u32 {
         let id = self.next_bus_id;
         self.next_bus_id += 1;
         let _ = self.command_tx.send(Box::new(move |mixer| {
-            mixer.add_send_bus_with_id(id, engine);
+            mixer.add_send_bus_with_id(id, backend, None);
         }));
         id
     }

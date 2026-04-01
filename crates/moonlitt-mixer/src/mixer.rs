@@ -8,7 +8,7 @@
 //! All rendering happens in the audio thread. No locks, no allocations.
 
 use crate::dither::StereoDither;
-use moonlitt_engine::engine::Engine;
+use moonlitt_core::AudioBackend;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
@@ -173,19 +173,23 @@ pub enum OutputTarget {
 }
 
 /// A single insert effect slot on a track.
-/// Processed pre-fader in series: Engine → Insert[0] → Insert[1] → ... → Fader.
+/// Processed pre-fader in series: Backend → Insert[0] → Insert[1] → ... → Fader.
 pub struct InsertEffect {
     pub id: u32,
-    pub engine: Engine,
+    pub backend: Box<dyn AudioBackend>,
     pub bypass: bool,
+    /// Path of the loaded file (for session persistence).
+    pub source_path: Option<String>,
 }
 
-/// A single track: one engine + channel strip.
+/// A single track: one audio backend + channel strip.
 pub struct Track {
     pub id: u32,
-    pub engine: Engine,
+    pub backend: Box<dyn AudioBackend>,
     /// Bitmask: which MIDI channels route to this track (bit N = channel N).
     pub channel_mask: u16,
+    /// Path of the loaded file (for session persistence).
+    pub source_path: Option<String>,
     pub volume: f32,
     /// Pre-insert gain trim in dB. Range: -24.0 to +24.0, default 0.0.
     pub trim_db: f32,
@@ -214,11 +218,13 @@ pub struct Track {
     pub meter: LevelMeter,
 }
 
-/// A send bus: accumulates audio from tracks, processes through an effect engine.
+/// A send bus: accumulates audio from tracks, processes through an effect backend.
 pub struct SendBus {
     pub id: u32,
-    pub engine: Engine, // loaded with a VST3/CLAP effect plugin
-    pub level: f32,     // return level to master
+    pub backend: Box<dyn AudioBackend>,
+    pub level: f32, // return level to master
+    /// Path of the loaded file (for session persistence).
+    pub source_path: Option<String>,
     // Accumulation + output buffers
     acc_left: Vec<f32>,
     acc_right: Vec<f32>,
@@ -297,27 +303,36 @@ impl Mixer {
         self.next_insert_id
     }
 
-    /// Add a track with an engine and a channel mask. Returns the track ID.
-    pub fn add_track(&mut self, engine: Engine, channel_mask: u16) -> u32 {
+    /// Add a track with a backend and a channel mask. Returns the track ID.
+    pub fn add_track(&mut self, backend: Box<dyn AudioBackend>, channel_mask: u16) -> u32 {
         let id = self.next_track_id;
         self.next_track_id += 1;
-        self.add_track_inner(id, engine, channel_mask);
+        self.add_track_inner(id, backend, None, channel_mask);
+        id
+    }
+
+    /// Add a track with a source path recorded for session persistence.
+    pub fn add_track_with_source(&mut self, backend: Box<dyn AudioBackend>, source_path: Option<String>, channel_mask: u16) -> u32 {
+        let id = self.next_track_id;
+        self.next_track_id += 1;
+        self.add_track_inner(id, backend, source_path, channel_mask);
         id
     }
 
     /// Add a track with a pre-assigned ID (for Runtime command channel).
-    pub fn add_track_with_id(&mut self, id: u32, engine: Engine, channel_mask: u16) {
+    pub fn add_track_with_id(&mut self, id: u32, backend: Box<dyn AudioBackend>, source_path: Option<String>, channel_mask: u16) {
         if id >= self.next_track_id {
             self.next_track_id = id + 1;
         }
-        self.add_track_inner(id, engine, channel_mask);
+        self.add_track_inner(id, backend, source_path, channel_mask);
     }
 
-    fn add_track_inner(&mut self, id: u32, engine: Engine, channel_mask: u16) {
+    fn add_track_inner(&mut self, id: u32, backend: Box<dyn AudioBackend>, source_path: Option<String>, channel_mask: u16) {
         self.tracks.push(Track {
             id,
-            engine,
+            backend,
             channel_mask,
+            source_path,
             volume: 1.0,
             trim_db: 0.0,
             pan: 0.0,
@@ -338,8 +353,8 @@ impl Mixer {
         self.rebuild_render_order();
     }
 
-    /// Remove a track by ID. Returns the engine if found.
-    pub fn remove_track(&mut self, id: u32) -> Option<Engine> {
+    /// Remove a track by ID. Returns the backend if found.
+    pub fn remove_track(&mut self, id: u32) -> Option<Box<dyn AudioBackend>> {
         // Reset any tracks routing to this group
         for t in &mut self.tracks {
             if t.output_target == OutputTarget::Group(id) {
@@ -349,7 +364,7 @@ impl Mixer {
         let pos = self.tracks.iter().position(|t| t.id == id)?;
         let track = self.tracks.remove(pos);
         self.rebuild_render_order();
-        Some(track.engine)
+        Some(track.backend)
     }
 
     /// Set a track's pre-insert trim gain in dB (clamped to -24..+24).
@@ -396,27 +411,28 @@ impl Mixer {
         }
     }
 
-    /// Add a send bus with an effect engine. Returns the bus ID.
-    pub fn add_send_bus(&mut self, engine: Engine) -> u32 {
+    /// Add a send bus with an effect backend. Returns the bus ID.
+    pub fn add_send_bus(&mut self, backend: Box<dyn AudioBackend>) -> u32 {
         let id = self.next_bus_id;
         self.next_bus_id += 1;
-        self.add_send_bus_inner(id, engine);
+        self.add_send_bus_inner(id, backend, None);
         id
     }
 
     /// Add a send bus with a pre-assigned ID (for Runtime command channel).
-    pub fn add_send_bus_with_id(&mut self, id: u32, engine: Engine) {
+    pub fn add_send_bus_with_id(&mut self, id: u32, backend: Box<dyn AudioBackend>, source_path: Option<String>) {
         if id >= self.next_bus_id {
             self.next_bus_id = id + 1;
         }
-        self.add_send_bus_inner(id, engine);
+        self.add_send_bus_inner(id, backend, source_path);
     }
 
-    fn add_send_bus_inner(&mut self, id: u32, engine: Engine) {
+    fn add_send_bus_inner(&mut self, id: u32, backend: Box<dyn AudioBackend>, source_path: Option<String>) {
         let bs = self.buffer_size;
         self.send_buses.push(SendBus {
             id,
-            engine,
+            backend,
+            source_path,
             level: 1.0,
             acc_left: vec![0.0; bs],
             acc_right: vec![0.0; bs],
@@ -470,41 +486,43 @@ impl Mixer {
     // --- Insert effect management ---
 
     /// Add an insert effect to a track. Returns the insert ID, or None if track not found.
-    pub fn add_insert(&mut self, track_id: u32, engine: Engine) -> Option<u32> {
+    pub fn add_insert(&mut self, track_id: u32, backend: Box<dyn AudioBackend>) -> Option<u32> {
         let track = self.tracks.iter_mut().find(|t| t.id == track_id)?;
         let id = self.next_insert_id;
         self.next_insert_id += 1;
         track.inserts.push(InsertEffect {
             id,
-            engine,
+            backend,
             bypass: false,
+            source_path: None,
         });
         self.recalculate_pdc();
         Some(id)
     }
 
     /// Add an insert with a pre-assigned ID (for Runtime command channel).
-    pub fn add_insert_with_id(&mut self, track_id: u32, insert_id: u32, engine: Engine) {
+    pub fn add_insert_with_id(&mut self, track_id: u32, insert_id: u32, backend: Box<dyn AudioBackend>, source_path: Option<String>) {
         if insert_id >= self.next_insert_id {
             self.next_insert_id = insert_id + 1;
         }
         if let Some(track) = self.tracks.iter_mut().find(|t| t.id == track_id) {
             track.inserts.push(InsertEffect {
                 id: insert_id,
-                engine,
+                backend,
                 bypass: false,
+                source_path,
             });
         }
         self.recalculate_pdc();
     }
 
-    /// Remove an insert effect from a track. Returns the engine if found.
-    pub fn remove_insert(&mut self, track_id: u32, insert_id: u32) -> Option<Engine> {
+    /// Remove an insert effect from a track. Returns the backend if found.
+    pub fn remove_insert(&mut self, track_id: u32, insert_id: u32) -> Option<Box<dyn AudioBackend>> {
         let track = self.tracks.iter_mut().find(|t| t.id == track_id)?;
         let pos = track.inserts.iter().position(|i| i.id == insert_id)?;
         let insert = track.inserts.remove(pos);
         self.recalculate_pdc();
-        Some(insert.engine)
+        Some(insert.backend)
     }
 
     /// Set bypass state for an insert effect.
@@ -533,7 +551,7 @@ impl Mixer {
                 t.inserts
                     .iter()
                     .filter(|i| !i.bypass)
-                    .map(|i| i.engine.latency())
+                    .map(|i| i.backend.latency())
                     .sum()
             })
             .collect();
@@ -585,7 +603,7 @@ impl Mixer {
         let mask = 1u16 << channel;
         for track in &mut self.tracks {
             if track.channel_mask & mask != 0 {
-                track.engine.note_on(channel, note, velocity);
+                track.backend.note_on(channel, note, velocity);
             }
         }
     }
@@ -594,7 +612,7 @@ impl Mixer {
         let mask = 1u16 << channel;
         for track in &mut self.tracks {
             if track.channel_mask & mask != 0 {
-                track.engine.note_off(channel, note);
+                track.backend.note_off(channel, note);
             }
         }
     }
@@ -603,7 +621,7 @@ impl Mixer {
         let mask = 1u16 << channel;
         for track in &mut self.tracks {
             if track.channel_mask & mask != 0 {
-                track.engine.cc(channel, cc, value);
+                track.backend.cc(channel, cc, value);
             }
         }
     }
@@ -612,7 +630,7 @@ impl Mixer {
         let mask = 1u16 << channel;
         for track in &mut self.tracks {
             if track.channel_mask & mask != 0 {
-                track.engine.pitch_bend(channel, value);
+                track.backend.pitch_bend(channel, value);
             }
         }
     }
@@ -621,14 +639,14 @@ impl Mixer {
         let mask = 1u16 << channel;
         for track in &mut self.tracks {
             if track.channel_mask & mask != 0 {
-                track.engine.program_change(channel, program);
+                track.backend.program_change(channel, program);
             }
         }
     }
 
     pub fn all_notes_off(&mut self) {
         for track in &mut self.tracks {
-            track.engine.all_notes_off();
+            track.backend.all_notes_off();
         }
     }
 
@@ -639,14 +657,14 @@ impl Mixer {
     /// Broadcast a parameter change to all tracks.
     pub fn set_param(&mut self, id: u32, value: f64) {
         for track in &mut self.tracks {
-            track.engine.set_param(id, value);
+            track.backend.set_param(id, value);
         }
     }
 
-    /// Set a parameter on a specific track's engine.
+    /// Set a parameter on a specific track's backend.
     pub fn set_param_for_track(&mut self, track_id: u32, id: u32, value: f64) {
         if let Some(track) = self.tracks.iter_mut().find(|t| t.id == track_id) {
-            track.engine.set_param(id, value);
+            track.backend.set_param(id, value);
         }
     }
 
@@ -654,15 +672,15 @@ impl Mixer {
     pub fn set_insert_param(&mut self, track_id: u32, insert_id: u32, id: u32, value: f64) {
         if let Some(track) = self.tracks.iter_mut().find(|t| t.id == track_id) {
             if let Some(insert) = track.inserts.iter_mut().find(|i| i.id == insert_id) {
-                insert.engine.set_param(id, value);
+                insert.backend.set_param(id, value);
             }
         }
     }
 
-    /// Set a parameter on a send bus effect engine.
+    /// Set a parameter on a send bus effect backend.
     pub fn set_send_bus_param(&mut self, bus_id: u32, param_id: u32, value: f64) {
         if let Some(bus) = self.send_bus_mut(bus_id) {
-            bus.engine.set_param(param_id, value);
+            bus.backend.set_param(param_id, value);
         }
     }
 
@@ -707,7 +725,7 @@ impl Mixer {
             // Render engine output
             track.left[..chunk].fill(0.0);
             track.right[..chunk].fill(0.0);
-            track.engine.render(&mut track.left[..chunk], &mut track.right[..chunk]);
+            track.backend.render(&mut track.left[..chunk], &mut track.right[..chunk]);
 
             // Add accumulated group input (for group tracks)
             for k in 0..chunk {
@@ -789,7 +807,7 @@ impl Mixer {
         for bus in &mut self.send_buses {
             bus.out_left[..chunk].fill(0.0);
             bus.out_right[..chunk].fill(0.0);
-            bus.engine.process_effect(
+            bus.backend.process_effect(
                 &bus.acc_left[..chunk],
                 &bus.acc_right[..chunk],
                 &mut bus.out_left[..chunk],
@@ -859,7 +877,7 @@ fn process_insert_chain(
         }
         if !in_scratch {
             // Read from left/right, write to scratch
-            insert.engine.process_effect(
+            insert.backend.process_effect(
                 &left[..chunk],
                 &right[..chunk],
                 &mut scratch_left[..chunk],
@@ -868,7 +886,7 @@ fn process_insert_chain(
             in_scratch = true;
         } else {
             // Read from scratch, write to left/right
-            insert.engine.process_effect(
+            insert.backend.process_effect(
                 &scratch_left[..chunk],
                 &scratch_right[..chunk],
                 &mut left[..chunk],
@@ -937,6 +955,12 @@ fn soft_limit(sample: f32, threshold: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use moonlitt_core::NullBackend;
+
+    /// Shorthand for creating a boxed NullBackend in tests.
+    fn null(sr: u32) -> Box<dyn AudioBackend> {
+        Box::new(NullBackend::new(sr))
+    }
 
     #[test]
     fn test_pan_center_is_minus_3db() {
@@ -1005,7 +1029,7 @@ mod tests {
     #[test]
     fn test_mixer_single_track() {
         let mut mixer = Mixer::new(44100, 256);
-        let engine = Engine::new(44100, 256);
+        let engine = null(44100);
         mixer.add_track(engine, 0xFFFF); // all channels
         let mut left = vec![0.0; 256];
         let mut right = vec![0.0; 256];
@@ -1016,7 +1040,7 @@ mod tests {
     #[test]
     fn test_mixer_mute() {
         let mut mixer = Mixer::new(44100, 256);
-        let engine = Engine::new(44100, 256);
+        let engine = null(44100);
         let id = mixer.add_track(engine, 0xFFFF);
         mixer.track_mut(id).unwrap().mute = true;
         let mut left = vec![0.0; 256];
@@ -1031,10 +1055,10 @@ mod tests {
     #[test]
     fn test_add_insert() {
         let mut mixer = Mixer::new(44100, 256);
-        let engine = Engine::new(44100, 256);
+        let engine = null(44100);
         let track_id = mixer.add_track(engine, 0xFFFF);
 
-        let effect = Engine::new(44100, 256);
+        let effect = null(44100);
         let insert_id = mixer.add_insert(track_id, effect);
         assert!(insert_id.is_some());
         assert_eq!(mixer.track(track_id).unwrap().inserts.len(), 1);
@@ -1043,17 +1067,17 @@ mod tests {
     #[test]
     fn test_add_insert_invalid_track() {
         let mut mixer = Mixer::new(44100, 256);
-        let effect = Engine::new(44100, 256);
+        let effect = null(44100);
         assert!(mixer.add_insert(999, effect).is_none());
     }
 
     #[test]
     fn test_remove_insert() {
         let mut mixer = Mixer::new(44100, 256);
-        let engine = Engine::new(44100, 256);
+        let engine = null(44100);
         let track_id = mixer.add_track(engine, 0xFFFF);
 
-        let effect = Engine::new(44100, 256);
+        let effect = null(44100);
         let insert_id = mixer.add_insert(track_id, effect).unwrap();
         assert_eq!(mixer.track(track_id).unwrap().inserts.len(), 1);
 
@@ -1065,7 +1089,7 @@ mod tests {
     #[test]
     fn test_remove_insert_invalid() {
         let mut mixer = Mixer::new(44100, 256);
-        let engine = Engine::new(44100, 256);
+        let engine = null(44100);
         let track_id = mixer.add_track(engine, 0xFFFF);
         assert!(mixer.remove_insert(track_id, 999).is_none());
         assert!(mixer.remove_insert(999, 0).is_none());
@@ -1074,10 +1098,10 @@ mod tests {
     #[test]
     fn test_insert_bypass() {
         let mut mixer = Mixer::new(44100, 256);
-        let engine = Engine::new(44100, 256);
+        let engine = null(44100);
         let track_id = mixer.add_track(engine, 0xFFFF);
 
-        let effect = Engine::new(44100, 256);
+        let effect = null(44100);
         let insert_id = mixer.add_insert(track_id, effect).unwrap();
 
         // Default: not bypassed
@@ -1093,12 +1117,12 @@ mod tests {
     #[test]
     fn test_insert_ids_are_unique() {
         let mut mixer = Mixer::new(44100, 256);
-        let engine = Engine::new(44100, 256);
+        let engine = null(44100);
         let track_id = mixer.add_track(engine, 0xFFFF);
 
-        let id1 = mixer.add_insert(track_id, Engine::new(44100, 256)).unwrap();
-        let id2 = mixer.add_insert(track_id, Engine::new(44100, 256)).unwrap();
-        let id3 = mixer.add_insert(track_id, Engine::new(44100, 256)).unwrap();
+        let id1 = mixer.add_insert(track_id, null(44100)).unwrap();
+        let id2 = mixer.add_insert(track_id, null(44100)).unwrap();
+        let id3 = mixer.add_insert(track_id, null(44100)).unwrap();
         assert_ne!(id1, id2);
         assert_ne!(id2, id3);
     }
@@ -1106,13 +1130,13 @@ mod tests {
     #[test]
     fn test_insert_chain_renders_without_crash() {
         let mut mixer = Mixer::new(44100, 256);
-        let engine = Engine::new(44100, 256);
+        let engine = null(44100);
         let track_id = mixer.add_track(engine, 0xFFFF);
 
         // Add 3 inserts (no-backend engines = they zero the output, simulating effects)
-        mixer.add_insert(track_id, Engine::new(44100, 256));
-        mixer.add_insert(track_id, Engine::new(44100, 256));
-        mixer.add_insert(track_id, Engine::new(44100, 256));
+        mixer.add_insert(track_id, null(44100));
+        mixer.add_insert(track_id, null(44100));
+        mixer.add_insert(track_id, null(44100));
 
         let mut left = vec![0.0; 256];
         let mut right = vec![0.0; 256];
@@ -1123,11 +1147,11 @@ mod tests {
     #[test]
     fn test_insert_chain_all_bypassed() {
         let mut mixer = Mixer::new(44100, 256);
-        let engine = Engine::new(44100, 256);
+        let engine = null(44100);
         let track_id = mixer.add_track(engine, 0xFFFF);
 
-        let id1 = mixer.add_insert(track_id, Engine::new(44100, 256)).unwrap();
-        let id2 = mixer.add_insert(track_id, Engine::new(44100, 256)).unwrap();
+        let id1 = mixer.add_insert(track_id, null(44100)).unwrap();
+        let id2 = mixer.add_insert(track_id, null(44100)).unwrap();
         mixer.set_insert_bypass(track_id, id1, true);
         mixer.set_insert_bypass(track_id, id2, true);
 
@@ -1159,8 +1183,8 @@ mod tests {
         let mut scratch_l = vec![0.0; 64];
         let mut scratch_r = vec![0.0; 64];
         let mut inserts = vec![
-            InsertEffect { id: 0, engine: Engine::new(44100, 64), bypass: true },
-            InsertEffect { id: 1, engine: Engine::new(44100, 64), bypass: true },
+            InsertEffect { id: 0, backend: null(44100), bypass: true, source_path: None },
+            InsertEffect { id: 1, backend: null(44100), bypass: true, source_path: None },
         ];
 
         process_insert_chain(&mut inserts, &mut left, &mut right, &mut scratch_l, &mut scratch_r, 64);
@@ -1173,9 +1197,9 @@ mod tests {
     #[test]
     fn test_track_insert_accessor() {
         let mut mixer = Mixer::new(44100, 256);
-        let engine = Engine::new(44100, 256);
+        let engine = null(44100);
         let track_id = mixer.add_track(engine, 0xFFFF);
-        let insert_id = mixer.add_insert(track_id, Engine::new(44100, 256)).unwrap();
+        let insert_id = mixer.add_insert(track_id, null(44100)).unwrap();
 
         assert!(mixer.track_insert(track_id, insert_id).is_some());
         assert!(mixer.track_insert(track_id, 999).is_none());
@@ -1185,12 +1209,12 @@ mod tests {
     #[test]
     fn test_multiple_tracks_with_inserts() {
         let mut mixer = Mixer::new(44100, 256);
-        let t1 = mixer.add_track(Engine::new(44100, 256), 0x0001);
-        let t2 = mixer.add_track(Engine::new(44100, 256), 0x0002);
+        let t1 = mixer.add_track(null(44100), 0x0001);
+        let t2 = mixer.add_track(null(44100), 0x0002);
 
-        mixer.add_insert(t1, Engine::new(44100, 256));
-        mixer.add_insert(t1, Engine::new(44100, 256));
-        mixer.add_insert(t2, Engine::new(44100, 256));
+        mixer.add_insert(t1, null(44100));
+        mixer.add_insert(t1, null(44100));
+        mixer.add_insert(t2, null(44100));
 
         assert_eq!(mixer.track(t1).unwrap().inserts.len(), 2);
         assert_eq!(mixer.track(t2).unwrap().inserts.len(), 1);
@@ -1253,8 +1277,8 @@ mod tests {
     #[test]
     fn test_pdc_no_inserts_no_delay() {
         let mut mixer = Mixer::new(44100, 256);
-        mixer.add_track(Engine::new(44100, 256), 0xFFFF);
-        mixer.add_track(Engine::new(44100, 256), 0xFFFF);
+        mixer.add_track(null(44100), 0xFFFF);
+        mixer.add_track(null(44100), 0xFFFF);
         mixer.recalculate_pdc();
 
         // No inserts → no latency → no delay
@@ -1265,11 +1289,11 @@ mod tests {
     #[test]
     fn test_pdc_recalculate_on_insert_add() {
         let mut mixer = Mixer::new(44100, 256);
-        mixer.add_track(Engine::new(44100, 256), 0x0001);
-        mixer.add_track(Engine::new(44100, 256), 0x0002);
+        mixer.add_track(null(44100), 0x0001);
+        mixer.add_track(null(44100), 0x0002);
 
         // Add insert to track 0 (Engine with no backend reports 0 latency)
-        mixer.add_insert(0, Engine::new(44100, 256));
+        mixer.add_insert(0, null(44100));
 
         // Both tracks have 0 latency (no backend) → no compensation
         assert_eq!(mixer.tracks()[0].delay_line.delay, 0);
@@ -1279,9 +1303,9 @@ mod tests {
     #[test]
     fn test_pdc_renders_without_crash() {
         let mut mixer = Mixer::new(44100, 256);
-        mixer.add_track(Engine::new(44100, 256), 0xFFFF);
-        mixer.add_track(Engine::new(44100, 256), 0xFFFF);
-        mixer.add_insert(0, Engine::new(44100, 256));
+        mixer.add_track(null(44100), 0xFFFF);
+        mixer.add_track(null(44100), 0xFFFF);
+        mixer.add_insert(0, null(44100));
         mixer.recalculate_pdc();
 
         let mut left = vec![0.0; 256];
@@ -1293,9 +1317,9 @@ mod tests {
     #[test]
     fn test_pdc_bypass_recalculates() {
         let mut mixer = Mixer::new(44100, 256);
-        let t0 = mixer.add_track(Engine::new(44100, 256), 0xFFFF);
-        mixer.add_track(Engine::new(44100, 256), 0xFFFF);
-        let i0 = mixer.add_insert(t0, Engine::new(44100, 256)).unwrap();
+        let t0 = mixer.add_track(null(44100), 0xFFFF);
+        mixer.add_track(null(44100), 0xFFFF);
+        let i0 = mixer.add_insert(t0, null(44100)).unwrap();
 
         // Bypass should trigger recalculation
         mixer.set_insert_bypass(t0, i0, true);
@@ -1307,8 +1331,8 @@ mod tests {
     #[test]
     fn test_set_track_output_to_group() {
         let mut mixer = Mixer::new(44100, 256);
-        let t0 = mixer.add_track(Engine::new(44100, 256), 0x0001);
-        let t1 = mixer.add_track(Engine::new(44100, 256), 0x0002); // group
+        let t0 = mixer.add_track(null(44100), 0x0001);
+        let t1 = mixer.add_track(null(44100), 0x0002); // group
 
         assert!(mixer.set_track_output(t0, OutputTarget::Group(t1)));
         assert_eq!(mixer.track(t0).unwrap().output_target, OutputTarget::Group(t1));
@@ -1317,15 +1341,15 @@ mod tests {
     #[test]
     fn test_set_track_output_rejects_self() {
         let mut mixer = Mixer::new(44100, 256);
-        let t0 = mixer.add_track(Engine::new(44100, 256), 0xFFFF);
+        let t0 = mixer.add_track(null(44100), 0xFFFF);
         assert!(!mixer.set_track_output(t0, OutputTarget::Group(t0)));
     }
 
     #[test]
     fn test_set_track_output_rejects_cycle() {
         let mut mixer = Mixer::new(44100, 256);
-        let t0 = mixer.add_track(Engine::new(44100, 256), 0x0001);
-        let t1 = mixer.add_track(Engine::new(44100, 256), 0x0002);
+        let t0 = mixer.add_track(null(44100), 0x0001);
+        let t1 = mixer.add_track(null(44100), 0x0002);
         mixer.set_track_output(t0, OutputTarget::Group(t1));
         // t1 → t0 would create cycle
         assert!(!mixer.set_track_output(t1, OutputTarget::Group(t0)));
@@ -1334,16 +1358,16 @@ mod tests {
     #[test]
     fn test_set_track_output_rejects_nonexistent() {
         let mut mixer = Mixer::new(44100, 256);
-        let t0 = mixer.add_track(Engine::new(44100, 256), 0xFFFF);
+        let t0 = mixer.add_track(null(44100), 0xFFFF);
         assert!(!mixer.set_track_output(t0, OutputTarget::Group(999)));
     }
 
     #[test]
     fn test_group_track_renders_without_crash() {
         let mut mixer = Mixer::new(44100, 256);
-        let t0 = mixer.add_track(Engine::new(44100, 256), 0x0001);
-        let t1 = mixer.add_track(Engine::new(44100, 256), 0x0002);
-        let group = mixer.add_track(Engine::new(44100, 256), 0x0000); // group (no MIDI)
+        let t0 = mixer.add_track(null(44100), 0x0001);
+        let t1 = mixer.add_track(null(44100), 0x0002);
+        let group = mixer.add_track(null(44100), 0x0000); // group (no MIDI)
 
         mixer.set_track_output(t0, OutputTarget::Group(group));
         mixer.set_track_output(t1, OutputTarget::Group(group));
@@ -1356,8 +1380,8 @@ mod tests {
     #[test]
     fn test_remove_group_target_resets_routing() {
         let mut mixer = Mixer::new(44100, 256);
-        let t0 = mixer.add_track(Engine::new(44100, 256), 0x0001);
-        let group = mixer.add_track(Engine::new(44100, 256), 0x0000);
+        let t0 = mixer.add_track(null(44100), 0x0001);
+        let group = mixer.add_track(null(44100), 0x0000);
         mixer.set_track_output(t0, OutputTarget::Group(group));
 
         mixer.remove_track(group);
@@ -1368,9 +1392,9 @@ mod tests {
     #[test]
     fn test_render_order_sources_before_groups() {
         let mut mixer = Mixer::new(44100, 256);
-        let _t0 = mixer.add_track(Engine::new(44100, 256), 0x0001);
-        let group = mixer.add_track(Engine::new(44100, 256), 0x0000);
-        let _t1 = mixer.add_track(Engine::new(44100, 256), 0x0002);
+        let _t0 = mixer.add_track(null(44100), 0x0001);
+        let group = mixer.add_track(null(44100), 0x0000);
+        let _t1 = mixer.add_track(null(44100), 0x0002);
 
         mixer.set_track_output(_t0, OutputTarget::Group(group));
         mixer.set_track_output(_t1, OutputTarget::Group(group));
@@ -1385,7 +1409,7 @@ mod tests {
     #[test]
     fn test_trim_zero_is_passthrough() {
         let mut mixer = Mixer::new(44100, 256);
-        let id = mixer.add_track(Engine::new(44100, 256), 0xFFFF);
+        let id = mixer.add_track(null(44100), 0xFFFF);
         // trim_db defaults to 0.0
         assert_eq!(mixer.track(id).unwrap().trim_db, 0.0);
 
@@ -1399,7 +1423,7 @@ mod tests {
     #[test]
     fn test_trim_plus_6db() {
         let mut mixer = Mixer::new(44100, 4);
-        let id = mixer.add_track(Engine::new(44100, 4), 0xFFFF);
+        let id = mixer.add_track(null(44100), 0xFFFF);
         mixer.set_track_trim(id, 6.0);
 
         let expected_gain = 10f32.powf(6.0 / 20.0); // ~1.9953
@@ -1415,7 +1439,7 @@ mod tests {
     #[test]
     fn test_trim_clamp() {
         let mut mixer = Mixer::new(44100, 256);
-        let id = mixer.add_track(Engine::new(44100, 256), 0xFFFF);
+        let id = mixer.add_track(null(44100), 0xFFFF);
 
         // Above +24 should clamp to +24
         mixer.set_track_trim(id, 30.0);

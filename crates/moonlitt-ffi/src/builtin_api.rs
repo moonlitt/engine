@@ -1,13 +1,12 @@
 //! Built-in effect factories + Mixer pre-creation API.
 //!
 //! Allows C callers to:
-//! 1. Create built-in effect engines (EQ, Compressor, Reverb) without loading a file
+//! 1. Create built-in effect backends (EQ, Compressor, Reverb) without loading a file
 //! 2. Pre-build a Mixer with tracks before creating a Runtime
 
 use crate::engine_api::EngineHandle;
 use crate::runtime_api::RuntimeHandle;
 use crate::util::cstr_to_str;
-use moonlitt_engine::engine::Engine;
 use moonlitt_runtime::mixer::Mixer;
 use moonlitt_runtime::Runtime;
 use std::ffi::{c_char, c_int};
@@ -26,9 +25,11 @@ pub extern "C" fn moonlitt_builtin_create_eq(
     let sr = sample_rate.max(1) as u32;
     let bs = buffer_size.max(1) as u32;
     let eq = moonlitt_effects::ParametricEq::new(sr);
-    let engine = Engine::from_backend(Box::new(eq), sr, bs);
     Box::into_raw(Box::new(EngineHandle {
-        engine: Some(engine),
+        backend: Some(Box::new(eq)),
+        sample_rate: sr,
+        buffer_size: bs,
+        loaded_path: None,
         last_error: None,
         last_error_cstring: None,
     }))
@@ -43,9 +44,11 @@ pub extern "C" fn moonlitt_builtin_create_compressor(
     let sr = sample_rate.max(1) as u32;
     let bs = buffer_size.max(1) as u32;
     let comp = moonlitt_effects::Compressor::new(sr);
-    let engine = Engine::from_backend(Box::new(comp), sr, bs);
     Box::into_raw(Box::new(EngineHandle {
-        engine: Some(engine),
+        backend: Some(Box::new(comp)),
+        sample_rate: sr,
+        buffer_size: bs,
+        loaded_path: None,
         last_error: None,
         last_error_cstring: None,
     }))
@@ -60,9 +63,11 @@ pub extern "C" fn moonlitt_builtin_create_reverb(
     let sr = sample_rate.max(1) as u32;
     let bs = buffer_size.max(1) as u32;
     let reverb = moonlitt_effects::DattorroReverb::new(sr);
-    let engine = Engine::from_backend(Box::new(reverb), sr, bs);
     Box::into_raw(Box::new(EngineHandle {
-        engine: Some(engine),
+        backend: Some(Box::new(reverb)),
+        sample_rate: sr,
+        buffer_size: bs,
+        loaded_path: None,
         last_error: None,
         last_error_cstring: None,
     }))
@@ -127,9 +132,11 @@ pub extern "C" fn moonlitt_builtin_create_convolver(
     };
 
     let conv = moonlitt_effects::Convolver::from_ir(&ir, sr, bs);
-    let engine = Engine::from_backend(Box::new(conv), sr, bs as u32);
     Box::into_raw(Box::new(EngineHandle {
-        engine: Some(engine),
+        backend: Some(Box::new(conv)),
+        sample_rate: sr,
+        buffer_size: bs as u32,
+        loaded_path: None,
         last_error: None,
         last_error_cstring: None,
     }))
@@ -168,7 +175,7 @@ pub extern "C" fn moonlitt_mixer_destroy(m: *mut MixerHandle) {
 }
 
 /// Add a track to a pre-built mixer. Returns track ID, or -1 on error.
-/// The engine is consumed on success (taken from the EngineHandle).
+/// The backend is consumed on success (taken from the EngineHandle).
 #[no_mangle]
 pub extern "C" fn moonlitt_mixer_add_track(
     m: *mut MixerHandle,
@@ -187,15 +194,15 @@ pub extern "C" fn moonlitt_mixer_add_track(
         Some(h) => h,
         None => return -1,
     };
-    let engine = match eh.engine.take() {
-        Some(e) => e,
+    let backend = match eh.backend.take() {
+        Some(b) => b,
         None => return -1,
     };
-    mixer.add_track(engine, channel_mask as u16) as c_int
+    mixer.add_track(backend, channel_mask as u16) as c_int
 }
 
 /// Add a send bus to a pre-built mixer. Returns bus ID, or -1 on error.
-/// The engine is consumed on success.
+/// The backend is consumed on success.
 #[no_mangle]
 pub extern "C" fn moonlitt_mixer_add_send_bus(
     m: *mut MixerHandle,
@@ -213,15 +220,15 @@ pub extern "C" fn moonlitt_mixer_add_send_bus(
         Some(h) => h,
         None => return -1,
     };
-    let engine = match eh.engine.take() {
-        Some(e) => e,
+    let backend = match eh.backend.take() {
+        Some(b) => b,
         None => return -1,
     };
-    mixer.add_send_bus(engine) as c_int
+    mixer.add_send_bus(backend) as c_int
 }
 
 /// Add an insert effect to a track in a pre-built mixer. Returns insert ID, or -1 on error.
-/// The engine is consumed on success.
+/// The backend is consumed on success.
 #[no_mangle]
 pub extern "C" fn moonlitt_mixer_add_insert(
     m: *mut MixerHandle,
@@ -240,11 +247,11 @@ pub extern "C" fn moonlitt_mixer_add_insert(
         Some(h) => h,
         None => return -1,
     };
-    let engine = match eh.engine.take() {
-        Some(e) => e,
+    let backend = match eh.backend.take() {
+        Some(b) => b,
         None => return -1,
     };
-    match mixer.add_insert(track_id as u32, engine) {
+    match mixer.add_insert(track_id as u32, backend) {
         Some(id) => id as c_int,
         None => -1,
     }
@@ -277,7 +284,7 @@ pub extern "C" fn moonlitt_runtime_create_from_mixer(
 
 /// Create a 16-track mixer + runtime from a single SF2 file.
 /// Loads the SF2 ONCE, clones the SoundFont for each channel (Arc-shared sample data).
-/// Memory: ~1× SF2 size instead of 16× SF2 size.
+/// Memory: ~1x SF2 size instead of 16x SF2 size.
 /// Returns a RuntimeHandle ready to use, or null on failure.
 #[no_mangle]
 pub extern "C" fn moonlitt_multitrack_create(
@@ -306,11 +313,11 @@ pub extern "C" fn moonlitt_multitrack_create(
     let mut mixer = Mixer::new(sr, bs as usize);
     for ch in 0u16..16 {
         let cloned_font = font.clone(); // Only clones Arc pointers, not sample data
-        let engine = match Engine::from_shared_sf2(cloned_font, sr, bs) {
-            Ok(e) => e,
+        let backend = match moonlitt_engine::create_from_shared_sf2(cloned_font, sr) {
+            Ok(b) => b,
             Err(_) => return std::ptr::null_mut(),
         };
-        mixer.add_track(engine, 1 << ch);
+        mixer.add_track(backend, 1 << ch);
     }
 
     // Create runtime from mixer

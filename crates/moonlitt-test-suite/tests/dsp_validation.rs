@@ -392,11 +392,11 @@ fn l3_mixer_empty_silence() {
 
 #[test]
 fn l3_mixer_mute() {
-    use moonlitt_engine::engine::Engine;
+    use moonlitt_core::AudioBackend;
     use moonlitt_runtime::mixer::Mixer;
 
     let mut mixer = moonlitt_runtime::mixer::Mixer::new(44100, 256);
-    let engine = Engine::new(44100, 256);
+    let engine = Box::new(moonlitt_core::NullBackend::new(44100)) as Box<dyn AudioBackend>;
     let id = mixer.add_track(engine, 0xFFFF);
     mixer.track_mut(id).unwrap().mute = true;
 
@@ -413,7 +413,7 @@ fn l3_mixer_mute() {
 
 #[test]
 fn l4_golden_interpolation_test() {
-    use moonlitt_engine::engine::Engine;
+    
 
     let sf2 = "tests/sf2-spec-test/sample interpolation test/sample interpolation test.sf2";
     let _midi = "tests/sf2-spec-test/sample interpolation test/sample interpolation test.mid";
@@ -424,8 +424,7 @@ fn l4_golden_interpolation_test() {
         return;
     }
 
-    let mut engine = Engine::new(44100, 256);
-    engine.load(sf2).unwrap();
+    let mut engine = moonlitt_engine::create(sf2, 44100, 256).unwrap();
 
     // Parse and render MIDI (simplified — just verify it doesn't crash)
     engine.note_on(0, 60, 100);

@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+moonlitt-core = { path = "../moonlitt-core" }
 moonlitt-engine = { path = "../moonlitt-engine", features = ["sf2", "vst3", "clap"] }
 moonlitt-mixer = { path = "../moonlitt-mixer" }
 cpal = "0.15"
