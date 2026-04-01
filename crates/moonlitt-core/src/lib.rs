@@ -6,6 +6,14 @@
 //! (sampler, VST3, CLAP) implements it. This crate exists to break
 //! the cyclic dependency between moonlitt-engine and moonlitt-sampler.
 
+mod caps;
+mod event;
+mod host;
+
+pub use caps::BackendCaps;
+pub use event::{AudioEvent, TimedEvent};
+pub use host::{AudioCallback, AudioHost};
+
 /// All backends implement this trait. Public — community can extend.
 pub trait AudioBackend: Send {
     fn info(&self) -> BackendInfo;
