@@ -14,7 +14,7 @@
 
 use std::f64::consts::PI;
 
-use crate::envelope::EnvelopeFollower;
+use super::envelope::EnvelopeFollower;
 use moonlitt_core::{AudioBackend, BackendInfo, BackendType, ParamFlags, ParamInfo};
 
 // ---------------------------------------------------------------------------
@@ -239,6 +239,7 @@ impl Compressor {
 /// Free function to avoid borrow-checker conflicts in `process_effect`.
 /// Returns the gain in dB to apply (including makeup).
 #[inline]
+#[allow(clippy::too_many_arguments)]
 fn detect_and_compute(
     detection_mode: DetectionMode,
     threshold_db: f64,

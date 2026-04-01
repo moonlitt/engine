@@ -12,7 +12,7 @@
 //! at full f64→f32 precision.
 
 use moonlitt_core::AudioBackend;
-use moonlitt_eq::{Band, Biquad, BiquadCoeffs, FilterType, ParametricEq};
+use moonlitt_effects::{Band, Biquad, BiquadCoeffs, FilterType, ParametricEq};
 use rustfft::num_complex::Complex;
 use std::f64::consts::PI;
 

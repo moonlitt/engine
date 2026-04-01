@@ -15,7 +15,7 @@ use rustfft::{Fft, FftPlanner};
 
 use moonlitt_core::{AudioBackend, BackendInfo, BackendType, ParamFlags, ParamInfo};
 
-use crate::partition::IrPartitions;
+use super::partition::IrPartitions;
 
 pub struct Convolver {
     partitions: IrPartitions,

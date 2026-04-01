@@ -3,7 +3,7 @@
 //! Zero tolerance: machine epsilon only.
 
 use moonlitt_engine::engine::Engine;
-use moonlitt_eq::ParametricEq;
+use moonlitt_effects::ParametricEq;
 use moonlitt_runtime::mixer::Mixer;
 use std::path::Path;
 
@@ -289,7 +289,7 @@ fn g08_signal_chain_order() {
     let id3 = mixer_send2.add_track(engine3, 0xFFFF);
 
     // Add send bus with passthrough reverb to actually see the bus output
-    let reverb = moonlitt_reverb::Reverb::new(SAMPLE_RATE);
+    let reverb = moonlitt_effects::Reverb::new(SAMPLE_RATE);
     let mut reverb_engine = Engine::from_backend(Box::new(reverb), SAMPLE_RATE, BUFFER_SIZE as u32);
     reverb_engine.set_param(7, 1.0); // 100% wet
     let _bus_id2 = mixer_send2.add_send_bus(reverb_engine);

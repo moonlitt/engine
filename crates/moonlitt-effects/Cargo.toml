@@ -1,0 +1,26 @@
+[package]
+name = "moonlitt-effects"
+description = "Built-in audio effects — dynamics, EQ, spatial processing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+moonlitt-core = { path = "../moonlitt-core" }
+rustfft = { version = "6", optional = true }
+
+[dev-dependencies]
+approx = "0.5"
+rustfft = "6"
+
+[features]
+default = ["all"]
+all = ["dynamics", "eq", "spatial"]
+dynamics = ["compressor"]
+eq = ["parametric-eq"]
+spatial = ["reverb", "convolver"]
+compressor = []
+parametric-eq = []
+reverb = []
+convolver = ["dep:rustfft"]

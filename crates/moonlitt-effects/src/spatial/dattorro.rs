@@ -11,7 +11,7 @@
 //!
 //! Zero tolerance: bypass = bit-exact, dry=100% = bit-exact.
 
-use crate::mod_allpass::ModAllpass;
+use super::mod_allpass::ModAllpass;
 use moonlitt_core::{AudioBackend, BackendInfo, BackendType, ParamFlags, ParamInfo};
 
 // ---------------------------------------------------------------------------

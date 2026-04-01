@@ -29,7 +29,7 @@ impl IrPartitions {
         let num_partitions = if ir.is_empty() {
             1
         } else {
-            (ir.len() + block_size - 1) / block_size
+            ir.len().div_ceil(block_size)
         };
 
         let mut planner = FftPlanner::new();

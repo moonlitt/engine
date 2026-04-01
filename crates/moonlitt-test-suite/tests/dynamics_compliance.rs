@@ -6,7 +6,7 @@
 //!
 //! Zero tolerance: all assertions use machine epsilon.
 
-use moonlitt_compressor::{Compressor, EnvelopeFollower};
+use moonlitt_effects::{Compressor, EnvelopeFollower};
 use moonlitt_core::AudioBackend;
 use std::f64::consts::PI;
 

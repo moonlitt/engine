@@ -16,7 +16,7 @@
 //! 13. Soft limiter THD
 
 use moonlitt_engine::engine::Engine;
-use moonlitt_reverb::Reverb;
+use moonlitt_effects::Reverb;
 use moonlitt_runtime::mixer::{Mixer, OutputTarget};
 use std::path::Path;
 

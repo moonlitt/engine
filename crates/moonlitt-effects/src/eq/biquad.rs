@@ -181,6 +181,12 @@ pub struct Biquad {
     z2: f64,
 }
 
+impl Default for Biquad {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Biquad {
     /// Create a new biquad with passthrough coefficients.
     pub fn new() -> Self {

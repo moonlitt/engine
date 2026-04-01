@@ -10,9 +10,7 @@ repository.workspace = true
 moonlitt-resampler = { path = "../moonlitt-resampler" }
 moonlitt-engine = { path = "../moonlitt-engine", features = ["sf2", "vst3"] }
 moonlitt-runtime = { path = "../moonlitt-runtime" }
-moonlitt-reverb = { path = "../moonlitt-reverb" }
-moonlitt-compressor = { path = "../moonlitt-compressor" }
-moonlitt-eq = { path = "../moonlitt-eq" }
+moonlitt-effects = { path = "../moonlitt-effects" }
 moonlitt-core = { path = "../moonlitt-core" }
 rustfft = "6"
 approx = "0.5"

@@ -1,5 +1,5 @@
-use crate::allpass::AllpassFilter;
-use crate::comb::CombFilter;
+use super::allpass::AllpassFilter;
+use super::comb::CombFilter;
 use moonlitt_core::{AudioBackend, BackendInfo, BackendType, ParamFlags, ParamInfo};
 
 // ---------------------------------------------------------------------------

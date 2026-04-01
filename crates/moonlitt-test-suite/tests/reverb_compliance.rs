@@ -7,7 +7,7 @@
 //! Zero tolerance: all assertions use machine epsilon.
 
 use moonlitt_core::AudioBackend;
-use moonlitt_reverb::Reverb;
+use moonlitt_effects::Reverb;
 
 const SR: u32 = 44100;
 

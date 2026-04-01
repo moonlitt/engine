@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Test Commands
 
 ```bash
-cargo build --workspace                  # Build all 14 crates
+cargo build --workspace                  # Build all 11 crates
 cargo build --release                    # Release build
 cargo test --workspace                   # Run all tests
 cargo test --workspace -- --skip pianoteq --skip keyscape  # Skip plugin-specific tests (CI default)
@@ -37,11 +37,10 @@ moonlitt-runtime       ← Real-time audio I/O (cpal), MIDI input (midir), seque
 moonlitt-ffi           ← C API for language bindings (.NET, future Python/Node.js)
 moonlitt-cli           ← CLI tool: scan, play, live, midi-devices
 
-Effects (independent, no cross-deps):
-  moonlitt-eq          ← 8-band parametric EQ (biquad cascade)
-  moonlitt-compressor  ← Log-domain dynamics compressor
-  moonlitt-reverb      ← Freeverb (8 comb + 4 allpass) + Dattorro plate reverb
-  moonlitt-convolver   ← FFT partitioned convolution (overlap-add, rustfft)
+moonlitt-effects       ← Built-in audio effects (feature-gated modules):
+  ↑                      dynamics/ — compressor (log-domain, soft knee)
+  ↑                      eq/       — 8-band parametric EQ (biquad cascade)
+  ↑                      spatial/  — Freeverb, Dattorro plate reverb, FFT convolver
 
 moonlitt-test-suite    ← DSP compliance tests (SF2 2.04, MIDI 1.0, EBU R128, AES17)
 ```

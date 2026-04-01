@@ -25,7 +25,7 @@ pub extern "C" fn moonlitt_builtin_create_eq(
 ) -> *mut EngineHandle {
     let sr = sample_rate.max(1) as u32;
     let bs = buffer_size.max(1) as u32;
-    let eq = moonlitt_eq::ParametricEq::new(sr);
+    let eq = moonlitt_effects::ParametricEq::new(sr);
     let engine = Engine::from_backend(Box::new(eq), sr, bs);
     Box::into_raw(Box::new(EngineHandle {
         engine: Some(engine),
@@ -42,7 +42,7 @@ pub extern "C" fn moonlitt_builtin_create_compressor(
 ) -> *mut EngineHandle {
     let sr = sample_rate.max(1) as u32;
     let bs = buffer_size.max(1) as u32;
-    let comp = moonlitt_compressor::Compressor::new(sr);
+    let comp = moonlitt_effects::Compressor::new(sr);
     let engine = Engine::from_backend(Box::new(comp), sr, bs);
     Box::into_raw(Box::new(EngineHandle {
         engine: Some(engine),
@@ -59,7 +59,7 @@ pub extern "C" fn moonlitt_builtin_create_reverb(
 ) -> *mut EngineHandle {
     let sr = sample_rate.max(1) as u32;
     let bs = buffer_size.max(1) as u32;
-    let reverb = moonlitt_reverb::DattorroReverb::new(sr);
+    let reverb = moonlitt_effects::DattorroReverb::new(sr);
     let engine = Engine::from_backend(Box::new(reverb), sr, bs);
     Box::into_raw(Box::new(EngineHandle {
         engine: Some(engine),
@@ -126,7 +126,7 @@ pub extern "C" fn moonlitt_builtin_create_convolver(
         None => return std::ptr::null_mut(),
     };
 
-    let conv = moonlitt_convolver::Convolver::from_ir(&ir, sr, bs);
+    let conv = moonlitt_effects::Convolver::from_ir(&ir, sr, bs);
     let engine = Engine::from_backend(Box::new(conv), sr, bs as u32);
     Box::into_raw(Box::new(EngineHandle {
         engine: Some(engine),

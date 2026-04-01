@@ -4,7 +4,7 @@
 //! (series connection) per channel. Coefficient recalculation happens at
 //! parameter-change time, never in the audio loop.
 
-use crate::biquad::{Biquad, BiquadCoeffs, FilterType};
+use super::biquad::{Biquad, BiquadCoeffs, FilterType};
 use moonlitt_core::{AudioBackend, BackendInfo, BackendType, ParamFlags, ParamInfo};
 
 // ---------------------------------------------------------------------------
