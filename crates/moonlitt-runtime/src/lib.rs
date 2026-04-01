@@ -8,10 +8,12 @@
 
 mod audio_output;
 mod audio_thread;
-pub mod dither;
 mod event;
 mod midi_input;
-pub mod mixer;
+
+// Re-export from moonlitt-mixer for backward compatibility.
+pub use moonlitt_mixer::dither;
+pub use moonlitt_mixer::mixer;
 mod runtime;
 pub mod sequencer;
 pub mod session;

@@ -13,6 +13,7 @@ members = [
     "crates/moonlitt-test-suite",
     "crates/moonlitt-sampler",
     "crates/moonlitt-effects",
+    "crates/moonlitt-mixer",
 ]
 
 [workspace.package]

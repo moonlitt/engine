@@ -1,13 +1,9 @@
-//! Mixer — audio processing component, NOT a runtime concern.
+//! Mixer — pure audio DSP graph.
 //!
-//! The Mixer is a pure audio DSP graph: it combines multiple engine tracks
-//! with send buses (effects) and a master bus (limiter). It lives in
-//! moonlitt-runtime for convenience but is conceptually independent —
+//! Combines multiple engine tracks with send buses (effects) and a master
+//! bus (limiter). Platform-agnostic: no cpal, no midir, no threads.
 //! AudioThread owns and drives the Mixer, calling `render()` each audio
 //! callback. The Mixer has no knowledge of threads, devices, or transport.
-//!
-//! If the crate dependency graph ever needs it, Mixer can be extracted to
-//! its own `moonlitt-mixer` crate with zero API changes.
 //!
 //! All rendering happens in the audio thread. No locks, no allocations.
 

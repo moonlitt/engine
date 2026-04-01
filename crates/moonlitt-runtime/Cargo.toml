@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 moonlitt-engine = { path = "../moonlitt-engine", features = ["sf2", "vst3", "clap"] }
+moonlitt-mixer = { path = "../moonlitt-mixer" }
 cpal = "0.15"
 midir = "0.10"
 midly = "0.5"
