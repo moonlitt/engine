@@ -6,7 +6,7 @@
 //! - No audio output device is available
 
 use moonlitt_core::AudioBackend;
-use moonlitt_runtime::Runtime;
+use moonlitt_audio_io::Runtime;
 use std::thread;
 use std::time::Duration;
 

@@ -1,6 +1,6 @@
 [package]
-name = "moonlitt-runtime"
-description = "Real-time audio runtime — audio output, MIDI input, sequencer"
+name = "moonlitt-audio-io"
+description = "Platform audio I/O — cpal output, midir MIDI input, Runtime orchestrator"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

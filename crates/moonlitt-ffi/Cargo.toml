@@ -12,7 +12,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 moonlitt-core = { path = "../moonlitt-core" }
 moonlitt-engine = { path = "../moonlitt-engine", features = ["sf2", "vst3", "clap"] }
-moonlitt-runtime = { path = "../moonlitt-runtime" }
+moonlitt-audio-io = { path = "../moonlitt-audio-io" }
 moonlitt-effects = { path = "../moonlitt-effects" }
 hound = "3"
 oxisynth = { path = "../../deps/oxisynth/oxisynth" }

@@ -1,4 +1,4 @@
-use moonlitt_runtime::AudioEvent;
+use moonlitt_audio_io::AudioEvent;
 
 #[test]
 fn event_is_copy() {

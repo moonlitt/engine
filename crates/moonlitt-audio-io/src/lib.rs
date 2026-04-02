@@ -1,7 +1,8 @@
-//! # moonlitt-runtime
+//! # moonlitt-audio-io
 //!
-//! Real-time audio runtime for moonlitt.
-//! Connects Engine to audio hardware, MIDI keyboards, and MIDI file playback.
+//! Platform audio I/O for moonlitt.
+//! Connects Engine to audio hardware (cpal), MIDI keyboards (midir), and
+//! MIDI file playback via the session layer.
 //!
 //! All input sources feed a single lock-free event queue.
 //! The audio thread drains events and renders audio.

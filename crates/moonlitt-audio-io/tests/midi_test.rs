@@ -1,4 +1,4 @@
-use moonlitt_runtime::Runtime;
+use moonlitt_audio_io::Runtime;
 
 #[test]
 fn list_midi_devices() {

@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Test Commands
 
 ```bash
-cargo build --workspace                  # Build all 11 crates
+cargo build --workspace                  # Build all 13 crates
 cargo build --release                    # Release build
 cargo test --workspace                   # Run all tests
 cargo test --workspace -- --skip pianoteq --skip keyscape  # Skip plugin-specific tests (CI default)
@@ -33,7 +33,9 @@ moonlitt-sampler       ← Pure Rust SF2 synthesis (sinc interpolation)
 moonlitt-engine        ← Unified entry point; auto-detects format by file extension
   ↑                      Feature-gated backends: sf2, sf2-sampler, sf2-legacy, vst3, clap
   ↑
-moonlitt-runtime       ← Real-time audio I/O (cpal), MIDI input (midir), sequencer, mixer
+moonlitt-mixer         ← Multi-track mixer: tracks, send buses, inserts, panning, metering, dither
+moonlitt-session       ← Transport, sequencer, persistence, audio thread processor
+moonlitt-audio-io      ← Platform audio I/O (cpal output, midir MIDI input, Runtime orchestrator)
 moonlitt-ffi           ← C API for language bindings (.NET, future Python/Node.js)
 moonlitt-cli           ← CLI tool: scan, play, live, midi-devices
 
@@ -49,8 +51,9 @@ moonlitt-test-suite    ← DSP compliance tests (SF2 2.04, MIDI 1.0, EBU R128, A
 
 - **`AudioBackend` trait** (`moonlitt-core`): Every audio source implements this — MIDI I/O, audio rendering, parameters, presets, state save/load. Community-extensible.
 - **`Engine`** (`moonlitt-engine`): Wraps a `Box<dyn AudioBackend>`. Routes `.sf2` → sampler, `.vst3` → VST3 host, `.clap` → CLAP host.
-- **`Runtime`** (`moonlitt-runtime`): Owns an `Engine`, connects it to audio hardware via `cpal`. Lock-free SPSC ring buffer (`rtrb`) passes events between control thread and audio thread.
-- **Mixer** (`moonlitt-runtime/src/mixer.rs`): Multi-track with send buses, panning, and metering. Tracks → Send Buses → Master Bus → Output.
+- **`Runtime`** (`moonlitt-audio-io`): Owns a `Mixer`, connects it to audio hardware via `cpal`. Lock-free SPSC ring buffer (`rtrb`) passes events between control thread and audio thread.
+- **Mixer** (`moonlitt-mixer`): Multi-track with send buses, inserts, panning, dither, and metering. Tracks → Send Buses → Master Bus → Output.
+- **Session** (`moonlitt-session`): Transport (play/pause/stop), sequencer (MIDI file playback), persistence (save/load), and audio thread processor.
 
 ### Real-time Safety
 

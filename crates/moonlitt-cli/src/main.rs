@@ -212,7 +212,7 @@ fn cmd_play(
 }
 
 fn cmd_play_live(path: &str, note: u8, velocity: u8, duration: f32, sample_rate: u32, buffer_size: u32) {
-    use moonlitt_runtime::Runtime;
+    use moonlitt_audio_io::Runtime;
     use std::thread;
     use std::time::Duration;
 
@@ -248,7 +248,7 @@ fn cmd_play_live(path: &str, note: u8, velocity: u8, duration: f32, sample_rate:
 }
 
 fn cmd_live(path: &str) {
-    use moonlitt_runtime::Runtime;
+    use moonlitt_audio_io::Runtime;
     use std::time::Duration;
 
     let backend = match moonlitt_engine::create(path, 44100, 256) {
@@ -303,7 +303,7 @@ fn cmd_live(path: &str) {
 }
 
 fn cmd_midi_devices() {
-    match moonlitt_runtime::Runtime::list_midi_inputs() {
+    match moonlitt_audio_io::Runtime::list_midi_inputs() {
         Ok(devices) => {
             if devices.is_empty() {
                 println!("No MIDI input devices found.");
@@ -322,7 +322,7 @@ fn cmd_midi_devices() {
 // =============================================================================
 // MIDI file playback
 // =============================================================================
-// TODO: This MIDI parsing logic duplicates moonlitt_runtime::sequencer's
+// TODO: This MIDI parsing logic duplicates moonlitt_audio_io::sequencer's
 // MIDI parsing. Refactor to share a common MIDI parser crate or move the
 // note-event extraction into moonlitt-runtime and expose it publicly.
 
@@ -430,7 +430,7 @@ fn parse_midi_file(path: &str) -> Result<(Vec<MidiNote>, Vec<(f64, u8, u8)>), St
 }
 
 fn cmd_midi_live(midi_path: &str, sound_path: &str) {
-    use moonlitt_runtime::Runtime;
+    use moonlitt_audio_io::Runtime;
     use std::thread;
     use std::time::{Duration, Instant};
 

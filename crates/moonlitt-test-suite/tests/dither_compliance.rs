@@ -6,7 +6,7 @@
 //!
 //! Zero tolerance: machine epsilon only.
 
-use moonlitt_runtime::dither::Dither;
+use moonlitt_audio_io::dither::Dither;
 use rustfft::{num_complex::Complex, FftPlanner};
 
 // =============================================================================

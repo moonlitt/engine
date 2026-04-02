@@ -18,7 +18,7 @@
 
 use moonlitt_core::AudioBackend;
 use moonlitt_effects::Reverb;
-use moonlitt_runtime::mixer::{Mixer, OutputTarget};
+use moonlitt_audio_io::mixer::{Mixer, OutputTarget};
 use std::path::Path;
 
 const SF2_PATH: &str = "/Users/wangyan/Desktop/stardew valley mods/mods/piano-block/assets/soundfonts/GeneralUser_GS.sf2";
@@ -283,7 +283,7 @@ fn q05_pdc_multi_latency_alignment() {
 
 #[test]
 fn q06_session_restore_complete_state() {
-    use moonlitt_runtime::session::Session;
+    use moonlitt_audio_io::session::Session;
 
     // Build a mixer with specific parameters
     let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
@@ -341,7 +341,7 @@ fn q06_session_restore_complete_state() {
 #[test]
 fn q07_tpdf_dither_spectral_flatness() {
     // Use the Dither struct directly for spectral analysis
-    let mut dither = moonlitt_runtime::dither::StereoDither::new_24bit();
+    let mut dither = moonlitt_audio_io::dither::StereoDither::new_24bit();
 
     // Generate dither-only signal (apply to silence)
     let n = 8192; // Power of 2 for clean FFT

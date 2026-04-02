@@ -8,7 +8,7 @@
 
 
 use moonlitt_core::AudioBackend;
-use moonlitt_runtime::mixer::Mixer;
+use moonlitt_audio_io::mixer::Mixer;
 use std::path::Path;
 use std::time::Instant;
 

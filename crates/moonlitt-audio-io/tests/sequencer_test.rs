@@ -1,5 +1,5 @@
-use moonlitt_runtime::sequencer::Sequencer;
-use moonlitt_runtime::AudioEvent;
+use moonlitt_audio_io::sequencer::Sequencer;
+use moonlitt_audio_io::AudioEvent;
 
 #[test]
 fn sequencer_load_and_advance() {

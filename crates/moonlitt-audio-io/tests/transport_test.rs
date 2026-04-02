@@ -1,4 +1,4 @@
-use moonlitt_runtime::transport::{Transport, TransportState};
+use moonlitt_audio_io::transport::{Transport, TransportState};
 
 #[test]
 fn transport_initial_state_is_stopped() {

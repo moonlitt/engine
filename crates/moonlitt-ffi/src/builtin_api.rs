@@ -7,8 +7,8 @@
 use crate::engine_api::EngineHandle;
 use crate::runtime_api::RuntimeHandle;
 use crate::util::cstr_to_str;
-use moonlitt_runtime::mixer::Mixer;
-use moonlitt_runtime::Runtime;
+use moonlitt_audio_io::mixer::Mixer;
+use moonlitt_audio_io::Runtime;
 use std::ffi::{c_char, c_int};
 
 // ---------------------------------------------------------------------------

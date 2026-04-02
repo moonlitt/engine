@@ -1,4 +1,4 @@
-//! Runtime FFI — opaque handle wrapping `moonlitt_runtime::Runtime`.
+//! Runtime FFI — opaque handle wrapping `moonlitt_audio_io::Runtime`.
 //!
 //! The runtime owns the audio output stream and communicates with the
 //! engine via a lock-free SPSC (single-producer, single-consumer) ring buffer.
@@ -10,7 +10,7 @@
 
 use crate::engine_api::EngineHandle;
 use crate::util::{cstr_to_str, debug_warn_midi_range, json_escape, to_c_string};
-use moonlitt_runtime::Runtime;
+use moonlitt_audio_io::Runtime;
 use std::ffi::{c_char, c_float, c_int};
 
 /// Opaque runtime handle exposed to C callers.
@@ -499,7 +499,7 @@ pub extern "C" fn moonlitt_session_load_file(path: *const c_char) -> *mut c_char
         Some(p) => p,
         None => return std::ptr::null_mut(),
     };
-    match moonlitt_runtime::Session::load_from_file(path) {
+    match moonlitt_audio_io::Session::load_from_file(path) {
         Ok(session) => match session.to_json() {
             Ok(json) => to_c_string(&json),
             Err(_) => std::ptr::null_mut(),
