@@ -6,7 +6,7 @@
 //!
 //! Backend source files are referenced by path — they're re-loaded on restore.
 
-use crate::mixer::{InsertEffect, Mixer, SendBus, Track};
+use moonlitt_mixer::{InsertEffect, Mixer, SendBus, Track};
 use base64::Engine as Base64Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use moonlitt_core::AudioBackend;

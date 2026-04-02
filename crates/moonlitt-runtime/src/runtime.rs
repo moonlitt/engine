@@ -1,10 +1,8 @@
 use crate::audio_output::AudioOutput;
-use crate::audio_thread::{AudioThread, MixerCommand};
-use crate::event::{AudioEvent, TimedEvent};
 use crate::midi_input::{MidiDeviceInfo, MidiInputConnection};
-use crate::mixer::Mixer;
-use crate::transport::Transport;
-use moonlitt_core::AudioBackend;
+use moonlitt_core::{AudioBackend, AudioEvent, TimedEvent};
+use moonlitt_mixer::Mixer;
+use moonlitt_session::{AudioThread, MixerCommand, Transport};
 use rtrb::RingBuffer;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;

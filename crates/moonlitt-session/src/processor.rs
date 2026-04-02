@@ -1,5 +1,5 @@
-use crate::event::{AudioEvent, TimedEvent};
-use crate::mixer::Mixer;
+use moonlitt_core::{AudioEvent, TimedEvent};
+use moonlitt_mixer::Mixer;
 use crate::sequencer::Sequencer;
 use crate::transport::Transport;
 use rtrb::Consumer;
@@ -9,7 +9,7 @@ use std::sync::Arc;
 /// A structural command that mutates the Mixer (e.g. add/remove track).
 /// Sent via mpsc channel (not the SPSC ring buffer) because these carry
 /// heap-allocated data (Engine) that can't fit in a Copy event.
-pub(crate) type MixerCommand = Box<dyn FnOnce(&mut Mixer) + Send>;
+pub type MixerCommand = Box<dyn FnOnce(&mut Mixer) + Send>;
 
 /// A delayed event waiting to be dispatched at the right sample.
 #[derive(Clone, Copy)]
@@ -21,7 +21,7 @@ struct PendingEvent {
 
 /// Holds everything that lives on the audio thread.
 /// This struct is moved into the cpal callback closure.
-pub(crate) struct AudioThread {
+pub struct AudioThread {
     pub mixer: Mixer,
     pub consumer: Consumer<TimedEvent>,
     /// Receiver for structural commands (add/remove tracks, inserts, buses).
@@ -233,9 +233,9 @@ fn dispatch_to_mixer(mixer: &mut Mixer, event: AudioEvent) {
         }
         AudioEvent::MixerTrackRoute { track_id, target_id } => {
             let target = if target_id == 0xFF {
-                crate::mixer::OutputTarget::Master
+                moonlitt_mixer::OutputTarget::Master
             } else {
-                crate::mixer::OutputTarget::Group(target_id as u32)
+                moonlitt_mixer::OutputTarget::Group(target_id as u32)
             };
             mixer.set_track_output(track_id as u32, target);
         }

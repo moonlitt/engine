@@ -1,4 +1,4 @@
-use crate::event::AudioEvent;
+use moonlitt_core::AudioEvent;
 use midly::{MetaMessage, MidiMessage, Smf, TrackEventKind};
 
 /// A stored event: absolute tick position + AudioEvent.

@@ -1,4 +1,4 @@
-use crate::event::AudioEvent;
+use moonlitt_core::AudioEvent;
 use rtrb::Producer;
 
 /// Information about an available MIDI input device.

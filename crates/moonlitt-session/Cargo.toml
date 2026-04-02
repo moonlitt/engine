@@ -1,6 +1,6 @@
 [package]
-name = "moonlitt-runtime"
-description = "Real-time audio runtime — audio output, MIDI input, sequencer"
+name = "moonlitt-session"
+description = "Platform-agnostic audio session — transport, sequencer, event dispatch, persistence"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,11 +9,9 @@ repository.workspace = true
 [dependencies]
 moonlitt-core = { path = "../moonlitt-core" }
 moonlitt-mixer = { path = "../moonlitt-mixer" }
-moonlitt-session = { path = "../moonlitt-session" }
-cpal = "0.15"
-midir = "0.10"
-rtrb = "0.3"
-
-[dev-dependencies]
 moonlitt-engine = { path = "../moonlitt-engine", features = ["sf2", "vst3", "clap"] }
 rtrb = "0.3"
+midly = "0.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
