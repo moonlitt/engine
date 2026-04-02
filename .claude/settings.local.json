@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /Users/wangyan/Desktop/moonlitt log --oneline)",
+      "Bash(cargo tree:*)"
+    ]
+  }
+}

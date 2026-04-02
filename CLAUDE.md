@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Test Commands
 
 ```bash
-cargo build --workspace                  # Build all 13 crates
+cargo build --workspace                  # Build all 14 crates
 cargo build --release                    # Release build
 cargo test --workspace                   # Run all tests
 cargo test --workspace -- --skip pianoteq --skip keyscape  # Skip plugin-specific tests (CI default)
@@ -36,7 +36,8 @@ moonlitt-engine        ← Unified entry point; auto-detects format by file exte
 moonlitt-mixer         ← Multi-track mixer: tracks, send buses, inserts, panning, metering, dither
 moonlitt-session       ← Transport, sequencer, persistence, audio thread processor
 moonlitt-audio-io      ← Platform audio I/O (cpal output, midir MIDI input, Runtime orchestrator)
-moonlitt-capi          ← C API for language bindings (.NET, future Python/Node.js)
+moonlitt-capi          ← C API for language bindings (.NET, future Python)
+moonlitt-node          ← Node.js binding via napi-rs (Web DAW, Electron, Ink terminal)
 moonlitt-cli           ← CLI tool: scan, play, live, midi-devices
 
 moonlitt-effects       ← Built-in audio effects (feature-gated modules):
@@ -50,14 +51,14 @@ moonlitt-test-suite    ← DSP compliance tests (SF2 2.04, MIDI 1.0, EBU R128, A
 ### Key Abstractions
 
 - **`AudioBackend` trait** (`moonlitt-core`): Every audio source implements this — MIDI I/O, audio rendering, parameters, presets, state save/load. Community-extensible.
-- **`Engine`** (`moonlitt-engine`): Wraps a `Box<dyn AudioBackend>`. Routes `.sf2` → sampler, `.vst3` → VST3 host, `.clap` → CLAP host.
+- **`create()`** (`moonlitt-engine`): Factory function — routes `.sf2` → sampler, `.vst3` → VST3 host, `.clap` → CLAP host. Returns `Box<dyn AudioBackend>` directly.
 - **`Runtime`** (`moonlitt-audio-io`): Owns a `Mixer`, connects it to audio hardware via `cpal`. Lock-free SPSC ring buffer (`rtrb`) passes events between control thread and audio thread.
 - **Mixer** (`moonlitt-mixer`): Multi-track with send buses, inserts, panning, dither, and metering. Tracks → Send Buses → Master Bus → Output.
 - **Session** (`moonlitt-session`): Transport (play/pause/stop), sequencer (MIDI file playback), persistence (save/load), and audio thread processor.
 
 ### Real-time Safety
 
-The audio thread (`audio_thread.rs`) must never allocate or block. All communication uses the `rtrb` lock-free SPSC queue. Keep this invariant when modifying runtime code.
+The audio thread processor (`moonlitt-session/src/processor.rs`) must never allocate or block. All communication uses the `rtrb` lock-free SPSC queue. Keep this invariant when modifying audio processing code.
 
 ### External Dependencies in `deps/`
 
@@ -73,6 +74,10 @@ vst3                        # VST3 plugin hosting
 clap                        # CLAP plugin hosting
 ```
 
-## C API Layer
+## Platform Bindings
 
-`moonlitt-capi` exposes the full API as `extern "C"` functions. It builds as both `cdylib` and `rlib`. The C# bindings live in `bindings/dotnet/`. When modifying the C API: the `moonlitt_runtime_create` function consumes the engine even on failure — this is a known contract issue documented in `docs/2026-03-27-deep-review-findings.md`.
+**C API** (`moonlitt-capi`): Exposes the full API as `extern "C"` functions. Builds as both `cdylib` and `rlib`. C# bindings in `bindings/dotnet/`.
+
+**Node.js** (`moonlitt-node`): napi-rs binding exposing Session, Backend, effects factories, and plugin scanning. For Web DAW (react-dom), desktop (Electron), and terminal UI (Ink).
+
+Both bindings wrap the same `moonlitt-audio-io::Runtime` and provide the same semantic API in platform-idiomatic style.
