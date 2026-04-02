@@ -6,7 +6,7 @@ members = [
     "crates/moonlitt-vst3",
     "crates/moonlitt-clap",
     "crates/moonlitt-engine",
-    "crates/moonlitt-ffi",
+    "crates/moonlitt-capi",
     "crates/moonlitt-audio-io",
     "crates/moonlitt-cli",
     "crates/moonlitt-resampler",

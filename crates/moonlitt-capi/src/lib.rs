@@ -1,8 +1,8 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
-//! # moonlitt-ffi
+//! # moonlitt-capi
 //!
-//! C FFI layer for the moonlitt audio engine.
+//! C ABI bindings for the moonlitt audio engine.
 //! Produces .dll / .dylib / .so for consumption by C#, Node.js, Python, etc.
 //!
 //! All functions are `extern "C"`, NULL-safe, and return 0 for success.

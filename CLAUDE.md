@@ -36,7 +36,7 @@ moonlitt-engine        ← Unified entry point; auto-detects format by file exte
 moonlitt-mixer         ← Multi-track mixer: tracks, send buses, inserts, panning, metering, dither
 moonlitt-session       ← Transport, sequencer, persistence, audio thread processor
 moonlitt-audio-io      ← Platform audio I/O (cpal output, midir MIDI input, Runtime orchestrator)
-moonlitt-ffi           ← C API for language bindings (.NET, future Python/Node.js)
+moonlitt-capi          ← C API for language bindings (.NET, future Python/Node.js)
 moonlitt-cli           ← CLI tool: scan, play, live, midi-devices
 
 moonlitt-effects       ← Built-in audio effects (feature-gated modules):
@@ -73,6 +73,6 @@ vst3                        # VST3 plugin hosting
 clap                        # CLAP plugin hosting
 ```
 
-## FFI Layer
+## C API Layer
 
-`moonlitt-ffi` exposes the full API as `extern "C"` functions. It builds as both `cdylib` and `rlib`. The C# bindings live in `bindings/dotnet/`. When modifying FFI: the `moonlitt_runtime_create` function consumes the engine even on failure — this is a known contract issue documented in `docs/2026-03-27-deep-review-findings.md`.
+`moonlitt-capi` exposes the full API as `extern "C"` functions. It builds as both `cdylib` and `rlib`. The C# bindings live in `bindings/dotnet/`. When modifying the C API: the `moonlitt_runtime_create` function consumes the engine even on failure — this is a known contract issue documented in `docs/2026-03-27-deep-review-findings.md`.

@@ -7,7 +7,7 @@
 //! because they handle NULL checks internally. From Rust they're called like
 //! normal functions; from C they go through the shared library's symbol table.
 
-use moonlitt_ffi::*;
+use moonlitt_capi::*;
 use std::ffi::{CStr, CString};
 
 // ---------------------------------------------------------------------------

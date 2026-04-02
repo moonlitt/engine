@@ -1,6 +1,6 @@
 [package]
-name = "moonlitt-ffi"
-description = "C FFI layer for moonlitt audio engine"
+name = "moonlitt-capi"
+description = "C ABI bindings for moonlitt audio engine"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
