@@ -6,10 +6,10 @@
 //!
 //! Zero tolerance: all assertions use machine epsilon.
 
-use moonlitt_compressor::Compressor;
+use moonlitt_effects::Compressor;
 use moonlitt_core::AudioBackend;
-use moonlitt_eq::{Band, BiquadCoeffs, FilterType, ParametricEq};
-use moonlitt_reverb::Reverb;
+use moonlitt_effects::{Band, BiquadCoeffs, FilterType, ParametricEq};
+use moonlitt_effects::Reverb;
 use rustfft::{num_complex::Complex, FftPlanner};
 use std::f64::consts::PI;
 
@@ -427,7 +427,7 @@ fn a9_dynamic_range() {
 
 #[test]
 fn a10_eq_frequency_sweep() {
-    use moonlitt_eq::Biquad;
+    use moonlitt_effects::Biquad;
 
     let sr = SAMPLE_RATE;
     let center_freq = 1000.0;

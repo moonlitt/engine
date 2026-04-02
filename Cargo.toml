@@ -6,16 +6,16 @@ members = [
     "crates/moonlitt-vst3",
     "crates/moonlitt-clap",
     "crates/moonlitt-engine",
-    "crates/moonlitt-ffi",
-    "crates/moonlitt-runtime",
+    "crates/moonlitt-capi",
+    "crates/moonlitt-audio-io",
     "crates/moonlitt-cli",
     "crates/moonlitt-resampler",
     "crates/moonlitt-test-suite",
     "crates/moonlitt-sampler",
-    "crates/moonlitt-eq",
-    "crates/moonlitt-compressor",
-    "crates/moonlitt-reverb",
-    "crates/moonlitt-convolver",
+    "crates/moonlitt-effects",
+    "crates/moonlitt-mixer",
+    "crates/moonlitt-session",
+    "crates/moonlitt-node",
 ]
 
 [workspace.package]

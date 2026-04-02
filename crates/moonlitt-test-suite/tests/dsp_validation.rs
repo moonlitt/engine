@@ -309,7 +309,7 @@ fn l2_aliasing_check() {
 fn l3_pan_constant_power() {
     // Constant-power pan law: sqrt(L² + R²) should be roughly constant
     // regardless of pan position
-    use moonlitt_runtime::mixer::Mixer;
+    use moonlitt_audio_io::mixer::Mixer;
 
     let powers: Vec<f64> = (-10..=10)
         .map(|i| {
@@ -362,7 +362,7 @@ fn l3_pan_hard_right() {
 fn l3_limiter_bounds_output() {
     // Soft limiter should never exceed ~1.0 for any input
 
-    let mut mixer = moonlitt_runtime::mixer::Mixer::new(44100, 256);
+    let mut mixer = moonlitt_audio_io::mixer::Mixer::new(44100, 256);
     // No tracks = silent, but we can test the limiter function directly
     // by checking the mixer's render output bounds
     let mut left = vec![0.0f32; 256];
@@ -380,7 +380,7 @@ fn l3_limiter_bounds_output() {
 #[test]
 fn l3_mixer_empty_silence() {
 
-    let mut mixer = moonlitt_runtime::mixer::Mixer::new(44100, 256);
+    let mut mixer = moonlitt_audio_io::mixer::Mixer::new(44100, 256);
     let mut left = vec![1.0f32; 256]; // pre-fill with 1.0
     let mut right = vec![1.0f32; 256];
     mixer.render(&mut left, &mut right);
@@ -392,11 +392,11 @@ fn l3_mixer_empty_silence() {
 
 #[test]
 fn l3_mixer_mute() {
-    use moonlitt_engine::engine::Engine;
-    use moonlitt_runtime::mixer::Mixer;
+    use moonlitt_core::AudioBackend;
+    use moonlitt_audio_io::mixer::Mixer;
 
-    let mut mixer = moonlitt_runtime::mixer::Mixer::new(44100, 256);
-    let engine = Engine::new(44100, 256);
+    let mut mixer = moonlitt_audio_io::mixer::Mixer::new(44100, 256);
+    let engine = Box::new(moonlitt_core::NullBackend::new(44100)) as Box<dyn AudioBackend>;
     let id = mixer.add_track(engine, 0xFFFF);
     mixer.track_mut(id).unwrap().mute = true;
 
@@ -413,7 +413,7 @@ fn l3_mixer_mute() {
 
 #[test]
 fn l4_golden_interpolation_test() {
-    use moonlitt_engine::engine::Engine;
+    
 
     let sf2 = "tests/sf2-spec-test/sample interpolation test/sample interpolation test.sf2";
     let _midi = "tests/sf2-spec-test/sample interpolation test/sample interpolation test.mid";
@@ -424,8 +424,7 @@ fn l4_golden_interpolation_test() {
         return;
     }
 
-    let mut engine = Engine::new(44100, 256);
-    engine.load(sf2).unwrap();
+    let mut engine = moonlitt_engine::create(sf2, 44100, 256).unwrap();
 
     // Parse and render MIDI (simplified — just verify it doesn't crash)
     engine.note_on(0, 60, 100);

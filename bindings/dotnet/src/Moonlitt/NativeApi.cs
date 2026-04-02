@@ -4,12 +4,12 @@ using System.Runtime.InteropServices;
 namespace Moonlitt;
 
 /// <summary>
-/// Raw P/Invoke declarations for the moonlitt_ffi native library.
+/// Raw P/Invoke declarations for the moonlitt_capi native library.
 /// All signatures match the C API exported by the Rust crate.
 /// </summary>
 internal static class NativeApi
 {
-    private const string Lib = "moonlitt_ffi";
+    private const string Lib = "moonlitt_capi";
 
     // -----------------------------------------------------------------------
     // Engine — lifecycle

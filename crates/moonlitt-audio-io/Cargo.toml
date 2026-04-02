@@ -1,0 +1,19 @@
+[package]
+name = "moonlitt-audio-io"
+description = "Platform audio I/O — cpal output, midir MIDI input, Runtime orchestrator"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+moonlitt-core = { path = "../moonlitt-core" }
+moonlitt-mixer = { path = "../moonlitt-mixer" }
+moonlitt-session = { path = "../moonlitt-session" }
+cpal = "0.15"
+midir = "0.10"
+rtrb = "0.3"
+
+[dev-dependencies]
+moonlitt-engine = { path = "../moonlitt-engine", features = ["sf2", "vst3", "clap"] }
+rtrb = "0.3"

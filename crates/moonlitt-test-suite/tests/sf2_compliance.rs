@@ -6,8 +6,9 @@
 //! Each test cites the specific SF2 spec section it validates.
 //! Zero tolerance: machine epsilon only.
 
-use moonlitt_engine::engine::Engine;
-use moonlitt_runtime::mixer::Mixer;
+
+use moonlitt_core::AudioBackend;
+use moonlitt_audio_io::mixer::Mixer;
 use std::path::Path;
 
 const SF2_PATH: &str = "/Users/wangyan/Desktop/stardew valley mods/mods/piano-block/assets/soundfonts/GeneralUser_GS.sf2";
@@ -18,19 +19,17 @@ const BUFFER_SIZE: usize = 256;
 // Helpers
 // =============================================================================
 
-/// Create an engine loaded with the real SF2. Returns None if file not found.
-fn load_sf2_engine() -> Option<Engine> {
+/// Create a backend loaded with the real SF2. Returns None if file not found.
+fn load_sf2_engine() -> Option<Box<dyn AudioBackend>> {
     if !Path::new(SF2_PATH).exists() {
         eprintln!("SF2 not found at {SF2_PATH}, skipping test");
         return None;
     }
-    let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-    engine.load(SF2_PATH).ok()?;
-    Some(engine)
+    moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).ok()
 }
 
-/// Create an engine loaded with SF2 and a specific program selected.
-fn load_sf2_engine_with_program(channel: u8, program: u8) -> Option<Engine> {
+/// Create a backend loaded with SF2 and a specific program selected.
+fn load_sf2_engine_with_program(channel: u8, program: u8) -> Option<Box<dyn AudioBackend>> {
     let mut engine = load_sf2_engine()?;
     engine.program_change(channel, program);
     Some(engine)
@@ -358,8 +357,7 @@ fn s03_initial_attenuation() {
     let mut rms_values = Vec::new();
 
     for &vel in &velocities {
-        let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-        engine.load(SF2_PATH).unwrap();
+        let engine = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
         let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
         mixer.add_track(engine, 0xFFFF);
         mixer.note_on(0, 60, vel);
@@ -460,16 +458,14 @@ fn s05_coarse_tune() {
     }
 
     // Render note 60
-    let mut engine60 = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-    engine60.load(SF2_PATH).unwrap();
+    let engine60 = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
     let mut mixer60 = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
     mixer60.add_track(engine60, 0xFFFF);
     mixer60.note_on(0, 60, 100);
     let (left60, _) = render_blocks(&mut mixer60, 128);
 
     // Render note 72
-    let mut engine72 = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-    engine72.load(SF2_PATH).unwrap();
+    let engine72 = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
     let mut mixer72 = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
     mixer72.add_track(engine72, 0xFFFF);
     mixer72.note_on(0, 72, 100);
@@ -520,15 +516,13 @@ fn s06_fine_tune() {
         return;
     }
 
-    let mut engine60 = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-    engine60.load(SF2_PATH).unwrap();
+    let engine60 = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
     let mut mixer60 = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
     mixer60.add_track(engine60, 0xFFFF);
     mixer60.note_on(0, 60, 100);
     let (left60, _) = render_blocks(&mut mixer60, 128);
 
-    let mut engine61 = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-    engine61.load(SF2_PATH).unwrap();
+    let engine61 = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
     let mut mixer61 = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
     mixer61.add_track(engine61, 0xFFFF);
     mixer61.note_on(0, 61, 100);
@@ -580,15 +574,13 @@ fn s07_scale_tuning() {
         return;
     }
 
-    let mut engine48 = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-    engine48.load(SF2_PATH).unwrap();
+    let engine48 = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
     let mut mixer48 = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
     mixer48.add_track(engine48, 0xFFFF);
     mixer48.note_on(0, 48, 100);
     let (left48, _) = render_blocks(&mut mixer48, 128);
 
-    let mut engine72 = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-    engine72.load(SF2_PATH).unwrap();
+    let engine72 = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
     let mut mixer72 = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
     mixer72.add_track(engine72, 0xFFFF);
     mixer72.note_on(0, 72, 100);
@@ -1156,8 +1148,7 @@ fn s15_sample_modes() {
 
     // Test looping: Organ (program 16 — Drawbar Organ) should sustain indefinitely
     {
-        let mut engine_organ = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-        engine_organ.load(SF2_PATH).unwrap();
+        let mut engine_organ = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
         engine_organ.program_change(0, 16);
 
         let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
@@ -1194,8 +1185,7 @@ fn s15_sample_modes() {
 
     // Test non-looping: Percussion / one-shot (channel 9, note 38 = Acoustic Snare)
     {
-        let mut engine_perc = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-        engine_perc.load(SF2_PATH).unwrap();
+        let engine_perc = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
 
         let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
         mixer.add_track(engine_perc, 0xFFFF);
@@ -1363,8 +1353,7 @@ fn s18_key_range_vel_range() {
     let test_notes = [36u8, 48, 60, 72, 84, 96];
 
     for &note in &test_notes {
-        let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-        engine.load(SF2_PATH).unwrap();
+        let engine = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
         let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
         mixer.add_track(engine, 0xFFFF);
         mixer.note_on(0, note, 100);
@@ -1384,8 +1373,7 @@ fn s18_key_range_vel_range() {
     let test_velocities = [1u8, 32, 64, 96, 127];
 
     for &vel in &test_velocities {
-        let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-        engine.load(SF2_PATH).unwrap();
+        let engine = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
         let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
         mixer.add_track(engine, 0xFFFF);
         mixer.note_on(0, 60, vel);

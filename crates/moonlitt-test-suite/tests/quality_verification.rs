@@ -15,9 +15,10 @@
 //! 12. Insert chain audio flow (add/remove/bypass)
 //! 13. Soft limiter THD
 
-use moonlitt_engine::engine::Engine;
-use moonlitt_reverb::Reverb;
-use moonlitt_runtime::mixer::{Mixer, OutputTarget};
+
+use moonlitt_core::AudioBackend;
+use moonlitt_effects::Reverb;
+use moonlitt_audio_io::mixer::{Mixer, OutputTarget};
 use std::path::Path;
 
 const SF2_PATH: &str = "/Users/wangyan/Desktop/stardew valley mods/mods/piano-block/assets/soundfonts/GeneralUser_GS.sf2";
@@ -29,14 +30,12 @@ const BUFFER_SIZE: usize = 256;
 // =============================================================================
 
 /// Create an engine loaded with the real SF2. Returns None if file not found.
-fn load_sf2_engine() -> Option<Engine> {
+fn load_sf2_engine() -> Option<Box<dyn AudioBackend>> {
     if !Path::new(SF2_PATH).exists() {
         eprintln!("SF2 not found at {SF2_PATH}, skipping test");
         return None;
     }
-    let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-    engine.load(SF2_PATH).ok()?;
-    Some(engine)
+    moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).ok()
 }
 
 /// Render multiple blocks from a mixer, collecting all output samples.
@@ -158,10 +157,10 @@ fn q03_group_track_routing_with_insert() {
     let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
 
     // Track 0 and Track 1 are source tracks (no-backend engines = silence)
-    let t0 = mixer.add_track(Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32), 0x0001);
-    let t1 = mixer.add_track(Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32), 0x0002);
+    let t0 = mixer.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0001);
+    let t1 = mixer.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0002);
     // Group track
-    let group = mixer.add_track(Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32), 0x0000);
+    let group = mixer.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0000);
 
     // Route t0 and t1 to group
     assert!(mixer.set_track_output(t0, OutputTarget::Group(group)));
@@ -177,7 +176,7 @@ fn q03_group_track_routing_with_insert() {
     );
 
     // Add a "mute" insert on the group (no-backend engine zeros output via process_effect)
-    let insert_id = mixer.add_insert(group, Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32)).unwrap();
+    let insert_id = mixer.add_insert(group, Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>).unwrap();
     let (left2, right2) = render_blocks(&mut mixer, 4);
     let pk_with_insert = peak(&left2).max(peak(&right2));
     eprintln!("q03: With mute insert on group, peak = {pk_with_insert:.6}");
@@ -207,12 +206,12 @@ fn q04_nested_group_routing() {
     let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
 
     // Create 3 source tracks and 3 groups: chain is source -> groupA -> groupB -> groupC -> master
-    let src0 = mixer.add_track(Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32), 0x0001);
-    let src1 = mixer.add_track(Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32), 0x0002);
-    let src2 = mixer.add_track(Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32), 0x0004);
-    let group_a = mixer.add_track(Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32), 0x0000);
-    let group_b = mixer.add_track(Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32), 0x0000);
-    let group_c = mixer.add_track(Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32), 0x0000);
+    let src0 = mixer.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0001);
+    let src1 = mixer.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0002);
+    let src2 = mixer.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0004);
+    let group_a = mixer.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0000);
+    let group_b = mixer.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0000);
+    let group_c = mixer.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0000);
 
     // src0 -> groupA -> groupB -> groupC -> master
     assert!(mixer.set_track_output(src0, OutputTarget::Group(group_a)));
@@ -245,8 +244,8 @@ fn q05_pdc_multi_latency_alignment() {
     let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
 
     // Two tracks, no inserts (0 latency each)
-    let t0 = mixer.add_track(Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32), 0x0001);
-    let t1 = mixer.add_track(Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32), 0x0002);
+    let t0 = mixer.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0001);
+    let t1 = mixer.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0002);
 
     // No inserts => no latency => recalculate_pdc should not add any delay
     mixer.recalculate_pdc();
@@ -262,7 +261,7 @@ fn q05_pdc_multi_latency_alignment() {
     );
 
     // Add insert (no-backend engine reports 0 latency) — PDC still 0
-    mixer.add_insert(t0, Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32));
+    mixer.add_insert(t0, Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>);
     mixer.recalculate_pdc();
 
     // Both tracks should still have 0 compensation (both report 0 latency)
@@ -284,11 +283,11 @@ fn q05_pdc_multi_latency_alignment() {
 
 #[test]
 fn q06_session_restore_complete_state() {
-    use moonlitt_runtime::session::Session;
+    use moonlitt_audio_io::session::Session;
 
     // Build a mixer with specific parameters
     let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
-    let engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
+    let engine = Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>;
     let t0 = mixer.add_track(engine, 0x0001);
 
     mixer.track_mut(t0).unwrap().volume = 0.7;
@@ -342,7 +341,7 @@ fn q06_session_restore_complete_state() {
 #[test]
 fn q07_tpdf_dither_spectral_flatness() {
     // Use the Dither struct directly for spectral analysis
-    let mut dither = moonlitt_runtime::dither::StereoDither::new_24bit();
+    let mut dither = moonlitt_audio_io::dither::StereoDither::new_24bit();
 
     // Generate dither-only signal (apply to silence)
     let n = 8192; // Power of 2 for clean FFT
@@ -400,7 +399,7 @@ fn q07_tpdf_dither_spectral_flatness() {
 fn q08_true_peak_intersample_detection() {
     // Create a mixer to access LevelMeter functionality via rendering
     let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
-    let engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
+    let engine = Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>;
     let _t0 = mixer.add_track(engine, 0xFFFF);
 
     // We can't directly call LevelMeter::update since it's pub(crate).
@@ -512,8 +511,7 @@ fn q10_sf2_velocity_attenuation() {
     }
 
     // Render at velocity 32
-    let mut engine_soft = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-    engine_soft.load(SF2_PATH).unwrap();
+    let engine_soft = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
     let mut mixer_soft = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
     mixer_soft.add_track(engine_soft, 0xFFFF);
     mixer_soft.note_on(0, 60, 32);
@@ -521,8 +519,7 @@ fn q10_sf2_velocity_attenuation() {
     let peak_soft = peak(&left_soft).max(peak(&right_soft));
 
     // Render at velocity 127
-    let mut engine_loud = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-    engine_loud.load(SF2_PATH).unwrap();
+    let engine_loud = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
     let mut mixer_loud = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
     mixer_loud.add_track(engine_loud, 0xFFFF);
     mixer_loud.note_on(0, 60, 127);
@@ -614,11 +611,11 @@ fn q11_sf2_filter_spectrum() {
 #[test]
 fn q12_insert_chain_audio_flow() {
     let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
-    let engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
+    let engine = Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>;
     let t0 = mixer.add_track(engine, 0xFFFF);
 
     // No-backend engine = silence source. Add insert (also no-backend, zeros via process_effect)
-    let insert_id = mixer.add_insert(t0, Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32)).unwrap();
+    let insert_id = mixer.add_insert(t0, Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>).unwrap();
 
     // With insert: output should be silence (source is silence, insert zeros it too)
     let (left, right) = render_blocks(&mut mixer, 4);
@@ -659,7 +656,7 @@ fn q12_insert_chain_audio_flow() {
         eprintln!("q12: SF2 without insert, peak = {pk_no_insert:.6}");
 
         // Add no-backend insert — should zero the signal
-        let ins2 = mixer2.add_insert(t1, Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32)).unwrap();
+        let ins2 = mixer2.add_insert(t1, Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>).unwrap();
         // Need to retrigger note since the previous renders consumed it
         mixer2.note_on(0, 60, 127);
         let (left_with_insert, _) = render_blocks(&mut mixer2, 32);
@@ -729,8 +726,7 @@ fn q13_soft_limiter_thd() {
         );
 
         // Above threshold: crank volume to push signal past threshold
-        let mut engine_loud = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-        engine_loud.load(SF2_PATH).unwrap();
+        let engine_loud = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
         let mut mixer_hot = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
         mixer_hot.master_mut().limiter_threshold = 0.95;
         mixer_hot.set_master_volume(10.0); // extreme volume
@@ -902,18 +898,18 @@ fn q18_trim_actual_render() {
     let id = mixer.add_track(engine, 0xFFFF);
 
     // Play a note
-    mixer.track_mut(id).unwrap().engine.program_change(0, 0);
-    mixer.track_mut(id).unwrap().engine.note_on(0, 60, 100);
+    mixer.track_mut(id).unwrap().backend.program_change(0, 0);
+    mixer.track_mut(id).unwrap().backend.note_on(0, 60, 100);
 
     // Render with trim=0 (baseline)
     let (left_0, _right_0) = render_blocks(&mut mixer, 4);
     let rms_0 = rms_dbfs(&left_0);
 
     // Reset and play same note with trim=+6dB
-    mixer.track_mut(id).unwrap().engine.all_notes_off();
+    mixer.track_mut(id).unwrap().backend.all_notes_off();
     mixer.set_track_trim(id, 6.0);
-    mixer.track_mut(id).unwrap().engine.program_change(0, 0);
-    mixer.track_mut(id).unwrap().engine.note_on(0, 60, 100);
+    mixer.track_mut(id).unwrap().backend.program_change(0, 0);
+    mixer.track_mut(id).unwrap().backend.note_on(0, 60, 100);
     let (left_6, _right_6) = render_blocks(&mut mixer, 4);
     let rms_6 = rms_dbfs(&left_6);
 
@@ -965,16 +961,16 @@ fn q20_volume_fader_accuracy() {
     let id = mixer.add_track(engine, 0xFFFF);
 
     // Render at volume=1.0 (baseline)
-    mixer.track_mut(id).unwrap().engine.program_change(0, 0);
-    mixer.track_mut(id).unwrap().engine.note_on(0, 60, 100);
+    mixer.track_mut(id).unwrap().backend.program_change(0, 0);
+    mixer.track_mut(id).unwrap().backend.note_on(0, 60, 100);
     let (left_full, _) = render_blocks(&mut mixer, 4);
     let rms_full = rms_dbfs(&left_full);
 
     // Render at volume=0.5
-    mixer.track_mut(id).unwrap().engine.all_notes_off();
+    mixer.track_mut(id).unwrap().backend.all_notes_off();
     mixer.track_mut(id).unwrap().volume = 0.5;
-    mixer.track_mut(id).unwrap().engine.program_change(0, 0);
-    mixer.track_mut(id).unwrap().engine.note_on(0, 60, 100);
+    mixer.track_mut(id).unwrap().backend.program_change(0, 0);
+    mixer.track_mut(id).unwrap().backend.note_on(0, 60, 100);
     let (left_half, _) = render_blocks(&mut mixer, 4);
     let rms_half = rms_dbfs(&left_half);
 
@@ -1054,22 +1050,22 @@ fn q22_reverb_send_routing() {
 
     // Create reverb send bus (100% wet)
     let reverb = Reverb::new(SAMPLE_RATE);
-    let mut reverb_engine = Engine::from_backend(Box::new(reverb), SAMPLE_RATE, BUFFER_SIZE as u32);
+    let mut reverb_engine = Box::new(reverb) as Box<dyn AudioBackend>;
     // Set dry/wet to 100% wet (param 7)
     reverb_engine.set_param(7, 1.0);
     let bus_id = mixer.add_send_bus(reverb_engine);
 
     // Render WITHOUT send (send=0) — baseline (dry only)
     mixer.track_mut(track_id).unwrap().send_levels = vec![0.0];
-    mixer.track_mut(track_id).unwrap().engine.program_change(0, 0);
-    mixer.track_mut(track_id).unwrap().engine.note_on(0, 60, 100);
+    mixer.track_mut(track_id).unwrap().backend.program_change(0, 0);
+    mixer.track_mut(track_id).unwrap().backend.note_on(0, 60, 100);
     let (dry_left, _) = render_blocks(&mut mixer, 8);
 
     // Reset and render WITH send (send=0.3) — dry + reverb
-    mixer.track_mut(track_id).unwrap().engine.all_notes_off();
+    mixer.track_mut(track_id).unwrap().backend.all_notes_off();
     mixer.track_mut(track_id).unwrap().send_levels = vec![0.3];
-    mixer.track_mut(track_id).unwrap().engine.program_change(0, 0);
-    mixer.track_mut(track_id).unwrap().engine.note_on(0, 60, 100);
+    mixer.track_mut(track_id).unwrap().backend.program_change(0, 0);
+    mixer.track_mut(track_id).unwrap().backend.note_on(0, 60, 100);
     let (wet_left, _) = render_blocks(&mut mixer, 8);
 
     // With reverb send, output should be DIFFERENT from dry-only
@@ -1156,7 +1152,7 @@ fn q25_default_send_levels() {
 
     // Add 4 tracks
     for ch in 0..4u16 {
-        let engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
+        let engine = Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>;
         let id = mixer.add_track(engine, 1 << ch);
 
         // Set send level to 10% (simulating default reverb setup)
@@ -1165,7 +1161,7 @@ fn q25_default_send_levels() {
 
     // Add reverb bus
     let reverb = Reverb::new(SAMPLE_RATE);
-    let reverb_engine = Engine::from_backend(Box::new(reverb), SAMPLE_RATE, BUFFER_SIZE as u32);
+    let reverb_engine = Box::new(reverb) as Box<dyn AudioBackend>;
     let _bus_id = mixer.add_send_bus(reverb_engine);
 
     // Verify all tracks have send_level[0] = 0.1
@@ -1200,8 +1196,7 @@ fn p01_parallel_16_track_render() {
     let mut mixer_combined = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
 
     for ch in 0..num_tracks as u8 {
-        let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-        engine.load(SF2_PATH).unwrap();
+        let engine = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
         let _id = mixer_combined.add_track(engine, 1u16 << ch);
     }
 
@@ -1219,8 +1214,7 @@ fn p01_parallel_16_track_render() {
     let mut independent_rights = Vec::with_capacity(num_tracks);
 
     for ch in 0..num_tracks as u8 {
-        let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-        engine.load(SF2_PATH).unwrap();
+        let engine = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
 
         let mut mixer_single = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
         mixer_single.add_track(engine, 1u16 << ch);
@@ -1284,8 +1278,7 @@ fn p02_solo_exclusivity() {
     // 3 tracks with different notes on different channels
     let mut engines = Vec::new();
     for _ in 0..3 {
-        let mut e = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-        e.load(SF2_PATH).unwrap();
+        let e = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
         engines.push(e);
     }
 
@@ -1304,8 +1297,7 @@ fn p02_solo_exclusivity() {
     let (left_solo, right_solo) = render_blocks(&mut mixer, 16);
 
     // Now render track 1 in isolation for comparison
-    let mut engine_alone = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-    engine_alone.load(SF2_PATH).unwrap();
+    let engine_alone = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
 
     let mut mixer_alone = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
     mixer_alone.master_mut().limiter_threshold = 1.0;
@@ -1347,8 +1339,7 @@ fn p03_mute_solo_interaction() {
     let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
     mixer.master_mut().limiter_threshold = 1.0;
 
-    let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-    engine.load(SF2_PATH).unwrap();
+    let engine = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
     let id = mixer.add_track(engine, 0xFFFF);
 
     // Mute + Solo = silent
@@ -1378,13 +1369,12 @@ fn p04_send_post_fader() {
     let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
     mixer.master_mut().limiter_threshold = 1.0;
 
-    let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-    engine.load(SF2_PATH).unwrap();
+    let engine = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
     let id = mixer.add_track(engine, 0xFFFF);
 
     // Add a reverb send bus so we can observe its output
     let reverb = Reverb::new(SAMPLE_RATE);
-    let mut reverb_engine = Engine::from_backend(Box::new(reverb), SAMPLE_RATE, BUFFER_SIZE as u32);
+    let mut reverb_engine = Box::new(reverb) as Box<dyn AudioBackend>;
     reverb_engine.set_param(7, 1.0); // 100% wet
     let _bus_id = mixer.add_send_bus(reverb_engine);
 
@@ -1428,13 +1418,12 @@ fn p05_group_routing_additive() {
     let mut independent_sum_right = vec![0.0f64; 16 * BUFFER_SIZE];
 
     for ch in 0..3u8 {
-        let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-        engine.load(SF2_PATH).unwrap();
+        let engine = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
 
         let mut mixer_single = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
         mixer_single.master_mut().limiter_threshold = 1.0;
         let tid = mixer_single.add_track(engine, 1u16 << ch);
-        let gid = mixer_single.add_track(Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32), 0x0000);
+        let gid = mixer_single.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0000);
         mixer_single.set_track_output(tid, OutputTarget::Group(gid));
         mixer_single.note_on(ch, 48 + ch * 12, 80);
 
@@ -1451,14 +1440,13 @@ fn p05_group_routing_additive() {
 
     let mut track_ids = Vec::new();
     for ch in 0..3u8 {
-        let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-        engine.load(SF2_PATH).unwrap();
+        let engine = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
         let id = mixer_group.add_track(engine, 1u16 << ch);
         track_ids.push(id);
     }
 
     // Group track (no source engine, just accumulator)
-    let group_id = mixer_group.add_track(Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32), 0x0000);
+    let group_id = mixer_group.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0000);
 
     // Route all 3 source tracks to the group
     for &tid in &track_ids {
@@ -1515,8 +1503,7 @@ fn p06_master_limiter_no_overflow() {
 
     // 16 tracks at full volume with loud notes
     for ch in 0..16u8 {
-        let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-        engine.load(SF2_PATH).unwrap();
+        let engine = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
         let id = mixer.add_track(engine, 1u16 << ch);
         mixer.track_mut(id).unwrap().volume = 1.0;
     }
@@ -1569,12 +1556,10 @@ fn p07_zero_latency_no_insert() {
     let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
     mixer.master_mut().limiter_threshold = 1.0;
 
-    let mut engine0 = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-    engine0.load(SF2_PATH).unwrap();
+    let engine0 = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
     let id0 = mixer.add_track(engine0, 0x0001);
 
-    let mut engine1 = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-    engine1.load(SF2_PATH).unwrap();
+    let engine1 = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
     let id1 = mixer.add_track(engine1, 0x0002);
 
     // Verify no inserts
@@ -1591,16 +1576,14 @@ fn p07_zero_latency_no_insert() {
     let (combined_left, _combined_right) = render_blocks(&mut mixer, 8);
 
     // Render each track independently
-    let mut engine0_solo = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-    engine0_solo.load(SF2_PATH).unwrap();
+    let engine0_solo = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
     let mut mixer0 = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
     mixer0.master_mut().limiter_threshold = 1.0;
     mixer0.add_track(engine0_solo, 0x0001);
     mixer0.note_on(0, 60, 100);
     let (left0, _right0) = render_blocks(&mut mixer0, 8);
 
-    let mut engine1_solo = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-    engine1_solo.load(SF2_PATH).unwrap();
+    let engine1_solo = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
     let mut mixer1 = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
     mixer1.master_mut().limiter_threshold = 1.0;
     mixer1.add_track(engine1_solo, 0x0002);

@@ -1,0 +1,18 @@
+[package]
+name = "moonlitt-capi"
+description = "C ABI bindings for moonlitt audio engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+moonlitt-core = { path = "../moonlitt-core" }
+moonlitt-engine = { path = "../moonlitt-engine", features = ["sf2", "vst3", "clap"] }
+moonlitt-audio-io = { path = "../moonlitt-audio-io" }
+moonlitt-effects = { path = "../moonlitt-effects" }
+hound = "3"
+oxisynth = { path = "../../deps/oxisynth/oxisynth" }

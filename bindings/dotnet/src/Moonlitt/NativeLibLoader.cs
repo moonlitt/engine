@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 namespace Moonlitt;
 
 /// <summary>
-/// Locates and loads the moonlitt_ffi native library from well-known paths.
+/// Locates and loads the moonlitt_capi native library from well-known paths.
 /// Call <see cref="EnsureLoaded"/> once before any P/Invoke call.
 /// Thread-safe via lock.
 /// </summary>
@@ -31,7 +31,7 @@ public static class NativeLibLoader
                     NativeLibrary.SetDllImportResolver(
                         typeof(NativeLibLoader).Assembly,
                         (name, assembly, searchPath) =>
-                            name == "moonlitt_ffi" ? _handle : IntPtr.Zero);
+                            name == "moonlitt_capi" ? _handle : IntPtr.Zero);
                     _registered = true;
                     return;
                 }
@@ -49,7 +49,7 @@ public static class NativeLibLoader
             : RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? ".dylib"
             : ".so";
         var prefix = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "" : "lib";
-        var libName = $"{prefix}moonlitt_ffi{ext}";
+        var libName = $"{prefix}moonlitt_capi{ext}";
 
         return new[]
         {

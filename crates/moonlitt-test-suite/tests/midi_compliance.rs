@@ -7,8 +7,9 @@
 //! Zero tolerance: all assertions use machine epsilon (f32::EPSILON / f64::EPSILON).
 //! No human-chosen tolerance values permitted.
 
-use moonlitt_engine::engine::Engine;
-use moonlitt_runtime::mixer::Mixer;
+
+use moonlitt_core::AudioBackend;
+use moonlitt_audio_io::mixer::Mixer;
 use std::path::Path;
 
 const SF2_PATH: &str = "/Users/wangyan/Desktop/stardew valley mods/mods/piano-block/assets/soundfonts/GeneralUser_GS.sf2";
@@ -19,19 +20,17 @@ const BUFFER_SIZE: usize = 256;
 // Helpers
 // =============================================================================
 
-/// Create an engine loaded with the real SF2. Returns None if file not found.
-fn load_sf2_engine() -> Option<Engine> {
+/// Create a backend loaded with the real SF2. Returns None if file not found.
+fn load_sf2_engine() -> Option<Box<dyn AudioBackend>> {
     if !Path::new(SF2_PATH).exists() {
         eprintln!("SF2 not found at {SF2_PATH}, skipping test");
         return None;
     }
-    let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-    engine.load(SF2_PATH).ok()?;
-    Some(engine)
+    moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).ok()
 }
 
-/// Render multiple blocks directly from an engine, collecting all output samples.
-fn render_engine_blocks(engine: &mut Engine, num_blocks: usize) -> (Vec<f32>, Vec<f32>) {
+/// Render multiple blocks directly from a backend, collecting all output samples.
+fn render_engine_blocks(engine: &mut Box<dyn AudioBackend>, num_blocks: usize) -> (Vec<f32>, Vec<f32>) {
     let mut all_left = Vec::with_capacity(num_blocks * BUFFER_SIZE);
     let mut all_right = Vec::with_capacity(num_blocks * BUFFER_SIZE);
     let mut left = vec![0.0f32; BUFFER_SIZE];

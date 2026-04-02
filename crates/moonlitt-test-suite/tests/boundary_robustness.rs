@@ -6,8 +6,9 @@
 //!
 //! Verifies the engine handles edge cases without crash, overflow, or state corruption.
 
-use moonlitt_engine::engine::Engine;
-use moonlitt_runtime::mixer::Mixer;
+
+use moonlitt_core::AudioBackend;
+use moonlitt_audio_io::mixer::Mixer;
 use std::path::Path;
 use std::time::Instant;
 
@@ -19,26 +20,22 @@ const BUFFER_SIZE: usize = 256;
 // Helpers
 // =============================================================================
 
-/// Create an engine loaded with the real SF2. Returns None if file not found.
-fn load_sf2_engine() -> Option<Engine> {
+/// Create a backend loaded with the real SF2. Returns None if file not found.
+fn load_sf2_engine() -> Option<Box<dyn AudioBackend>> {
     if !Path::new(SF2_PATH).exists() {
         eprintln!("SF2 not found at {SF2_PATH}, skipping test");
         return None;
     }
-    let mut engine = Engine::new(SAMPLE_RATE, BUFFER_SIZE as u32);
-    engine.load(SF2_PATH).ok()?;
-    Some(engine)
+    moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).ok()
 }
 
-/// Create an engine loaded with the real SF2 at a custom sample rate.
-fn load_sf2_engine_at(sample_rate: u32) -> Option<Engine> {
+/// Create a backend loaded with the real SF2 at a custom sample rate.
+fn load_sf2_engine_at(sample_rate: u32) -> Option<Box<dyn AudioBackend>> {
     if !Path::new(SF2_PATH).exists() {
         eprintln!("SF2 not found at {SF2_PATH}, skipping test");
         return None;
     }
-    let mut engine = Engine::new(sample_rate, BUFFER_SIZE as u32);
-    engine.load(SF2_PATH).ok()?;
-    Some(engine)
+    moonlitt_engine::create(SF2_PATH, sample_rate, BUFFER_SIZE as u32).ok()
 }
 
 /// Render multiple blocks from a mixer, collecting all output samples.
