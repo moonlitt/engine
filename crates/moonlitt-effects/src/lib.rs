@@ -10,6 +10,8 @@
 //!   - `reverb` — Freeverb + Dattorro plate reverb
 //!   - `convolver` — FFT partitioned convolution (requires `rustfft`)
 
+pub mod common;
+
 #[cfg(feature = "compressor")]
 pub mod dynamics;
 
