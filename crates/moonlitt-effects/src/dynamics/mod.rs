@@ -1,5 +1,13 @@
+pub(crate) mod envelope;
+
+#[cfg(feature = "compressor")]
 pub mod compressor;
-pub mod deesser;
-pub mod envelope;
-pub mod gate;
+
+#[cfg(feature = "limiter")]
 pub mod limiter;
+
+#[cfg(feature = "gate")]
+pub mod gate;
+
+#[cfg(feature = "deesser")]
+pub mod deesser;

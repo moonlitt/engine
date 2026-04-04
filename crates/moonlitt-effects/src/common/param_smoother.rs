@@ -38,6 +38,7 @@ impl ParamSmoother {
 
     /// Advance one sample and return the smoothed value.
     #[inline]
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> f64 {
         if (self.current - self.target).abs() < self.threshold {
             self.current = self.target;

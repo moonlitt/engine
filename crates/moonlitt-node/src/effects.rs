@@ -58,3 +58,83 @@ pub fn create_convolver(ir: Vec<f64>, sample_rate: u32, block_size: u32) -> Resu
         ))),
     })
 }
+
+/// Create a brickwall limiter with lookahead.
+#[napi]
+pub fn create_limiter(sample_rate: u32) -> Backend {
+    Backend {
+        inner: Some(Box::new(moonlitt_effects::Limiter::new(sample_rate))),
+    }
+}
+
+/// Create a noise gate / expander.
+#[napi]
+pub fn create_gate(sample_rate: u32) -> Backend {
+    Backend {
+        inner: Some(Box::new(moonlitt_effects::Gate::new(sample_rate))),
+    }
+}
+
+/// Create a de-esser (sibilance reduction).
+#[napi]
+pub fn create_deesser(sample_rate: u32) -> Backend {
+    Backend {
+        inner: Some(Box::new(moonlitt_effects::DeEsser::new(sample_rate))),
+    }
+}
+
+/// Create a stereo delay with tempo sync and ping-pong.
+#[napi]
+pub fn create_stereo_delay(sample_rate: u32) -> Backend {
+    Backend {
+        inner: Some(Box::new(moonlitt_effects::StereoDelay::new(sample_rate))),
+    }
+}
+
+/// Create a 4-voice chorus.
+#[napi]
+pub fn create_chorus(sample_rate: u32) -> Backend {
+    Backend {
+        inner: Some(Box::new(moonlitt_effects::Chorus::new(sample_rate))),
+    }
+}
+
+/// Create a through-zero flanger.
+#[napi]
+pub fn create_flanger(sample_rate: u32) -> Backend {
+    Backend {
+        inner: Some(Box::new(moonlitt_effects::Flanger::new(sample_rate))),
+    }
+}
+
+/// Create an N-stage allpass phaser.
+#[napi]
+pub fn create_phaser(sample_rate: u32) -> Backend {
+    Backend {
+        inner: Some(Box::new(moonlitt_effects::Phaser::new(sample_rate))),
+    }
+}
+
+/// Create a tremolo with tempo sync and stereo auto-pan.
+#[napi]
+pub fn create_tremolo(sample_rate: u32) -> Backend {
+    Backend {
+        inner: Some(Box::new(moonlitt_effects::Tremolo::new(sample_rate))),
+    }
+}
+
+/// Create a gain utility (gain, polarity invert, mono sum).
+#[napi]
+pub fn create_gain(sample_rate: u32) -> Backend {
+    Backend {
+        inner: Some(Box::new(moonlitt_effects::Gain::new(sample_rate))),
+    }
+}
+
+/// Create a stereo width processor (mid/side encoding).
+#[napi]
+pub fn create_stereo_width(sample_rate: u32) -> Backend {
+    Backend {
+        inner: Some(Box::new(moonlitt_effects::StereoWidth::new(sample_rate))),
+    }
+}

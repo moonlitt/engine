@@ -73,6 +73,196 @@ pub extern "C" fn moonlitt_builtin_create_reverb(
     }))
 }
 
+/// Create a brickwall limiter engine with lookahead.
+#[no_mangle]
+pub extern "C" fn moonlitt_builtin_create_limiter(
+    sample_rate: c_int,
+    buffer_size: c_int,
+) -> *mut EngineHandle {
+    let sr = sample_rate.max(1) as u32;
+    let bs = buffer_size.max(1) as u32;
+    let limiter = moonlitt_effects::Limiter::new(sr);
+    Box::into_raw(Box::new(EngineHandle {
+        backend: Some(Box::new(limiter)),
+        sample_rate: sr,
+        buffer_size: bs,
+        loaded_path: None,
+        last_error: None,
+        last_error_cstring: None,
+    }))
+}
+
+/// Create a noise gate / expander engine.
+#[no_mangle]
+pub extern "C" fn moonlitt_builtin_create_gate(
+    sample_rate: c_int,
+    buffer_size: c_int,
+) -> *mut EngineHandle {
+    let sr = sample_rate.max(1) as u32;
+    let bs = buffer_size.max(1) as u32;
+    let gate = moonlitt_effects::Gate::new(sr);
+    Box::into_raw(Box::new(EngineHandle {
+        backend: Some(Box::new(gate)),
+        sample_rate: sr,
+        buffer_size: bs,
+        loaded_path: None,
+        last_error: None,
+        last_error_cstring: None,
+    }))
+}
+
+/// Create a de-esser engine (sibilance reduction).
+#[no_mangle]
+pub extern "C" fn moonlitt_builtin_create_deesser(
+    sample_rate: c_int,
+    buffer_size: c_int,
+) -> *mut EngineHandle {
+    let sr = sample_rate.max(1) as u32;
+    let bs = buffer_size.max(1) as u32;
+    let deesser = moonlitt_effects::DeEsser::new(sr);
+    Box::into_raw(Box::new(EngineHandle {
+        backend: Some(Box::new(deesser)),
+        sample_rate: sr,
+        buffer_size: bs,
+        loaded_path: None,
+        last_error: None,
+        last_error_cstring: None,
+    }))
+}
+
+/// Create a stereo delay engine with tempo sync and ping-pong.
+#[no_mangle]
+pub extern "C" fn moonlitt_builtin_create_stereo_delay(
+    sample_rate: c_int,
+    buffer_size: c_int,
+) -> *mut EngineHandle {
+    let sr = sample_rate.max(1) as u32;
+    let bs = buffer_size.max(1) as u32;
+    let delay = moonlitt_effects::StereoDelay::new(sr);
+    Box::into_raw(Box::new(EngineHandle {
+        backend: Some(Box::new(delay)),
+        sample_rate: sr,
+        buffer_size: bs,
+        loaded_path: None,
+        last_error: None,
+        last_error_cstring: None,
+    }))
+}
+
+/// Create a 4-voice chorus engine.
+#[no_mangle]
+pub extern "C" fn moonlitt_builtin_create_chorus(
+    sample_rate: c_int,
+    buffer_size: c_int,
+) -> *mut EngineHandle {
+    let sr = sample_rate.max(1) as u32;
+    let bs = buffer_size.max(1) as u32;
+    let chorus = moonlitt_effects::Chorus::new(sr);
+    Box::into_raw(Box::new(EngineHandle {
+        backend: Some(Box::new(chorus)),
+        sample_rate: sr,
+        buffer_size: bs,
+        loaded_path: None,
+        last_error: None,
+        last_error_cstring: None,
+    }))
+}
+
+/// Create a through-zero flanger engine.
+#[no_mangle]
+pub extern "C" fn moonlitt_builtin_create_flanger(
+    sample_rate: c_int,
+    buffer_size: c_int,
+) -> *mut EngineHandle {
+    let sr = sample_rate.max(1) as u32;
+    let bs = buffer_size.max(1) as u32;
+    let flanger = moonlitt_effects::Flanger::new(sr);
+    Box::into_raw(Box::new(EngineHandle {
+        backend: Some(Box::new(flanger)),
+        sample_rate: sr,
+        buffer_size: bs,
+        loaded_path: None,
+        last_error: None,
+        last_error_cstring: None,
+    }))
+}
+
+/// Create an N-stage allpass phaser engine.
+#[no_mangle]
+pub extern "C" fn moonlitt_builtin_create_phaser(
+    sample_rate: c_int,
+    buffer_size: c_int,
+) -> *mut EngineHandle {
+    let sr = sample_rate.max(1) as u32;
+    let bs = buffer_size.max(1) as u32;
+    let phaser = moonlitt_effects::Phaser::new(sr);
+    Box::into_raw(Box::new(EngineHandle {
+        backend: Some(Box::new(phaser)),
+        sample_rate: sr,
+        buffer_size: bs,
+        loaded_path: None,
+        last_error: None,
+        last_error_cstring: None,
+    }))
+}
+
+/// Create a tremolo engine with tempo sync and stereo auto-pan.
+#[no_mangle]
+pub extern "C" fn moonlitt_builtin_create_tremolo(
+    sample_rate: c_int,
+    buffer_size: c_int,
+) -> *mut EngineHandle {
+    let sr = sample_rate.max(1) as u32;
+    let bs = buffer_size.max(1) as u32;
+    let tremolo = moonlitt_effects::Tremolo::new(sr);
+    Box::into_raw(Box::new(EngineHandle {
+        backend: Some(Box::new(tremolo)),
+        sample_rate: sr,
+        buffer_size: bs,
+        loaded_path: None,
+        last_error: None,
+        last_error_cstring: None,
+    }))
+}
+
+/// Create a gain utility engine (gain, polarity invert, mono sum).
+#[no_mangle]
+pub extern "C" fn moonlitt_builtin_create_gain(
+    sample_rate: c_int,
+    buffer_size: c_int,
+) -> *mut EngineHandle {
+    let sr = sample_rate.max(1) as u32;
+    let bs = buffer_size.max(1) as u32;
+    let gain = moonlitt_effects::Gain::new(sr);
+    Box::into_raw(Box::new(EngineHandle {
+        backend: Some(Box::new(gain)),
+        sample_rate: sr,
+        buffer_size: bs,
+        loaded_path: None,
+        last_error: None,
+        last_error_cstring: None,
+    }))
+}
+
+/// Create a stereo width processor engine (mid/side encoding).
+#[no_mangle]
+pub extern "C" fn moonlitt_builtin_create_stereo_width(
+    sample_rate: c_int,
+    buffer_size: c_int,
+) -> *mut EngineHandle {
+    let sr = sample_rate.max(1) as u32;
+    let bs = buffer_size.max(1) as u32;
+    let sw = moonlitt_effects::StereoWidth::new(sr);
+    Box::into_raw(Box::new(EngineHandle {
+        backend: Some(Box::new(sw)),
+        sample_rate: sr,
+        buffer_size: bs,
+        loaded_path: None,
+        last_error: None,
+        last_error_cstring: None,
+    }))
+}
+
 // ---------------------------------------------------------------------------
 // WAV loader: reads a mono WAV file and returns f32 samples.
 // Uses hound for robust PCM-16, PCM-24, PCM-32 and IEEE-float-32 support.
