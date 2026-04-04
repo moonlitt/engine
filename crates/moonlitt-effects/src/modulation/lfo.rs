@@ -141,6 +141,14 @@ impl Lfo {
         self.phase = 0.0;
     }
 
+    /// Set the oscillator phase to a specific value in \[0, 1).
+    ///
+    /// Useful for creating phase-offset LFO pairs (e.g., stereo auto-pan
+    /// with the right channel at 0.5 = 180° out of phase).
+    pub fn set_phase(&mut self, phase: f64) {
+        self.phase = phase.rem_euclid(1.0);
+    }
+
     /// Advance one sample at `freq_hz` and return a value in \[-1, 1\].
     pub fn next(&mut self, freq_hz: f64) -> f64 {
         let value = self.evaluate();
