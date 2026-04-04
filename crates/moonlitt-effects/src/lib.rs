@@ -21,6 +21,8 @@ pub mod eq;
 #[cfg(any(feature = "reverb", feature = "convolver"))]
 pub mod spatial;
 
+pub mod modulation;
+
 // Convenience re-exports
 #[cfg(feature = "compressor")]
 pub use dynamics::compressor::{Compressor, DetectionMode};
