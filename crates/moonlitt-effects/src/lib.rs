@@ -23,6 +23,8 @@ pub mod spatial;
 
 pub mod modulation;
 
+pub mod utility;
+
 // Convenience re-exports
 #[cfg(feature = "compressor")]
 pub use dynamics::compressor::{Compressor, DetectionMode};
@@ -47,3 +49,6 @@ pub use spatial::dattorro::DattorroReverb;
 
 #[cfg(feature = "convolver")]
 pub use spatial::convolver::Convolver;
+
+pub use utility::gain::Gain;
+pub use utility::stereo_width::StereoWidth;

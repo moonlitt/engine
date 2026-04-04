@@ -2,7 +2,15 @@
   "permissions": {
     "allow": [
       "Bash(git -C /Users/wangyan/Desktop/moonlitt log --oneline)",
-      "Bash(cargo tree:*)"
+      "Bash(cargo tree:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(rustc /tmp/debug_sinc.rs -o /tmp/debug_sinc)",
+      "Bash(/tmp/debug_sinc)",
+      "Bash(cargo build:*)",
+      "Bash(git stash:*)"
     ]
   }
 }
