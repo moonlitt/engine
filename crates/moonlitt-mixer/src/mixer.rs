@@ -180,6 +180,8 @@ pub struct InsertEffect {
     pub bypass: bool,
     /// Path of the loaded file (for session persistence).
     pub source_path: Option<String>,
+    /// External sidechain source track ID. None = internal sidechain.
+    pub sidechain_source: Option<u32>,
 }
 
 /// A single track: one audio backend + channel strip.
@@ -212,6 +214,9 @@ pub struct Track {
     // Scratch buffers for insert chain ping-pong processing
     scratch_left: Vec<f32>,
     scratch_right: Vec<f32>,
+    // Temporary buffers for external sidechain signal
+    sidechain_buf_l: Vec<f32>,
+    sidechain_buf_r: Vec<f32>,
     /// PDC delay line — compensates for insert chain latency differences.
     delay_line: DelayLine,
     /// Level meter (peak + RMS), readable from main thread.
@@ -347,6 +352,8 @@ impl Mixer {
             group_in_right: vec![0.0; self.buffer_size],
             scratch_left: vec![0.0; self.buffer_size],
             scratch_right: vec![0.0; self.buffer_size],
+            sidechain_buf_l: vec![0.0; self.buffer_size],
+            sidechain_buf_r: vec![0.0; self.buffer_size],
             delay_line: DelayLine::new(),
             meter: LevelMeter::new(),
         });
@@ -359,6 +366,12 @@ impl Mixer {
         for t in &mut self.tracks {
             if t.output_target == OutputTarget::Group(id) {
                 t.output_target = OutputTarget::Master;
+            }
+            // Clear any sidechain references to the removed track
+            for insert in &mut t.inserts {
+                if insert.sidechain_source == Some(id) {
+                    insert.sidechain_source = None;
+                }
             }
         }
         let pos = self.tracks.iter().position(|t| t.id == id)?;
@@ -495,6 +508,7 @@ impl Mixer {
             backend,
             bypass: false,
             source_path: None,
+            sidechain_source: None,
         });
         self.recalculate_pdc();
         Some(id)
@@ -511,6 +525,7 @@ impl Mixer {
                 backend,
                 bypass: false,
                 source_path,
+                sidechain_source: None,
             });
         }
         self.recalculate_pdc();
@@ -533,6 +548,133 @@ impl Mixer {
             }
         }
         self.recalculate_pdc();
+    }
+
+    /// Set external sidechain source for an insert effect.
+    /// Returns false if the target track/insert doesn't exist or if it would create a cycle.
+    pub fn set_insert_sidechain(
+        &mut self,
+        track_id: u32,
+        insert_id: u32,
+        source_track_id: Option<u32>,
+    ) -> bool {
+        // Validate track and insert exist
+        let track_idx = match self.tracks.iter().position(|t| t.id == track_id) {
+            Some(i) => i,
+            None => return false,
+        };
+        let insert_exists = self.tracks[track_idx]
+            .inserts
+            .iter()
+            .any(|i| i.id == insert_id);
+        if !insert_exists {
+            return false;
+        }
+
+        if let Some(src_id) = source_track_id {
+            // Source must exist and not be same track
+            if src_id == track_id {
+                return false;
+            }
+            if !self.tracks.iter().any(|t| t.id == src_id) {
+                return false;
+            }
+            // Check for cycles: would adding this sidechain dep create a cycle?
+            // Build the full dependency graph and check reachability from src_id back to track_id.
+            if self.would_create_sidechain_cycle(track_id, src_id) {
+                return false;
+            }
+        }
+
+        // Set the sidechain source
+        let insert = self.tracks[track_idx]
+            .inserts
+            .iter_mut()
+            .find(|i| i.id == insert_id)
+            .unwrap();
+        insert.sidechain_source = source_track_id;
+        self.rebuild_render_order();
+        true
+    }
+
+    /// Check if adding a sidechain dependency (track_id depends on src_id) would create a cycle.
+    /// A cycle exists if src_id already depends on track_id through group routing or sidechain deps.
+    fn would_create_sidechain_cycle(&self, track_id: u32, src_id: u32) -> bool {
+        // DFS from src_id: can we reach track_id?
+        let mut visited = vec![false; self.tracks.len()];
+        let start_idx = match self.tracks.iter().position(|t| t.id == src_id) {
+            Some(i) => i,
+            None => return false,
+        };
+        self.can_reach_via_deps(start_idx, track_id, &mut visited)
+    }
+
+    /// DFS: can we reach target_id from tracks[idx] following group routing and sidechain deps?
+    fn can_reach_via_deps(&self, idx: usize, target_id: u32, visited: &mut [bool]) -> bool {
+        if visited[idx] {
+            return false;
+        }
+        visited[idx] = true;
+
+        let track = &self.tracks[idx];
+
+        // Check group routing dependency: if this track routes to a group, that group depends on this track.
+        // But we want the reverse: does this track depend on something that reaches target_id?
+        // Group routing: track routes to Group(g) => track's output goes INTO g, meaning g depends on track.
+        // For cycle detection, we need: does src_id (transitively) depend on track_id?
+        // Dependencies of a track:
+        //   - sidechain sources: if track has insert with sidechain_source = Some(x), track depends on x
+        //   - group routing: if track routes to Group(g), that doesn't mean track depends on g (it's the reverse)
+        // Actually: the render order ensures group targets render AFTER their sources.
+        // And sidechain sources must render before the dependent track.
+        // So track_id depends on src_id (sidechain), and we need to check if src_id depends on track_id.
+        // src_id depends on track_id if:
+        //   - src_id has a sidechain source that is track_id, or transitively depends on track_id
+        //   - src_id routes to Group(track_id), meaning src_id's output feeds track_id
+        //     (but that means track_id depends on src_id for group input, not the other way)
+        //
+        // Wait — let's think about this differently. The render order graph edges are:
+        //   - If track A routes to Group(B): B depends on A (A must render first)
+        //   - If track A has sidechain from C: A depends on C (C must render first)
+        //
+        // Adding edge: track_id depends on src_id.
+        // Cycle if src_id depends on track_id transitively.
+        // So: from src_id, follow all outgoing dependency edges.
+
+        // Sidechain dependencies: track depends on its sidechain sources
+        for insert in &track.inserts {
+            if let Some(sc_src) = insert.sidechain_source {
+                if sc_src == target_id {
+                    return true;
+                }
+                if let Some(sc_idx) = self.tracks.iter().position(|t| t.id == sc_src) {
+                    if self.can_reach_via_deps(sc_idx, target_id, visited) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // Group routing: if this track routes to Group(g), does g depend on target?
+        // No — routing to Group(g) means g depends on this track (g accumulates this track's output).
+        // We're checking if this track (src_id) depends on target_id.
+        // This track depends on its group target ONLY if it IS a group target itself (receives input from others).
+        // Actually: a group track depends on the tracks that route INTO it.
+        // So if other tracks route to Group(track.id), then track depends on those.
+        // Let's check: does any track route to this track as a group?
+        for (other_idx, other) in self.tracks.iter().enumerate() {
+            if other.output_target == OutputTarget::Group(track.id) {
+                // This track (as group) depends on `other`
+                if other.id == target_id {
+                    return true;
+                }
+                if self.can_reach_via_deps(other_idx, target_id, visited) {
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 
     // --- Plugin Delay Compensation ---
@@ -576,23 +718,69 @@ impl Mixer {
         track.inserts.iter_mut().find(|i| i.id == insert_id)
     }
 
-    /// Rebuild the render order: source tracks first, then group tracks.
+    /// Rebuild the render order using topological sort.
+    /// Accounts for both group routing and sidechain dependencies.
     /// Called automatically when routing or track structure changes.
     fn rebuild_render_order(&mut self) {
-        self.render_order.clear();
-        // First: tracks that are NOT group targets (source tracks)
+        let n = self.tracks.len();
+        if n == 0 {
+            self.render_order.clear();
+            return;
+        }
+
+        // Build in-degree and adjacency list.
+        // Edge: dependency -> dependent (dependency must render first).
+        let mut in_degree = vec![0u32; n];
+        let mut adjacency: Vec<Vec<usize>> = vec![Vec::new(); n];
+
         for (i, track) in self.tracks.iter().enumerate() {
-            let is_target = self.tracks.iter().any(|t| t.output_target == OutputTarget::Group(track.id));
-            if !is_target {
-                self.render_order.push(i);
+            // Group routing: if track routes to Group(g), then g depends on track.
+            // Edge: track (i) -> group (g_idx).
+            if let OutputTarget::Group(g_id) = track.output_target {
+                if let Some(g_idx) = self.tracks.iter().position(|t| t.id == g_id) {
+                    adjacency[i].push(g_idx);
+                    in_degree[g_idx] += 1;
+                }
+            }
+
+            // Sidechain: if track has insert with sidechain_source = Some(src_id),
+            // then track depends on src_id. Edge: src_idx -> track (i).
+            for insert in &track.inserts {
+                if let Some(src_id) = insert.sidechain_source {
+                    if let Some(src_idx) = self.tracks.iter().position(|t| t.id == src_id) {
+                        adjacency[src_idx].push(i);
+                        in_degree[i] += 1;
+                    }
+                }
             }
         }
-        // Then: tracks that ARE group targets
-        for (i, track) in self.tracks.iter().enumerate() {
-            let is_target = self.tracks.iter().any(|t| t.output_target == OutputTarget::Group(track.id));
-            if is_target {
-                self.render_order.push(i);
+
+        // Kahn's algorithm (BFS topological sort).
+        // Use a FIFO queue (VecDeque) to maintain stable insertion order
+        // for tracks at the same dependency level.
+        let mut queue: std::collections::VecDeque<usize> = std::collections::VecDeque::new();
+        for (i, &deg) in in_degree.iter().enumerate() {
+            if deg == 0 {
+                queue.push_back(i);
             }
+        }
+
+        self.render_order.clear();
+        while let Some(idx) = queue.pop_front() {
+            self.render_order.push(idx);
+            for &dep in &adjacency[idx] {
+                in_degree[dep] -= 1;
+                if in_degree[dep] == 0 {
+                    queue.push_back(dep);
+                }
+            }
+        }
+
+        // If not all tracks were visited, there's a cycle — shouldn't happen
+        // since we reject cycles at set time. Fall back to sequential order.
+        if self.render_order.len() < n {
+            self.render_order.clear();
+            self.render_order.extend(0..n);
         }
     }
 
@@ -739,6 +927,30 @@ impl Mixer {
                 for s in &mut track.left[..chunk] { *s *= trim_gain; }
                 for s in &mut track.right[..chunk] { *s *= trim_gain; }
             }
+
+            // Inject sidechain signals: for each insert with a sidechain source,
+            // copy the source track's pre-fader audio and call set_sidechain().
+            // Two-pass approach to avoid heap allocation on the audio thread.
+            {
+                let num_inserts = self.tracks[idx].inserts.len();
+                for ins_i in 0..num_inserts {
+                    let src_id = self.tracks[idx].inserts[ins_i].sidechain_source;
+                    if let Some(src_id) = src_id {
+                        if let Some(src_idx) = self.tracks.iter().position(|t| t.id == src_id) {
+                            if src_idx != idx {
+                                copy_sidechain_buffers(&mut self.tracks, src_idx, idx, chunk);
+                                let track = &mut self.tracks[idx];
+                                track.inserts[ins_i].backend.set_sidechain(
+                                    &track.sidechain_buf_l[..chunk],
+                                    &track.sidechain_buf_r[..chunk],
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            let track = &mut self.tracks[idx];
 
             // Insert chain (pre-fader)
             if !track.inserts.is_empty() {
@@ -921,6 +1133,24 @@ fn accumulate_group(tracks: &mut [Track], src: usize, dst: usize, chunk: usize) 
             d.group_in_left[k] += s.left[k];
             d.group_in_right[k] += s.right[k];
         }
+    }
+}
+
+/// Copy source track's pre-fader audio (left/right after engine+trim) into
+/// destination track's sidechain buffers. Uses split_at_mut for borrow safety.
+fn copy_sidechain_buffers(tracks: &mut [Track], src: usize, dst: usize, chunk: usize) {
+    if src < dst {
+        let (left, right) = tracks.split_at_mut(dst);
+        let s = &left[src];
+        let d = &mut right[0];
+        d.sidechain_buf_l[..chunk].copy_from_slice(&s.left[..chunk]);
+        d.sidechain_buf_r[..chunk].copy_from_slice(&s.right[..chunk]);
+    } else {
+        let (left, right) = tracks.split_at_mut(src);
+        let d = &mut left[dst];
+        let s = &right[0];
+        d.sidechain_buf_l[..chunk].copy_from_slice(&s.left[..chunk]);
+        d.sidechain_buf_r[..chunk].copy_from_slice(&s.right[..chunk]);
     }
 }
 
@@ -1183,8 +1413,8 @@ mod tests {
         let mut scratch_l = vec![0.0; 64];
         let mut scratch_r = vec![0.0; 64];
         let mut inserts = vec![
-            InsertEffect { id: 0, backend: null(44100), bypass: true, source_path: None },
-            InsertEffect { id: 1, backend: null(44100), bypass: true, source_path: None },
+            InsertEffect { id: 0, backend: null(44100), bypass: true, source_path: None, sidechain_source: None },
+            InsertEffect { id: 1, backend: null(44100), bypass: true, source_path: None, sidechain_source: None },
         ];
 
         process_insert_chain(&mut inserts, &mut left, &mut right, &mut scratch_l, &mut scratch_r, 64);
@@ -1452,5 +1682,125 @@ mod tests {
         // Within range should pass through
         mixer.set_track_trim(id, -12.5);
         assert!((mixer.track(id).unwrap().trim_db - (-12.5)).abs() < f32::EPSILON);
+    }
+
+    // --- Sidechain tests ---
+
+    #[test]
+    fn test_sidechain_source_default_none() {
+        let mut mixer = Mixer::new(44100, 256);
+        let t0 = mixer.add_track(null(44100), 0xFFFF);
+        let i0 = mixer.add_insert(t0, null(44100)).unwrap();
+        assert_eq!(mixer.track_insert(t0, i0).unwrap().sidechain_source, None);
+    }
+
+    #[test]
+    fn test_set_insert_sidechain() {
+        let mut mixer = Mixer::new(44100, 256);
+        let t0 = mixer.add_track(null(44100), 0x0001);
+        let t1 = mixer.add_track(null(44100), 0x0002);
+        let i1 = mixer.add_insert(t1, null(44100)).unwrap();
+
+        // Set sidechain: t1's insert uses t0 as sidechain source
+        assert!(mixer.set_insert_sidechain(t1, i1, Some(t0)));
+        assert_eq!(
+            mixer.track_insert(t1, i1).unwrap().sidechain_source,
+            Some(t0)
+        );
+
+        // Clear sidechain
+        assert!(mixer.set_insert_sidechain(t1, i1, None));
+        assert_eq!(mixer.track_insert(t1, i1).unwrap().sidechain_source, None);
+    }
+
+    #[test]
+    fn test_sidechain_rejects_self() {
+        let mut mixer = Mixer::new(44100, 256);
+        let t0 = mixer.add_track(null(44100), 0xFFFF);
+        let i0 = mixer.add_insert(t0, null(44100)).unwrap();
+
+        // Can't sidechain to self
+        assert!(!mixer.set_insert_sidechain(t0, i0, Some(t0)));
+    }
+
+    #[test]
+    fn test_sidechain_rejects_nonexistent() {
+        let mut mixer = Mixer::new(44100, 256);
+        let t0 = mixer.add_track(null(44100), 0xFFFF);
+        let i0 = mixer.add_insert(t0, null(44100)).unwrap();
+
+        // Nonexistent source track
+        assert!(!mixer.set_insert_sidechain(t0, i0, Some(999)));
+
+        // Nonexistent track
+        assert!(!mixer.set_insert_sidechain(999, 0, Some(t0)));
+
+        // Nonexistent insert
+        assert!(!mixer.set_insert_sidechain(t0, 999, Some(t0)));
+    }
+
+    #[test]
+    fn test_sidechain_cycle_rejected() {
+        let mut mixer = Mixer::new(44100, 256);
+        let t0 = mixer.add_track(null(44100), 0x0001);
+        let t1 = mixer.add_track(null(44100), 0x0002);
+        let i0 = mixer.add_insert(t0, null(44100)).unwrap();
+        let i1 = mixer.add_insert(t1, null(44100)).unwrap();
+
+        // A sidechains from B
+        assert!(mixer.set_insert_sidechain(t0, i0, Some(t1)));
+        // B sidechains from A — would create a cycle
+        assert!(!mixer.set_insert_sidechain(t1, i1, Some(t0)));
+    }
+
+    #[test]
+    fn test_render_order_with_sidechain() {
+        let mut mixer = Mixer::new(44100, 256);
+        let t0 = mixer.add_track(null(44100), 0x0001); // source
+        let t1 = mixer.add_track(null(44100), 0x0002); // dependent
+        let i1 = mixer.add_insert(t1, null(44100)).unwrap();
+
+        // t1's insert uses t0 as sidechain source => t0 must render first
+        mixer.set_insert_sidechain(t1, i1, Some(t0));
+
+        let t0_idx = mixer.tracks().iter().position(|t| t.id == t0).unwrap();
+        let t1_idx = mixer.tracks().iter().position(|t| t.id == t1).unwrap();
+
+        let t0_order = mixer.render_order.iter().position(|&i| i == t0_idx).unwrap();
+        let t1_order = mixer.render_order.iter().position(|&i| i == t1_idx).unwrap();
+        assert!(t0_order < t1_order, "Source track must render before dependent track");
+    }
+
+    #[test]
+    fn test_sidechain_renders_without_crash() {
+        let mut mixer = Mixer::new(44100, 256);
+        let t0 = mixer.add_track(null(44100), 0x0001);
+        let t1 = mixer.add_track(null(44100), 0x0002);
+        let i1 = mixer.add_insert(t1, null(44100)).unwrap();
+
+        mixer.set_insert_sidechain(t1, i1, Some(t0));
+
+        let mut left = vec![0.0; 256];
+        let mut right = vec![0.0; 256];
+        mixer.render(&mut left, &mut right);
+        // Should not crash
+    }
+
+    #[test]
+    fn test_remove_track_clears_sidechain_refs() {
+        let mut mixer = Mixer::new(44100, 256);
+        let t0 = mixer.add_track(null(44100), 0x0001);
+        let t1 = mixer.add_track(null(44100), 0x0002);
+        let i1 = mixer.add_insert(t1, null(44100)).unwrap();
+
+        mixer.set_insert_sidechain(t1, i1, Some(t0));
+        assert_eq!(
+            mixer.track_insert(t1, i1).unwrap().sidechain_source,
+            Some(t0)
+        );
+
+        // Remove source track — sidechain ref should be cleared
+        mixer.remove_track(t0);
+        assert_eq!(mixer.track_insert(t1, i1).unwrap().sidechain_source, None);
     }
 }

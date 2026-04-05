@@ -245,6 +245,17 @@ impl Runtime {
         self.send(AudioEvent::MixerTrackRoute { track_id, target_id });
     }
 
+    /// Set external sidechain source for an insert effect.
+    /// source_track_id = None means revert to internal sidechain.
+    pub fn set_insert_sidechain(&mut self, track_id: u8, insert_id: u8, source_track_id: Option<u8>) {
+        let src = source_track_id.unwrap_or(0xFF);
+        self.send(AudioEvent::SetInsertSidechain {
+            track_id,
+            insert_id,
+            source_track_id: src,
+        });
+    }
+
     // --- Structural commands (via mpsc command channel) ---
     // These carry heap-allocated data (Engine) and run on the audio thread.
 

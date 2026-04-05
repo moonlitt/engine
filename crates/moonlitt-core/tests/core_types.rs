@@ -70,12 +70,13 @@ fn audio_event_all_variants_roundtrip() {
         AudioEvent::SetInsertParam { track_id: 0, insert_id: 0, param_id: 0, value: 0.0 },
         AudioEvent::SetSendBusParam { bus_id: 0, param_id: 0, value: 0.0 },
         AudioEvent::MixerTrackRoute { track_id: 0, target_id: 0xFF },
+        AudioEvent::SetInsertSidechain { track_id: 0, insert_id: 0, source_track_id: 0xFF },
         AudioEvent::Stop,
     ];
     for e in events {
         let _ = e;
     }
-    assert_eq!(events.len(), 21);
+    assert_eq!(events.len(), 22);
 }
 
 #[test]

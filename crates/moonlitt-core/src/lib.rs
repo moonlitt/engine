@@ -63,6 +63,17 @@ pub trait AudioBackend: Send {
     fn load_state(&mut self, _data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
         Err("not supported".into())
     }
+
+    // Sidechain — effects opt in by overriding these defaults
+
+    /// Provide external sidechain audio for this effect.
+    /// Called by the mixer before `process_effect()` each render cycle.
+    /// Effects that support sidechain override this to store the buffers internally.
+    /// Default: ignore (use internal sidechain).
+    fn set_sidechain(&mut self, _left: &[f32], _right: &[f32]) {}
+
+    /// Whether this effect supports external sidechain input.
+    fn supports_sidechain(&self) -> bool { false }
 }
 
 pub struct BackendInfo {

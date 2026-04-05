@@ -239,6 +239,10 @@ fn dispatch_to_mixer(mixer: &mut Mixer, event: AudioEvent) {
             };
             mixer.set_track_output(track_id as u32, target);
         }
+        AudioEvent::SetInsertSidechain { track_id, insert_id, source_track_id } => {
+            let source = if source_track_id == 0xFF { None } else { Some(source_track_id as u32) };
+            mixer.set_insert_sidechain(track_id as u32, insert_id as u32, source);
+        }
         AudioEvent::Stop => mixer.all_notes_off(),
     }
 }

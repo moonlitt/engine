@@ -15,3 +15,6 @@ pub mod phaser;
 
 #[cfg(feature = "tremolo")]
 pub mod tremolo;
+
+#[cfg(feature = "auto-filter")]
+pub mod auto_filter;

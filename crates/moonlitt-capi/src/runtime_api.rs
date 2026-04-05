@@ -417,6 +417,22 @@ pub extern "C" fn moonlitt_mixer_set_track_route(
     }
 }
 
+/// Set external sidechain source for an insert effect.
+/// source_track_id = -1 means None (revert to internal sidechain).
+/// Returns 0 on success, 1 on error (null handle).
+#[no_mangle]
+pub extern "C" fn moonlitt_set_insert_sidechain(
+    rt: *mut RuntimeHandle, track_id: c_int, insert_id: c_int, source_track_id: c_int,
+) -> c_int {
+    if let Some(h) = unsafe { rt.as_mut() } {
+        let source = if source_track_id < 0 { None } else { Some(source_track_id as u8) };
+        h.runtime.set_insert_sidechain(track_id as u8, insert_id as u8, source);
+        0
+    } else {
+        1
+    }
+}
+
 // ---------------------------------------------------------------------------
 // MIDI device listing
 // ---------------------------------------------------------------------------

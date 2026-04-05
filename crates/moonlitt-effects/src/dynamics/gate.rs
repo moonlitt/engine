@@ -123,6 +123,11 @@ pub struct Gate {
 
     // RMS detector
     rms_window: [RmsWindow; 2],
+
+    // External sidechain
+    sidechain_ext_l: Vec<f32>,
+    sidechain_ext_r: Vec<f32>,
+    use_external_sidechain: bool,
 }
 
 impl Gate {
@@ -156,6 +161,10 @@ impl Gate {
             sc_lpf: [Biquad::new(), Biquad::new()],
 
             rms_window: [RmsWindow::new(rms_window_size), RmsWindow::new(rms_window_size)],
+
+            sidechain_ext_l: Vec::new(),
+            sidechain_ext_r: Vec::new(),
+            use_external_sidechain: false,
         };
 
         gate.update_envelope_coeffs();
@@ -242,6 +251,16 @@ impl AudioBackend for Gate {
     // -- Audio: generator render is a no-op (this is an effect) --
     fn render(&mut self, _left: &mut [f32], _right: &mut [f32]) {}
 
+    fn set_sidechain(&mut self, left: &[f32], right: &[f32]) {
+        self.sidechain_ext_l.resize(left.len(), 0.0);
+        self.sidechain_ext_r.resize(right.len(), 0.0);
+        self.sidechain_ext_l.copy_from_slice(left);
+        self.sidechain_ext_r.copy_from_slice(right);
+        self.use_external_sidechain = true;
+    }
+
+    fn supports_sidechain(&self) -> bool { true }
+
     fn process_effect(
         &mut self,
         in_l: &[f32],
@@ -258,13 +277,22 @@ impl AudioBackend for Gate {
             return;
         }
 
+        // Select detection source: external sidechain or input signal
+        let use_ext = self.use_external_sidechain
+            && self.sidechain_ext_l.len() >= len
+            && self.sidechain_ext_r.len() >= len;
+
         for i in 0..len {
             let l = in_l[i] as f64;
             let r = in_r[i] as f64;
 
+            // Detection source: external sidechain or input
+            let det_l = if use_ext { self.sidechain_ext_l[i] as f64 } else { l };
+            let det_r = if use_ext { self.sidechain_ext_r[i] as f64 } else { r };
+
             // Sidechain: HPF → LPF (does NOT modify audio path)
-            let sc_l = self.sc_lpf[0].process(self.sc_hpf[0].process(l));
-            let sc_r = self.sc_lpf[1].process(self.sc_hpf[1].process(r));
+            let sc_l = self.sc_lpf[0].process(self.sc_hpf[0].process(det_l));
+            let sc_r = self.sc_lpf[1].process(self.sc_hpf[1].process(det_r));
 
             // Detect level (stereo-linked: max of both channels)
             let detected = match self.detection_mode {
@@ -344,6 +372,9 @@ impl AudioBackend for Gate {
             out_l[i] = (l * smoothed_linear) as f32;
             out_r[i] = (r * smoothed_linear) as f32;
         }
+
+        // Reset external sidechain flag each cycle
+        self.use_external_sidechain = false;
     }
 
     fn set_volume(&mut self, _volume: f32) {
@@ -688,6 +719,78 @@ mod tests {
         assert_eq!(
             gate.info().backend_type,
             moonlitt_core::BackendType::PluginHost
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Sidechain tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_supports_sidechain() {
+        let gate = Gate::new(44100);
+        assert!(gate.supports_sidechain());
+    }
+
+    #[test]
+    fn test_external_sidechain_detection() {
+        let sr = 44100u32;
+        let num_samples = sr as usize; // 1 second
+
+        // Quiet input signal (-60 dB) — below threshold
+        let quiet_amp = 10.0_f64.powf(-60.0 / 20.0);
+        let quiet = sine_wave(1000.0, quiet_amp, sr, num_samples);
+
+        // Loud sidechain signal (-10 dB) — above threshold
+        let loud_amp = 10.0_f64.powf(-10.0 / 20.0);
+        let loud = sine_wave(440.0, loud_amp, sr, num_samples);
+
+        // Gate A: no external sidechain — quiet signal, gate closes
+        let mut gate_internal = Gate::new(sr);
+        gate_internal.set_param(0, -30.0); // threshold = -30 dB
+        gate_internal.set_param(1, -80.0); // range = -80 dB
+        gate_internal.set_param(2, 0.5);   // attack = 0.5ms
+        gate_internal.set_param(3, 0.0);   // hold = 0ms
+        gate_internal.set_param(4, 5.0);   // release = 5ms
+
+        // Process several blocks to let gate close
+        let mut out_l = vec![0.0f32; num_samples];
+        let mut out_r = vec![0.0f32; num_samples];
+        for _ in 0..3 {
+            gate_internal.process_effect(&quiet, &quiet, &mut out_l, &mut out_r);
+        }
+        gate_internal.process_effect(&quiet, &quiet, &mut out_l, &mut out_r);
+        let check_start = sr as usize / 2;
+        let rms_internal = out_l[check_start..].iter().map(|s| (*s as f64) * (*s as f64)).sum::<f64>()
+            / (num_samples - check_start) as f64;
+        let rms_internal = rms_internal.sqrt();
+
+        // Gate B: external sidechain with loud signal — gate should open
+        let mut gate_external = Gate::new(sr);
+        gate_external.set_param(0, -30.0);
+        gate_external.set_param(1, -80.0);
+        gate_external.set_param(2, 0.5);
+        gate_external.set_param(3, 0.0);
+        gate_external.set_param(4, 5.0);
+
+        let mut out_ext_l = vec![0.0f32; num_samples];
+        let mut out_ext_r = vec![0.0f32; num_samples];
+        for _ in 0..3 {
+            gate_external.set_sidechain(&loud, &loud);
+            gate_external.process_effect(&quiet, &quiet, &mut out_ext_l, &mut out_ext_r);
+        }
+        gate_external.set_sidechain(&loud, &loud);
+        gate_external.process_effect(&quiet, &quiet, &mut out_ext_l, &mut out_ext_r);
+        let rms_external = out_ext_l[check_start..].iter().map(|s| (*s as f64) * (*s as f64)).sum::<f64>()
+            / (num_samples - check_start) as f64;
+        let rms_external = rms_external.sqrt();
+
+        // With external sidechain (loud), the gate should be open,
+        // so the output should be louder than when the gate is closed.
+        assert!(
+            rms_external > rms_internal * 5.0,
+            "External sidechain should open gate: internal RMS={:.6}, external RMS={:.6}",
+            rms_internal, rms_external
         );
     }
 }

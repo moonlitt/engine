@@ -171,6 +171,11 @@ pub struct Compressor {
     envelope_right: EnvelopeFollower,
     sidechain_hpf: [Biquad; 2],
     rms_window: [RmsWindow; 2],
+
+    // External sidechain
+    sidechain_ext_l: Vec<f32>,
+    sidechain_ext_r: Vec<f32>,
+    use_external_sidechain: bool,
 }
 
 impl Compressor {
@@ -196,6 +201,10 @@ impl Compressor {
             envelope_right: EnvelopeFollower::new(sr),
             sidechain_hpf: [Biquad::new(), Biquad::new()],
             rms_window: [RmsWindow::new(rms_window_size), RmsWindow::new(rms_window_size)],
+
+            sidechain_ext_l: Vec::new(),
+            sidechain_ext_r: Vec::new(),
+            use_external_sidechain: false,
         };
 
         comp.update_envelope_coeffs();
@@ -340,6 +349,16 @@ impl AudioBackend for Compressor {
     // -- Audio: generator render is a no-op (this is an effect) --
     fn render(&mut self, _left: &mut [f32], _right: &mut [f32]) {}
 
+    fn set_sidechain(&mut self, left: &[f32], right: &[f32]) {
+        self.sidechain_ext_l.resize(left.len(), 0.0);
+        self.sidechain_ext_r.resize(right.len(), 0.0);
+        self.sidechain_ext_l.copy_from_slice(left);
+        self.sidechain_ext_r.copy_from_slice(right);
+        self.use_external_sidechain = true;
+    }
+
+    fn supports_sidechain(&self) -> bool { true }
+
     fn process_effect(
         &mut self,
         in_l: &[f32],
@@ -356,13 +375,22 @@ impl AudioBackend for Compressor {
             return;
         }
 
+        // Select detection source: external sidechain or input signal
+        let use_ext = self.use_external_sidechain
+            && self.sidechain_ext_l.len() >= len
+            && self.sidechain_ext_r.len() >= len;
+
         for i in 0..len {
             let l = in_l[i] as f64;
             let r = in_r[i] as f64;
 
+            // Detection source: external sidechain or input
+            let det_l = if use_ext { self.sidechain_ext_l[i] as f64 } else { l };
+            let det_r = if use_ext { self.sidechain_ext_r[i] as f64 } else { r };
+
             // Sidechain: filter through HPF (does NOT modify audio path)
-            let sc_l = self.sidechain_hpf[0].process(l);
-            let sc_r = self.sidechain_hpf[1].process(r);
+            let sc_l = self.sidechain_hpf[0].process(det_l);
+            let sc_r = self.sidechain_hpf[1].process(det_r);
 
             // Detect level and compute gain for each channel
             let gain_db_l = detect_and_compute(
@@ -394,6 +422,9 @@ impl AudioBackend for Compressor {
             out_l[i] = (l * gain_l) as f32;
             out_r[i] = (r * gain_r) as f32;
         }
+
+        // Reset external sidechain flag each cycle
+        self.use_external_sidechain = false;
     }
 
     fn set_volume(&mut self, _volume: f32) {
@@ -987,5 +1018,66 @@ mod tests {
     fn test_latency_is_zero() {
         let comp = Compressor::new(44100);
         assert_eq!(comp.latency(), 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // Sidechain tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_supports_sidechain() {
+        let comp = Compressor::new(44100);
+        assert!(comp.supports_sidechain());
+    }
+
+    #[test]
+    fn test_external_sidechain_detection() {
+        let sr = 44100u32;
+        let num_samples = sr as usize; // 1 second
+
+        // Quiet input signal (-60 dB) — below threshold, normally no compression
+        let quiet_amp = 10.0_f64.powf(-60.0 / 20.0); // 0.001
+        let quiet = sine_wave(1000.0, quiet_amp, sr, num_samples);
+
+        // Loud sidechain signal (-6 dB) — above threshold, triggers compression
+        let loud_amp = 10.0_f64.powf(-6.0 / 20.0); // ~0.5
+        let loud = sine_wave(440.0, loud_amp, sr, num_samples);
+
+        // Compressor A: no external sidechain — quiet signal, no compression
+        let mut comp_internal = Compressor::new(sr);
+        comp_internal.set_param(0, -20.0); // threshold = -20 dB
+        comp_internal.set_param(1, 10.0);  // ratio = 10:1
+        comp_internal.set_param(2, 0.1);   // fast attack
+        comp_internal.set_param(3, 10.0);  // fast release
+        comp_internal.set_param(5, 0.0);   // no makeup
+
+        let mut out_internal_l = vec![0.0f32; num_samples];
+        let mut out_internal_r = vec![0.0f32; num_samples];
+        comp_internal.process_effect(&quiet, &quiet, &mut out_internal_l, &mut out_internal_r);
+
+        // Compressor B: external sidechain with loud signal
+        let mut comp_external = Compressor::new(sr);
+        comp_external.set_param(0, -20.0);
+        comp_external.set_param(1, 10.0);
+        comp_external.set_param(2, 0.1);
+        comp_external.set_param(3, 10.0);
+        comp_external.set_param(5, 0.0);
+
+        comp_external.set_sidechain(&loud, &loud);
+        let mut out_external_l = vec![0.0f32; num_samples];
+        let mut out_external_r = vec![0.0f32; num_samples];
+        comp_external.process_effect(&quiet, &quiet, &mut out_external_l, &mut out_external_r);
+
+        // With external sidechain, the loud signal triggers gain reduction,
+        // so the quiet output should be even quieter than without sidechain.
+        let check_start = sr as usize / 2; // skip transient
+        let rms_internal = rms_db(&out_internal_l[check_start..]);
+        let rms_external = rms_db(&out_external_l[check_start..]);
+
+        assert!(
+            rms_external < rms_internal - 3.0,
+            "External sidechain should cause more gain reduction: internal={:.1} dB, external={:.1} dB",
+            rms_internal, rms_external
+        );
     }
 }

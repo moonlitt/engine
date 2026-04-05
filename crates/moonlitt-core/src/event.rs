@@ -27,6 +27,9 @@ pub enum AudioEvent {
     SetSendBusParam { bus_id: u8, param_id: u16, value: f32 },
     // Track routing (0xFF = master, else = group track ID)
     MixerTrackRoute { track_id: u8, target_id: u8 },
+    /// Set external sidechain source for an insert effect.
+    /// source_track_id = 0xFF means None (revert to internal sidechain).
+    SetInsertSidechain { track_id: u8, insert_id: u8, source_track_id: u8 },
     Stop,
 }
 

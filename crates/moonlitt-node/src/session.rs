@@ -279,6 +279,19 @@ impl Session {
         Ok(())
     }
 
+    /// Set external sidechain source for an insert effect.
+    /// `source_track_id` = None reverts to internal sidechain.
+    #[napi]
+    pub fn set_insert_sidechain(
+        &mut self,
+        track_id: u8,
+        insert_id: u8,
+        source_track_id: Option<u8>,
+    ) -> Result<()> {
+        self.rt_mut()?.set_insert_sidechain(track_id, insert_id, source_track_id);
+        Ok(())
+    }
+
     /// Set a parameter on a track's backend.
     #[napi]
     pub fn set_param_for_track(
