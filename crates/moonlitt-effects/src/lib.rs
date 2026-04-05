@@ -47,6 +47,8 @@ pub mod modulation;
 #[cfg(any(feature = "gain", feature = "stereo-width"))]
 pub mod utility;
 
+pub mod distortion;
+
 // ---- Convenience re-exports ----
 
 // dynamics
@@ -107,3 +109,7 @@ pub use utility::gain::Gain;
 
 #[cfg(feature = "stereo-width")]
 pub use utility::stereo_width::StereoWidth;
+
+// distortion
+pub use distortion::saturator::Saturator;
+pub use distortion::bitcrusher::Bitcrusher;
