@@ -322,8 +322,12 @@ impl PhaseVocoderEngine {
         self.input_write_pos += 1;
         self.input_samples_since_hop += 1;
 
-        // When we have accumulated a hop's worth of new samples, run analysis+synthesis
-        if self.input_samples_since_hop >= self.hop_size {
+        // When we have accumulated a hop's worth of new samples, run analysis+synthesis.
+        // Guard: don't run the first hop until we have at least fft_size samples
+        // buffered, otherwise the frame extraction wraps into uninitialized data.
+        if self.input_samples_since_hop >= self.hop_size
+            && self.input_write_pos >= self.fft_size
+        {
             self.input_samples_since_hop = 0;
             self.process_hop(pitch_ratio);
             self.primed = true;
@@ -349,7 +353,8 @@ impl PhaseVocoderEngine {
         let in_buf_len = self.input_buffer.len();
 
         // 1. Extract and window the input frame
-        let frame_start = self.input_write_pos.wrapping_sub(n);
+        // input_write_pos >= n is guaranteed by the caller guard.
+        let frame_start = self.input_write_pos - n;
         for i in 0..n {
             let idx = (frame_start + i) % in_buf_len;
             self.fft_scratch[i] = Complex::new(
@@ -360,6 +365,14 @@ impl PhaseVocoderEngine {
 
         // 2. Forward FFT
         let fft = self.fft_planner.plan_fft_forward(n);
+        // Ensure scratch buffer is large enough for both forward and inverse FFT.
+        let ifft = self.fft_planner.plan_fft_inverse(n);
+        let required_scratch = fft
+            .get_inplace_scratch_len()
+            .max(ifft.get_inplace_scratch_len());
+        if self.fft_work.len() < required_scratch {
+            self.fft_work.resize(required_scratch, Complex::new(0.0, 0.0));
+        }
         fft.process_with_scratch(&mut self.fft_scratch, &mut self.fft_work);
 
         // 3. Analysis: compute magnitude and instantaneous frequency per bin
