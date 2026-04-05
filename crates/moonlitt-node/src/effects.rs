@@ -123,6 +123,46 @@ pub fn create_tremolo(sample_rate: u32) -> Backend {
     }
 }
 
+/// Create a saturator with 5 distortion models.
+#[napi]
+pub fn create_saturator(sample_rate: u32) -> Backend {
+    Backend {
+        inner: Some(Box::new(moonlitt_effects::Saturator::new(sample_rate))),
+    }
+}
+
+/// Create a bitcrusher (sample rate and bit depth reduction).
+#[napi]
+pub fn create_bitcrusher(sample_rate: u32) -> Backend {
+    Backend {
+        inner: Some(Box::new(moonlitt_effects::Bitcrusher::new(sample_rate))),
+    }
+}
+
+/// Create a multiband compressor (4-band crossover + per-band dynamics).
+#[napi]
+pub fn create_multiband_compressor(sample_rate: u32) -> Backend {
+    Backend {
+        inner: Some(Box::new(moonlitt_effects::MultibandCompressor::new(sample_rate))),
+    }
+}
+
+/// Create an auto-filter with LFO-modulated cutoff.
+#[napi]
+pub fn create_auto_filter(sample_rate: u32) -> Backend {
+    Backend {
+        inner: Some(Box::new(moonlitt_effects::AutoFilter::new(sample_rate))),
+    }
+}
+
+/// Create a pitch shifter (FFT-based frequency-domain pitch shifting).
+#[napi]
+pub fn create_pitch_shifter(sample_rate: u32) -> Backend {
+    Backend {
+        inner: Some(Box::new(moonlitt_effects::PitchShifter::new(sample_rate))),
+    }
+}
+
 /// Create a gain utility (gain, polarity invert, mono sum).
 #[napi]
 pub fn create_gain(sample_rate: u32) -> Backend {

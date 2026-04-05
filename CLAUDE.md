@@ -41,12 +41,13 @@ moonlitt-node          ← Node.js binding via napi-rs (Web DAW, Electron, Ink t
 moonlitt-cli           ← CLI tool: scan, play, live, midi-devices
 
 moonlitt-effects       ← Built-in audio effects (feature-gated modules):
-  ↑                      dynamics/ — compressor, limiter, gate, de-esser
+  ↑                      dynamics/ — compressor, limiter, gate, de-esser, multiband compressor
   ↑                      eq/       — 8-band parametric EQ (biquad cascade)
   ↑                      spatial/  — Freeverb, Dattorro plate reverb, FFT convolver
-  ↑                      modulation/ — delay, chorus, flanger, phaser, tremolo
+  ↑                      modulation/ — delay, chorus, flanger, phaser, tremolo, auto-filter, pitch shifter
+  ↑                      distortion/ — saturator (5 models), bitcrusher
   ↑                      utility/  — gain, stereo width (mid/side)
-  ↑                      common/   — param smoother, denormal protection
+  ↑                      common/   — param smoother, denormal protection, oversampling
 
 moonlitt-test-suite    ← DSP compliance tests (SF2 2.04, MIDI 1.0, EBU R128, AES17)
 ```

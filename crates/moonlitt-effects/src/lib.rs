@@ -1,6 +1,6 @@
 //! # moonlitt-effects
 //!
-//! Built-in audio effects — dynamics, EQ, spatial, modulation, utility.
+//! Built-in audio effects — dynamics, EQ, spatial, modulation, distortion, utility.
 //!
 //! ## Feature flags
 //!
@@ -9,6 +9,7 @@
 //!   - `limiter` — brickwall limiter with lookahead
 //!   - `gate` — noise gate / expander with hysteresis
 //!   - `deesser` — split-band sibilance reduction
+//!   - `multiband-compressor` — 4-band crossover + per-band dynamics
 //! - `eq` / `parametric-eq` — 8-band parametric EQ (biquad cascade)
 //! - `spatial` — reverb + convolution reverb
 //!   - `reverb` — Freeverb + Dattorro plate reverb
@@ -19,17 +20,22 @@
 //!   - `flanger` — through-zero flanger with soft saturation
 //!   - `phaser` — N-stage allpass phaser with LFO sweep
 //!   - `tremolo` — tremolo with tempo sync and stereo auto-pan
+//!   - `auto-filter` — LFO-modulated cutoff filter
+//!   - `pitch-shifter` — FFT-based frequency-domain pitch shifting (requires `rustfft`)
+//! - `distortion` — always compiled (no feature gate)
+//!   - saturator — 5 distortion models with oversampling
+//!   - bitcrusher — sample rate and bit depth reduction
 //! - `utility` — mix helpers
 //!   - `gain` — gain, polarity invert, mono sum
 //!   - `stereo-width` — mid/side stereo width control
 
 pub mod common;
 
-#[cfg(any(feature = "compressor", feature = "limiter", feature = "gate", feature = "deesser", feature = "multiband-compressor"))]
+#[cfg(any(feature = "compressor", feature = "limiter", feature = "gate", feature = "deesser", feature = "multiband-compressor", feature = "auto-filter"))]
 pub mod dynamics;
 
 // eq::biquad is also used by gate and deesser for sidechain filters
-#[cfg(any(feature = "parametric-eq", feature = "gate", feature = "deesser", feature = "multiband-compressor"))]
+#[cfg(any(feature = "parametric-eq", feature = "gate", feature = "deesser", feature = "multiband-compressor", feature = "auto-filter"))]
 pub mod eq;
 
 #[cfg(any(feature = "reverb", feature = "convolver"))]
@@ -41,6 +47,7 @@ pub mod spatial;
     feature = "flanger",
     feature = "phaser",
     feature = "tremolo",
+    feature = "auto-filter",
     feature = "pitch-shifter"
 ))]
 pub mod modulation;
@@ -106,6 +113,9 @@ pub use modulation::phaser::Phaser;
 
 #[cfg(feature = "tremolo")]
 pub use modulation::tremolo::Tremolo;
+
+#[cfg(feature = "auto-filter")]
+pub use modulation::auto_filter::AutoFilter;
 
 #[cfg(feature = "pitch-shifter")]
 pub use modulation::pitch_shifter::PitchShifter;

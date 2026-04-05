@@ -263,6 +263,101 @@ pub extern "C" fn moonlitt_builtin_create_stereo_width(
     }))
 }
 
+/// Create a saturator engine (5 distortion models with oversampling).
+#[no_mangle]
+pub extern "C" fn moonlitt_builtin_create_saturator(
+    sample_rate: c_int,
+    buffer_size: c_int,
+) -> *mut EngineHandle {
+    let sr = sample_rate.max(1) as u32;
+    let bs = buffer_size.max(1) as u32;
+    let saturator = moonlitt_effects::Saturator::new(sr);
+    Box::into_raw(Box::new(EngineHandle {
+        backend: Some(Box::new(saturator)),
+        sample_rate: sr,
+        buffer_size: bs,
+        loaded_path: None,
+        last_error: None,
+        last_error_cstring: None,
+    }))
+}
+
+/// Create a bitcrusher engine (sample rate and bit depth reduction).
+#[no_mangle]
+pub extern "C" fn moonlitt_builtin_create_bitcrusher(
+    sample_rate: c_int,
+    buffer_size: c_int,
+) -> *mut EngineHandle {
+    let sr = sample_rate.max(1) as u32;
+    let bs = buffer_size.max(1) as u32;
+    let bitcrusher = moonlitt_effects::Bitcrusher::new(sr);
+    Box::into_raw(Box::new(EngineHandle {
+        backend: Some(Box::new(bitcrusher)),
+        sample_rate: sr,
+        buffer_size: bs,
+        loaded_path: None,
+        last_error: None,
+        last_error_cstring: None,
+    }))
+}
+
+/// Create a multiband compressor engine (4-band crossover + per-band dynamics).
+#[no_mangle]
+pub extern "C" fn moonlitt_builtin_create_multiband_compressor(
+    sample_rate: c_int,
+    buffer_size: c_int,
+) -> *mut EngineHandle {
+    let sr = sample_rate.max(1) as u32;
+    let bs = buffer_size.max(1) as u32;
+    let mbc = moonlitt_effects::MultibandCompressor::new(sr);
+    Box::into_raw(Box::new(EngineHandle {
+        backend: Some(Box::new(mbc)),
+        sample_rate: sr,
+        buffer_size: bs,
+        loaded_path: None,
+        last_error: None,
+        last_error_cstring: None,
+    }))
+}
+
+/// Create an auto-filter engine (LFO-modulated cutoff).
+#[no_mangle]
+pub extern "C" fn moonlitt_builtin_create_auto_filter(
+    sample_rate: c_int,
+    buffer_size: c_int,
+) -> *mut EngineHandle {
+    let sr = sample_rate.max(1) as u32;
+    let bs = buffer_size.max(1) as u32;
+    let af = moonlitt_effects::AutoFilter::new(sr);
+    Box::into_raw(Box::new(EngineHandle {
+        backend: Some(Box::new(af)),
+        sample_rate: sr,
+        buffer_size: bs,
+        loaded_path: None,
+        last_error: None,
+        last_error_cstring: None,
+    }))
+}
+
+/// Create a pitch shifter engine (FFT-based frequency-domain pitch shifting).
+#[no_mangle]
+pub extern "C" fn moonlitt_builtin_create_pitch_shifter(
+    sample_rate: c_int,
+    buffer_size: c_int,
+) -> *mut EngineHandle {
+    let sr = sample_rate.max(1) as u32;
+    let bs = buffer_size.max(1) as u32;
+    let ps = moonlitt_effects::PitchShifter::new(sr);
+    Box::into_raw(Box::new(EngineHandle {
+        backend: Some(Box::new(ps)),
+        sample_rate: sr,
+        buffer_size: bs,
+        loaded_path: None,
+        last_error: None,
+        last_error_cstring: None,
+    }))
+}
+
 // ---------------------------------------------------------------------------
 // WAV loader: reads a mono WAV file and returns f32 samples.
 // Uses hound for robust PCM-16, PCM-24, PCM-32 and IEEE-float-32 support.
