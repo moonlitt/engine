@@ -14,6 +14,7 @@
 //! 5. Hard-clamp at ceiling
 
 use super::envelope::EnvelopeFollower;
+use crate::common::oversampler::Oversampler;
 use crate::common::param_smoother::ParamSmoother;
 use moonlitt_core::{AudioBackend, BackendInfo, BackendType, ParamFlags, ParamInfo};
 
@@ -105,6 +106,10 @@ pub struct Limiter {
 
     // Single envelope for manual release mode
     manual_env: EnvelopeFollower,
+
+    // Oversamplers (one per channel)
+    oversampler_l: Oversampler,
+    oversampler_r: Oversampler,
 }
 
 /// Compute lookahead delay in samples from milliseconds and sample rate.
@@ -130,6 +135,9 @@ impl Limiter {
         manual_env.set_attack_ms(0.1);
         manual_env.set_release_ms(100.0);
 
+        // Default max block size for oversamplers (will be used for buffer allocation)
+        let max_block = 8192;
+
         Self {
             sample_rate,
 
@@ -150,6 +158,9 @@ impl Limiter {
             fast_env,
             slow_env,
             manual_env,
+
+            oversampler_l: Oversampler::new(1, max_block),
+            oversampler_r: Oversampler::new(1, max_block),
         }
     }
 
@@ -165,10 +176,73 @@ impl Limiter {
         self.manual_env.set_release_ms(self.release_ms);
     }
 
-    /// Resize the lookahead buffer when lookahead_ms changes.
+    /// Resize the lookahead buffer when lookahead_ms or oversampling changes.
+    /// When oversampling is active, the lookahead operates at the oversampled
+    /// rate, so we scale the delay by the oversampling factor.
     fn update_lookahead(&mut self) {
-        let delay = lookahead_samples(self.lookahead_ms, self.sample_rate);
+        let base_delay = lookahead_samples(self.lookahead_ms, self.sample_rate);
+        let delay = base_delay * self.oversampling as usize;
         self.lookahead.resize(delay);
+    }
+
+    /// Core limiter processing loop (rate-agnostic).
+    ///
+    /// Runs on whatever samples are passed in — original rate or oversampled.
+    /// Stereo-linked peak detection, envelope smoothing, lookahead delay,
+    /// gain reduction, and hard-clamp at ceiling.
+    fn process_limiter_core(
+        &mut self,
+        in_l: &[f32],
+        in_r: &[f32],
+        out_l: &mut [f32],
+        out_r: &mut [f32],
+    ) {
+        let len = in_l.len();
+
+        for i in 0..len {
+            let l = in_l[i] as f64;
+            let r = in_r[i] as f64;
+
+            // Smoothed parameters
+            let threshold = self.threshold_smoother.next();
+            let ceiling = self.ceiling_smoother.next();
+            let ceiling_linear = 10.0_f64.powf(ceiling / 20.0);
+
+            // 1. Peak detection on un-delayed input (stereo-linked)
+            let peak = l.abs().max(r.abs());
+            let peak_db = if peak > 1e-6 {
+                20.0 * peak.log10()
+            } else {
+                -120.0
+            };
+
+            // 2. Gain computation (infinite ratio = brickwall)
+            let gain_reduction_db = (threshold - peak_db).min(0.0);
+
+            // 3. Envelope smoothing
+            let gr_magnitude = -gain_reduction_db;
+
+            let smoothed_gr = if self.auto_release {
+                let fast_level = self.fast_env.process(gr_magnitude);
+                let slow_level = self.slow_env.process(gr_magnitude);
+                let blend = fast_level / (fast_level + slow_level + 1e-10);
+                fast_level * blend + slow_level * (1.0 - blend)
+            } else {
+                self.manual_env.process(gr_magnitude)
+            };
+
+            let final_gain_db = -smoothed_gr;
+            let gain_linear = 10.0_f64.powf(final_gain_db / 20.0);
+
+            // 4. Apply gain to lookahead-delayed signal
+            let (delayed_l, delayed_r) = self.lookahead.process(l, r);
+            let limited_l = delayed_l * gain_linear;
+            let limited_r = delayed_r * gain_linear;
+
+            // 5. Hard-clamp at ceiling
+            out_l[i] = (limited_l.clamp(-ceiling_linear, ceiling_linear)) as f32;
+            out_r[i] = (limited_r.clamp(-ceiling_linear, ceiling_linear)) as f32;
+        }
     }
 }
 
@@ -196,6 +270,8 @@ impl AudioBackend for Limiter {
         self.manual_env.reset();
         self.threshold_smoother.reset(self.threshold_db);
         self.ceiling_smoother.reset(self.ceiling_db);
+        self.oversampler_l.reset();
+        self.oversampler_r.reset();
     }
 
     // -- MIDI: no-op for a limiter effect --
@@ -225,53 +301,26 @@ impl AudioBackend for Limiter {
             return;
         }
 
-        for i in 0..len {
-            let l = in_l[i] as f64;
-            let r = in_r[i] as f64;
+        if self.oversampling <= 1 {
+            // No oversampling: process directly at original rate
+            self.process_limiter_core(in_l, in_r, out_l, out_r);
+        } else {
+            // Upsample both channels, run limiter core at high rate, downsample.
+            let os_len = len * self.oversampling as usize;
+            let mut os_in_l = vec![0.0f32; os_len];
+            let mut os_in_r = vec![0.0f32; os_len];
 
-            // Smoothed parameters
-            let threshold = self.threshold_smoother.next();
-            let ceiling = self.ceiling_smoother.next();
-            let ceiling_linear = 10.0_f64.powf(ceiling / 20.0);
+            self.oversampler_l.upsample(in_l, &mut os_in_l);
+            self.oversampler_r.upsample(in_r, &mut os_in_r);
 
-            // 1. Peak detection on un-delayed input (stereo-linked)
-            let peak = l.abs().max(r.abs());
-            let peak_db = if peak > 1e-6 {
-                20.0 * peak.log10()
-            } else {
-                -120.0
-            };
+            // Process limiter core at oversampled rate (stereo-linked)
+            let mut os_out_l = vec![0.0f32; os_len];
+            let mut os_out_r = vec![0.0f32; os_len];
+            self.process_limiter_core(&os_in_l, &os_in_r, &mut os_out_l, &mut os_out_r);
 
-            // 2. Gain computation (infinite ratio = brickwall)
-            let gain_reduction_db = (threshold - peak_db).min(0.0);
-
-            // 3. Envelope smoothing
-            let gr_magnitude = -gain_reduction_db; // positive value
-
-            let smoothed_gr = if self.auto_release {
-                // Dual-envelope auto-release
-                let fast_level = self.fast_env.process(gr_magnitude);
-                let slow_level = self.slow_env.process(gr_magnitude);
-
-                // Blend based on relative envelope levels
-                let blend = fast_level / (fast_level + slow_level + 1e-10);
-                fast_level * blend + slow_level * (1.0 - blend)
-            } else {
-                // Single envelope with user-set release
-                self.manual_env.process(gr_magnitude)
-            };
-
-            let final_gain_db = -smoothed_gr;
-            let gain_linear = 10.0_f64.powf(final_gain_db / 20.0);
-
-            // 4. Apply gain to lookahead-delayed signal
-            let (delayed_l, delayed_r) = self.lookahead.process(l, r);
-            let limited_l = delayed_l * gain_linear;
-            let limited_r = delayed_r * gain_linear;
-
-            // 5. Hard-clamp at ceiling
-            out_l[i] = (limited_l.clamp(-ceiling_linear, ceiling_linear)) as f32;
-            out_r[i] = (limited_r.clamp(-ceiling_linear, ceiling_linear)) as f32;
+            // Downsample back to original rate
+            self.oversampler_l.downsample(&os_out_l, out_l);
+            self.oversampler_r.downsample(&os_out_r, out_r);
         }
     }
 
@@ -284,7 +333,9 @@ impl AudioBackend for Limiter {
     }
 
     fn latency(&self) -> u32 {
-        lookahead_samples(self.lookahead_ms, self.sample_rate) as u32
+        let lookahead = lookahead_samples(self.lookahead_ms, self.sample_rate) as u32;
+        let oversampler = self.oversampler_l.latency() as u32;
+        lookahead + oversampler
     }
 
     // -- Parameters --
@@ -426,13 +477,21 @@ impl AudioBackend for Limiter {
             5 => {
                 // Stepped: 1, 2, or 4
                 let v = value.round() as u32;
-                self.oversampling = if v <= 1 {
+                let new_os = if v <= 1 {
                     1
                 } else if v <= 2 {
                     2
                 } else {
                     4
                 };
+                if new_os != self.oversampling {
+                    self.oversampling = new_os;
+                    let max_block = 8192;
+                    self.oversampler_l = Oversampler::new(new_os as usize, max_block);
+                    self.oversampler_r = Oversampler::new(new_os as usize, max_block);
+                    // Resize lookahead buffer to account for oversampling
+                    self.update_lookahead();
+                }
             }
             6 => self.auto_release = value >= 0.5,
             7 => self.bypass = value >= 0.5,
@@ -544,5 +603,31 @@ mod tests {
         let lim = Limiter::new(44100);
         let info = lim.info();
         assert_eq!(info.backend_type, moonlitt_core::BackendType::PluginHost);
+    }
+
+    #[test]
+    fn test_oversampling_2x_works() {
+        let mut lim = Limiter::new(44100);
+        lim.set_param(0, -6.0); // threshold = -6dB
+        lim.set_param(1, -1.0); // ceiling = -1dB
+        lim.set_param(5, 2.0); // oversampling = 2x
+
+        let ceiling_linear = 10.0_f32.powf(-1.0 / 20.0);
+        let len = 4410;
+        let input: Vec<f32> = (0..len)
+            .map(|i| 2.0 * (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 44100.0).sin())
+            .collect();
+        let mut out_l = vec![0.0f32; len];
+        let mut out_r = vec![0.0f32; len];
+
+        for _ in 0..10 {
+            lim.process_effect(&input, &input, &mut out_l, &mut out_r);
+        }
+        lim.process_effect(&input, &input, &mut out_l, &mut out_r);
+        let max_peak = out_l.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+        assert!(
+            max_peak <= ceiling_linear + 0.02,
+            "2x oversampled limiter peak {max_peak} exceeds ceiling {ceiling_linear}"
+        );
     }
 }
