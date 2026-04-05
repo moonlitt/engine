@@ -40,7 +40,8 @@ pub mod spatial;
     feature = "chorus",
     feature = "flanger",
     feature = "phaser",
-    feature = "tremolo"
+    feature = "tremolo",
+    feature = "pitch-shifter"
 ))]
 pub mod modulation;
 
@@ -105,6 +106,9 @@ pub use modulation::phaser::Phaser;
 
 #[cfg(feature = "tremolo")]
 pub use modulation::tremolo::Tremolo;
+
+#[cfg(feature = "pitch-shifter")]
+pub use modulation::pitch_shifter::PitchShifter;
 
 // utility
 #[cfg(feature = "gain")]

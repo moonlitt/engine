@@ -18,3 +18,6 @@ pub mod tremolo;
 
 #[cfg(feature = "auto-filter")]
 pub mod auto_filter;
+
+#[cfg(feature = "pitch-shifter")]
+pub mod pitch_shifter;
