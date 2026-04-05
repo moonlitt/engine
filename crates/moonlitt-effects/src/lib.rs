@@ -25,11 +25,11 @@
 
 pub mod common;
 
-#[cfg(any(feature = "compressor", feature = "limiter", feature = "gate", feature = "deesser"))]
+#[cfg(any(feature = "compressor", feature = "limiter", feature = "gate", feature = "deesser", feature = "multiband-compressor"))]
 pub mod dynamics;
 
 // eq::biquad is also used by gate and deesser for sidechain filters
-#[cfg(any(feature = "parametric-eq", feature = "gate", feature = "deesser"))]
+#[cfg(any(feature = "parametric-eq", feature = "gate", feature = "deesser", feature = "multiband-compressor"))]
 pub mod eq;
 
 #[cfg(any(feature = "reverb", feature = "convolver"))]
@@ -66,6 +66,9 @@ pub use dynamics::gate::Gate;
 
 #[cfg(feature = "deesser")]
 pub use dynamics::deesser::DeEsser;
+
+#[cfg(feature = "multiband-compressor")]
+pub use dynamics::multiband_compressor::MultibandCompressor;
 
 // eq
 #[cfg(feature = "parametric-eq")]

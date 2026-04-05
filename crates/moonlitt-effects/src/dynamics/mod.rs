@@ -11,3 +11,6 @@ pub mod gate;
 
 #[cfg(feature = "deesser")]
 pub mod deesser;
+
+#[cfg(feature = "multiband-compressor")]
+pub mod multiband_compressor;

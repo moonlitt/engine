@@ -4,6 +4,7 @@
 //! gain-reduction tracking. All arithmetic in f64.
 
 /// Exponential envelope follower with independent attack/release.
+#[derive(Clone)]
 pub struct EnvelopeFollower {
     sample_rate: f64,
     attack_coeff: f64,
