@@ -1,10 +1,14 @@
 import { useWebSocket } from './hooks/useWebSocket';
+import { useTransportShortcuts } from './hooks/useTransportShortcuts';
+import { ArrangeView } from './components/ArrangeView';
 import { Mixer } from './components/Mixer';
 import { TransportBar } from './components/TransportBar';
+import { TrackInspector } from './components/TrackInspector';
 import { VirtualKeyboard } from './components/VirtualKeyboard';
 
 export function App() {
   useWebSocket();
+  useTransportShortcuts();
 
   return (
     <div className="h-screen flex flex-col bg-daw-bg text-[#e0e0e0] font-sans text-sm">
@@ -14,14 +18,10 @@ export function App() {
       {/* Main Area */}
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 bg-daw-surface">
-          {/* Arrange View placeholder */}
-          <div className="flex items-center justify-center h-full text-[#555]">
-            Arrange View
-          </div>
+          <ArrangeView />
         </div>
         <div className="w-[220px] bg-daw-panel border-l border-daw-border p-3">
-          {/* Track Inspector placeholder */}
-          <div className="text-[#555] text-xs">Track Inspector</div>
+          <TrackInspector />
         </div>
       </div>
 
