@@ -2,3 +2,7 @@
 **/target
 Cargo.lock
 tests/sf2-spec-test/
+
+# Node.js
+node_modules/
+dist/

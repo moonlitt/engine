@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @moonlitt/web dev",
+    "dev:server": "pnpm --filter @moonlitt/server dev",
+    "build": "pnpm -r build"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  }
+}
