@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 moonlitt-core = { path = "../moonlitt-core" }
 rustfft = { version = "6", optional = true }
+wide = "0.7"
 
 [dev-dependencies]
 approx = "0.5"

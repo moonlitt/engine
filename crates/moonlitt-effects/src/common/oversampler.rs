@@ -14,6 +14,7 @@
 //! ```
 
 use std::f64::consts::PI;
+use wide::f64x4;
 
 // ---------------------------------------------------------------------------
 // Half-band FIR filter design (Kaiser-windowed sinc)
@@ -102,11 +103,15 @@ fn design_halfband_taps(half_order: usize, beta: f64) -> Vec<f64> {
 struct HalfBandStage {
     /// Full FIR taps (most are zero; half-band property).
     taps: Vec<f64>,
-    /// Delay line for the filter. Length = filter_len.
+    /// Delay line for the filter. Length = `filter_len * 2` (doubled for
+    /// contiguous SIMD reads). The first `filter_len` elements are the
+    /// canonical ring buffer; the second half mirrors them so that a read
+    /// starting at any position can load `filter_len` contiguous elements
+    /// without wrapping.
     delay: Vec<f64>,
     /// Write position into delay line (next position to write).
     write_pos: usize,
-    /// Total filter length.
+    /// Total filter length (number of taps).
     filter_len: usize,
 }
 
@@ -122,7 +127,9 @@ impl HalfBandStage {
 
         Self {
             taps,
-            delay: vec![0.0; filter_len],
+            // Doubled buffer: canonical region [0..filter_len) is mirrored
+            // at [filter_len..filter_len*2).
+            delay: vec![0.0; filter_len * 2],
             write_pos: 0,
             filter_len,
         }
@@ -131,39 +138,56 @@ impl HalfBandStage {
     /// Push a sample into the delay line.
     #[inline]
     fn push(&mut self, sample: f64) {
+        // Write to both canonical and mirror regions so that any contiguous
+        // read of `filter_len` elements starting in [0..filter_len) is valid.
         self.delay[self.write_pos] = sample;
+        self.delay[self.write_pos + self.filter_len] = sample;
         self.write_pos += 1;
         if self.write_pos >= self.filter_len {
             self.write_pos = 0;
         }
     }
 
-    /// Compute one filter output from current delay line contents.
+    /// Compute one filter output from current delay line contents using SIMD.
     ///
-    /// Convolves the delay line with the FIR taps. The most recent sample
-    /// is at `write_pos - 1` and corresponds to tap[0]. We iterate the
-    /// taps from newest to oldest.
+    /// The taps are symmetric (linear-phase half-band), so the inner product
+    /// `sum(delay[wp-1-i] * taps[i])` equals `sum(delay[wp+j] * taps[j])`
+    /// where j = 0..N-1 (ascending from the oldest sample at `write_pos`).
+    ///
+    /// With the doubled delay buffer, `delay[write_pos..write_pos+filter_len]`
+    /// is always a valid contiguous slice, enabling f64x4 SIMD loads.
     #[inline]
     fn filter_output(&self) -> f64 {
-        let mut out = 0.0;
-        // The most recent sample is at (write_pos - 1), which should
-        // multiply with taps[0]. The oldest sample at (write_pos) should
-        // multiply with taps[filter_len - 1].
-        let mut pos = if self.write_pos == 0 {
-            self.filter_len - 1
-        } else {
-            self.write_pos - 1
-        };
+        let base = self.write_pos; // oldest sample
+        let n = self.filter_len;
 
-        for tap in &self.taps {
-            out += self.delay[pos] * tap;
-            if pos == 0 {
-                pos = self.filter_len - 1;
-            } else {
-                pos -= 1;
-            }
+        // Process 4 elements at a time with f64x4 SIMD
+        let chunks = n / 4;
+        let remainder = n % 4;
+
+        let mut sum = f64x4::ZERO;
+        for c in 0..chunks {
+            let off = c * 4;
+            let d = f64x4::new(
+                self.delay[base + off..base + off + 4]
+                    .try_into()
+                    .unwrap(),
+            );
+            let t = f64x4::new(
+                self.taps[off..off + 4].try_into().unwrap(),
+            );
+            sum += d * t;
         }
-        out
+
+        let mut result = sum.reduce_add();
+
+        // Handle remainder (e.g. 25 taps = 6*4 + 1)
+        let rem_start = chunks * 4;
+        for i in 0..remainder {
+            result += self.delay[base + rem_start + i] * self.taps[rem_start + i];
+        }
+
+        result
     }
 
     /// Upsample: for each input sample, produce 2 output samples.
@@ -209,6 +233,30 @@ impl HalfBandStage {
     fn reset(&mut self) {
         self.delay.fill(0.0);
         self.write_pos = 0;
+    }
+
+    /// Scalar reference implementation of `filter_output` for testing.
+    ///
+    /// Uses the original modular-indexing algorithm. Kept as a reference to
+    /// verify SIMD correctness.
+    #[cfg(test)]
+    fn filter_output_scalar(&self) -> f64 {
+        let mut out = 0.0;
+        let mut pos = if self.write_pos == 0 {
+            self.filter_len - 1
+        } else {
+            self.write_pos - 1
+        };
+
+        for tap in &self.taps {
+            out += self.delay[pos] * tap;
+            if pos == 0 {
+                pos = self.filter_len - 1;
+            } else {
+                pos -= 1;
+            }
+        }
+        out
     }
 }
 
@@ -675,5 +723,34 @@ mod tests {
             "4x oversampling: relative RMS error {relative_error:.6} too high for \
              100Hz sine (delay={best_delay}, reported={reported})"
         );
+    }
+
+    #[test]
+    fn simd_fir_matches_scalar() {
+        // Feed diverse samples through a HalfBandStage and verify the SIMD
+        // filter_output matches the scalar reference at every step.
+        let half_order = 6;
+        let beta = 10.0;
+
+        let mut stage_simd = HalfBandStage::new(half_order, beta);
+        let mut stage_scalar = HalfBandStage::new(half_order, beta);
+
+        // Push samples and compare filter output at each step
+        let num_samples = 200;
+        for i in 0..num_samples {
+            let sample = (i as f64 * 0.37).sin() + (i as f64 * 1.13).cos() * 0.5;
+            stage_simd.push(sample);
+            stage_scalar.push(sample);
+
+            let simd_out = stage_simd.filter_output();
+            let scalar_out = stage_scalar.filter_output_scalar();
+
+            let diff = (simd_out - scalar_out).abs();
+            assert!(
+                diff < 1e-12,
+                "SIMD/scalar mismatch at sample {i}: simd={simd_out}, \
+                 scalar={scalar_out}, diff={diff}"
+            );
+        }
     }
 }

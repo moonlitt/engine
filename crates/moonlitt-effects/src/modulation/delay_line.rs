@@ -7,6 +7,7 @@
 //! Also provides a linear interpolation fallback for non-critical paths.
 
 use std::f64::consts::PI;
+use wide::f32x4;
 
 // ---------------------------------------------------------------------------
 // Bessel I₀ — modified Bessel function of the first kind, order 0
@@ -144,6 +145,10 @@ impl FractionalDelayLine {
     /// Read from the delay line at a fractional delay using sinc interpolation.
     ///
     /// `delay_samples` is clamped to `[0, max_delay_samples]`.
+    ///
+    /// Uses f32x4 SIMD for the 8-tap inner product when the read region does
+    /// not wrap around the buffer boundary (common case). Falls back to scalar
+    /// for the rare wrap-around case.
     pub fn read(&self, delay_samples: f64) -> f32 {
         let delay = delay_samples.max(0.0).min(self.max_delay_samples as f64);
         let delay_int = delay.floor() as usize;
@@ -158,14 +163,63 @@ impl FractionalDelayLine {
         let half = self.num_points / 2;
         let buf_len = self.buffer.len();
 
+        // The 8 buffer positions accessed are contiguous descending:
+        //   pos(j) = (base_raw - j) % buf_len, for j = 0..num_points-1
+        // where base_raw = write_pos + buf_len - 1 - delay_int + half - 1
+        //
+        // For ascending SIMD loads, we read from start = pos(num_points-1)
+        // upward: buf[start..start+num_points], paired with the kernel reversed.
+        let base_raw =
+            self.write_pos + buf_len - 1 - delay_int + half - 1;
+        // start = pos of oldest tap (j = num_points - 1)
+        let start = (base_raw + buf_len - (self.num_points - 1)) % buf_len;
+
+        // SIMD fast path: 8 taps = 2 × f32x4 when reads are contiguous
+        if self.num_points == 8 && start + 8 <= buf_len {
+            // Load 8 buffer samples ascending
+            let s0 = f32x4::new(
+                self.buffer[start..start + 4].try_into().unwrap(),
+            );
+            let s1 = f32x4::new(
+                self.buffer[start + 4..start + 8].try_into().unwrap(),
+            );
+            // Load kernel reversed (ascending buffer ↔ descending kernel)
+            let k0 = f32x4::new([kernel[7], kernel[6], kernel[5], kernel[4]]);
+            let k1 = f32x4::new([kernel[3], kernel[2], kernel[1], kernel[0]]);
+
+            let prod0 = k0 * s0;
+            let prod1 = k1 * s1;
+            return (prod0 + prod1).reduce_add();
+        }
+
+        // Scalar fallback for wrap-around or non-8-tap configurations
         let mut sum = 0.0f32;
         for (j, &k) in kernel.iter().enumerate() {
-            // Most recent sample is at write_pos - 1 (wrapped).
-            // A delay of N reads from write_pos - 1 - N (wrapped).
-            // The sinc kernel is indexed so that increasing j corresponds to
-            // increasing delay (further back in time).  j = half-1 is the
-            // centre tap for frac=0; when frac > 0 the peak shifts to j > half-1,
-            // reading from an older sample as intended.
+            let pos = (base_raw - j) % buf_len;
+            sum += self.buffer[pos] * k;
+        }
+        sum
+    }
+
+    /// Scalar reference implementation of `read` for testing.
+    ///
+    /// Uses the original modular-indexing algorithm without SIMD.
+    #[cfg(test)]
+    fn read_scalar(&self, delay_samples: f64) -> f32 {
+        let delay = delay_samples.max(0.0).min(self.max_delay_samples as f64);
+        let delay_int = delay.floor() as usize;
+        let frac = delay - delay_int as f64;
+
+        let frac_idx = (frac * self.sinc_table.oversample as f64) as usize;
+        let frac_idx = frac_idx.min(self.sinc_table.oversample - 1);
+
+        let kernel =
+            &self.sinc_table.table[frac_idx * self.num_points..][..self.num_points];
+        let half = self.num_points / 2;
+        let buf_len = self.buffer.len();
+
+        let mut sum = 0.0f32;
+        for (j, &k) in kernel.iter().enumerate() {
             let pos =
                 (self.write_pos + buf_len - 1 - delay_int + half - 1 - j) % buf_len;
             sum += self.buffer[pos] * k;
@@ -305,5 +359,62 @@ mod tests {
             dl.max_delay_samples() >= 441,
             "10ms @ 44100 = 441 samples"
         );
+    }
+
+    #[test]
+    fn simd_sinc_matches_scalar() {
+        // Feed a mix of signals through the delay line and verify the SIMD
+        // read path matches the scalar reference at every fractional delay.
+        let sr = 44100u32;
+        let mut dl = FractionalDelayLine::new(100.0, sr, 8);
+        let num_samples = 2000;
+
+        // Fill buffer with a complex signal
+        for i in 0..num_samples {
+            let sample = (i as f32 * 0.037).sin()
+                + (i as f32 * 0.113).cos() * 0.5
+                + (i as f32 * 0.29).sin() * 0.25;
+            dl.write(sample);
+        }
+
+        // Test various fractional delays, including values that exercise
+        // different fractional LUT indices and positions near buffer wrap
+        let test_delays = [
+            0.0, 0.5, 1.0, 1.3, 5.7, 10.0, 10.5, 20.3, 50.0, 99.9,
+            200.0, 441.0, 441.5, 442.0, 442.7,
+        ];
+
+        for &delay in &test_delays {
+            let simd_val = dl.read(delay);
+            let scalar_val = dl.read_scalar(delay);
+            let diff = (simd_val - scalar_val).abs();
+            assert!(
+                diff < 1e-6,
+                "SIMD/scalar mismatch at delay={delay}: simd={simd_val}, \
+                 scalar={scalar_val}, diff={diff}"
+            );
+        }
+
+        // Also test near the buffer wrap boundary by writing more samples
+        // to advance write_pos close to 0
+        let buf_len = dl.buffer.len();
+        let remaining = buf_len - dl.write_pos;
+        for i in 0..remaining + 20 {
+            let sample = (i as f32 * 0.7).sin();
+            dl.write(sample);
+        }
+
+        // Now write_pos is near 20, so reads at large delays will access
+        // positions near and across the wrap boundary
+        for &delay in &[5.3, 10.7, 50.0, 100.0, 200.5, 400.0] {
+            let simd_val = dl.read(delay);
+            let scalar_val = dl.read_scalar(delay);
+            let diff = (simd_val - scalar_val).abs();
+            assert!(
+                diff < 1e-6,
+                "SIMD/scalar mismatch near wrap at delay={delay}: \
+                 simd={simd_val}, scalar={scalar_val}, diff={diff}"
+            );
+        }
     }
 }
