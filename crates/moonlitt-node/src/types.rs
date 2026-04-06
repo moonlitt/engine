@@ -11,7 +11,6 @@ pub struct PluginInfo {
 }
 
 /// Peak metering levels for a stereo channel.
-#[allow(dead_code)]
 #[napi(object)]
 pub struct TrackLevels {
     pub peak_l: f64,

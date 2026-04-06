@@ -24,8 +24,14 @@ pub struct LevelMeter {
     true_peak_right: Arc<AtomicU32>,
 }
 
+impl Default for LevelMeter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LevelMeter {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             peak_left: Arc::new(AtomicU32::new(0)),
             peak_right: Arc::new(AtomicU32::new(0)),
@@ -312,7 +318,7 @@ impl Mixer {
     pub fn add_track(&mut self, backend: Box<dyn AudioBackend>, channel_mask: u16) -> u32 {
         let id = self.next_track_id;
         self.next_track_id += 1;
-        self.add_track_inner(id, backend, None, channel_mask);
+        self.add_track_inner(id, backend, None, channel_mask, LevelMeter::new());
         id
     }
 
@@ -320,7 +326,7 @@ impl Mixer {
     pub fn add_track_with_source(&mut self, backend: Box<dyn AudioBackend>, source_path: Option<String>, channel_mask: u16) -> u32 {
         let id = self.next_track_id;
         self.next_track_id += 1;
-        self.add_track_inner(id, backend, source_path, channel_mask);
+        self.add_track_inner(id, backend, source_path, channel_mask, LevelMeter::new());
         id
     }
 
@@ -329,10 +335,18 @@ impl Mixer {
         if id >= self.next_track_id {
             self.next_track_id = id + 1;
         }
-        self.add_track_inner(id, backend, source_path, channel_mask);
+        self.add_track_inner(id, backend, source_path, channel_mask, LevelMeter::new());
     }
 
-    fn add_track_inner(&mut self, id: u32, backend: Box<dyn AudioBackend>, source_path: Option<String>, channel_mask: u16) {
+    /// Add a track with a pre-built meter (for sharing with the main thread via Arc).
+    pub fn add_track_with_meter(&mut self, id: u32, backend: Box<dyn AudioBackend>, channel_mask: u16, meter: LevelMeter) {
+        if id >= self.next_track_id {
+            self.next_track_id = id + 1;
+        }
+        self.add_track_inner(id, backend, None, channel_mask, meter);
+    }
+
+    fn add_track_inner(&mut self, id: u32, backend: Box<dyn AudioBackend>, source_path: Option<String>, channel_mask: u16, meter: LevelMeter) {
         self.tracks.push(Track {
             id,
             backend,
@@ -355,7 +369,7 @@ impl Mixer {
             sidechain_buf_l: vec![0.0; self.buffer_size],
             sidechain_buf_r: vec![0.0; self.buffer_size],
             delay_line: DelayLine::new(),
-            meter: LevelMeter::new(),
+            meter,
         });
         self.rebuild_render_order();
     }
@@ -1059,6 +1073,21 @@ impl Mixer {
     /// Get a track's meter by ID.
     pub fn track_meter(&self, track_id: u32) -> Option<&LevelMeter> {
         self.tracks.iter().find(|t| t.id == track_id).map(|t| &t.meter)
+    }
+
+    /// Clone the master meter handle (Arc-backed, for cross-thread sharing).
+    pub fn clone_master_meter(&self) -> LevelMeter {
+        self.master.meter.clone()
+    }
+
+    /// Clone all track meter handles as (track_id, meter) pairs.
+    pub fn clone_track_meters(&self) -> Vec<(u32, LevelMeter)> {
+        self.tracks.iter().map(|t| (t.id, t.meter.clone())).collect()
+    }
+
+    /// Number of tracks currently in the mixer.
+    pub fn track_count(&self) -> u32 {
+        self.tracks.len() as u32
     }
 
     /// Enable or disable dithering.

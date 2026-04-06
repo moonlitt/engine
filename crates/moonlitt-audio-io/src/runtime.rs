@@ -1,9 +1,10 @@
 use crate::audio_output::AudioOutput;
 use crate::midi_input::{MidiDeviceInfo, MidiInputConnection};
 use moonlitt_core::{AudioBackend, AudioEvent, TimedEvent};
-use moonlitt_mixer::Mixer;
+use moonlitt_mixer::{LevelMeter, Mixer};
 use moonlitt_session::{AudioThread, MixerCommand, Transport};
 use rtrb::RingBuffer;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
@@ -26,6 +27,11 @@ pub struct Runtime {
     next_track_id: u32,
     next_bus_id: u32,
     next_insert_id: u32,
+    /// Cloned meter handles for cross-thread reading.
+    /// The audio thread writes via the mixer's meters (same Arc<AtomicU32>),
+    /// the main thread reads via these clones.
+    master_meter: LevelMeter,
+    track_meters: HashMap<u32, LevelMeter>,
 }
 
 impl Runtime {
@@ -58,6 +64,15 @@ impl Runtime {
         let next_bus_id = mixer.next_bus_id();
         let next_insert_id = mixer.next_insert_id();
 
+        // Clone meter handles BEFORE moving the mixer to the audio thread.
+        // LevelMeter uses Arc<AtomicU32> internally, so clones share the same
+        // atomic storage — the audio thread writes, the main thread reads.
+        let master_meter = mixer.clone_master_meter();
+        let track_meters: HashMap<u32, LevelMeter> = mixer
+            .clone_track_meters()
+            .into_iter()
+            .collect();
+
         // Ring buffer capacity: 1024 events. Sufficient for real-time MIDI at
         // typical rates; events are drained every audio callback (~5ms).
         let (producer, consumer) = RingBuffer::new(1024);
@@ -87,6 +102,8 @@ impl Runtime {
             next_track_id,
             next_bus_id,
             next_insert_id,
+            master_meter,
+            track_meters,
         })
     }
 
@@ -263,14 +280,21 @@ impl Runtime {
     pub fn add_track(&mut self, backend: Box<dyn AudioBackend>, channel_mask: u16) -> u32 {
         let id = self.next_track_id;
         self.next_track_id += 1;
+
+        // Create meter on the main thread, clone it for the audio thread.
+        let meter = LevelMeter::new();
+        let meter_clone = meter.clone();
+        self.track_meters.insert(id, meter);
+
         let _ = self.command_tx.send(Box::new(move |mixer| {
-            mixer.add_track_with_id(id, backend, None, channel_mask);
+            mixer.add_track_with_meter(id, backend, channel_mask, meter_clone);
         }));
         id
     }
 
     /// Remove a track at runtime. Notes are silenced before removal.
     pub fn remove_track(&mut self, track_id: u32) {
+        self.track_meters.remove(&track_id);
         let _ = self.command_tx.send(Box::new(move |mixer| {
             if let Some(track) = mixer.track_mut(track_id) {
                 track.backend.all_notes_off();
@@ -304,6 +328,27 @@ impl Runtime {
             mixer.add_send_bus_with_id(id, backend, None);
         }));
         id
+    }
+
+    // --- Metering (lock-free atomic reads) ---
+
+    /// Read peak levels for a track. Returns (peak_l, peak_r) in linear scale.
+    /// Returns (0.0, 0.0) if the track ID is unknown.
+    pub fn track_levels(&self, track_id: u32) -> (f32, f32) {
+        self.track_meters
+            .get(&track_id)
+            .map(|m| m.peak())
+            .unwrap_or((0.0, 0.0))
+    }
+
+    /// Read peak levels for the master bus. Returns (peak_l, peak_r) in linear scale.
+    pub fn master_levels(&self) -> (f32, f32) {
+        self.master_meter.peak()
+    }
+
+    /// Number of tracks whose meters are available.
+    pub fn track_count(&self) -> u32 {
+        self.track_meters.len() as u32
     }
 
     // --- Transport ---

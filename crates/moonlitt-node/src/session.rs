@@ -8,7 +8,7 @@ use napi::Result;
 use napi_derive::napi;
 
 use crate::engine::Backend;
-use crate::types::MidiDevice;
+use crate::types::{MidiDevice, TrackLevels};
 
 /// Audio session — manages real-time playback, tracks, and mixing.
 ///
@@ -327,6 +327,35 @@ impl Session {
     ) -> Result<()> {
         self.rt_mut()?.set_send_bus_param(bus_id, param_id, value as f32);
         Ok(())
+    }
+
+    // --- Metering ---
+
+    /// Read peak levels for a track (linear scale, 0.0 to 1.0+).
+    /// Returns { peakL, peakR }. Returns zeros if track ID is unknown.
+    #[napi]
+    pub fn track_levels(&self, track_id: u32) -> Result<TrackLevels> {
+        let (l, r) = self.rt()?.track_levels(track_id);
+        Ok(TrackLevels {
+            peak_l: l as f64,
+            peak_r: r as f64,
+        })
+    }
+
+    /// Read peak levels for the master bus (linear scale, 0.0 to 1.0+).
+    #[napi]
+    pub fn master_levels(&self) -> Result<TrackLevels> {
+        let (l, r) = self.rt()?.master_levels();
+        Ok(TrackLevels {
+            peak_l: l as f64,
+            peak_r: r as f64,
+        })
+    }
+
+    /// Number of tracks in the mixer.
+    #[napi]
+    pub fn track_count(&self) -> Result<u32> {
+        Ok(self.rt()?.track_count())
     }
 
     // --- MIDI devices ---
