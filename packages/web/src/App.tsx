@@ -1,9 +1,19 @@
+import { useWebSocket } from './hooks/useWebSocket';
+import { useSessionStore } from './stores/session';
+
 export function App() {
+  useWebSocket();
+  const connected = useSessionStore((s) => s.connected);
+
   return (
     <div className="h-screen flex flex-col bg-daw-bg text-[#e0e0e0] font-sans text-sm">
       {/* Transport Bar */}
       <div className="h-12 bg-daw-panel border-b border-daw-border flex items-center px-4">
         <span className="text-daw-accent font-bold">moonlitt</span>
+          <div className="ml-3 flex items-center gap-1.5">
+            <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-red-400'}`} />
+            <span className="text-xs text-[#888]">{connected ? 'connected' : 'offline'}</span>
+          </div>
       </div>
 
       {/* Main Area */}
