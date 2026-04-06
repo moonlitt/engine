@@ -20,7 +20,7 @@ impl DbLut {
     pub fn new() -> Self {
         let db_min = -120.0f64;
         let db_max = 24.0f64;
-        let num_entries = 4096;
+        let num_entries = 65536;
         let step = (db_max - db_min) / (num_entries - 1) as f64;
         let inv_step = 1.0 / step;
         let table: Vec<f64> = (0..num_entries)

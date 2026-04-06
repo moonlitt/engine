@@ -10,7 +10,10 @@
       "Bash(rustc /tmp/debug_sinc.rs -o /tmp/debug_sinc)",
       "Bash(/tmp/debug_sinc)",
       "Bash(cargo build:*)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(git status:*)",
+      "Bash(grep -r \"limiter\\\\|gate\\\\|deesser\\\\|delay\\\\|chorus\\\\|flanger\\\\|phaser\\\\|tremolo\\\\|gain\\\\|stereo_width\\\\|saturator\\\\|bitcrusher\\\\|multiband_compressor\\\\|auto_filter\\\\|pitch_shifter\" crates/moonlitt-test-suite/tests/*.rs)",
+      "Bash(grep:*)"
     ]
   }
 }
