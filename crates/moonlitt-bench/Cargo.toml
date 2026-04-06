@@ -1,0 +1,14 @@
+[package]
+name = "moonlitt-bench"
+version = "0.1.0"
+edition = "2021"
+
+[[bench]]
+name = "effects_bench"
+harness = false
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+moonlitt-effects = { path = "../moonlitt-effects" }
+moonlitt-mixer = { path = "../moonlitt-mixer" }
+moonlitt-core = { path = "../moonlitt-core" }

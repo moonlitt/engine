@@ -15,6 +15,7 @@
 use std::f64::consts::PI;
 
 use super::envelope::EnvelopeFollower;
+use crate::common::DbLut;
 use moonlitt_core::{AudioBackend, BackendInfo, BackendType, ParamFlags, ParamInfo};
 
 // ---------------------------------------------------------------------------
@@ -176,6 +177,9 @@ pub struct Compressor {
     sidechain_ext_l: Vec<f32>,
     sidechain_ext_r: Vec<f32>,
     use_external_sidechain: bool,
+
+    // dB→linear lookup table
+    db_lut: DbLut,
 }
 
 impl Compressor {
@@ -205,6 +209,8 @@ impl Compressor {
             sidechain_ext_l: Vec::new(),
             sidechain_ext_r: Vec::new(),
             use_external_sidechain: false,
+
+            db_lut: DbLut::new(),
         };
 
         comp.update_envelope_coeffs();
@@ -414,9 +420,9 @@ impl AudioBackend for Compressor {
                 &mut self.envelope_right,
             );
 
-            // Convert gain from dB to linear
-            let gain_l = 10.0_f64.powf(gain_db_l / 20.0);
-            let gain_r = 10.0_f64.powf(gain_db_r / 20.0);
+            // Convert gain from dB to linear (LUT: ~5 cycles vs powf: ~100 cycles)
+            let gain_l = self.db_lut.db_to_linear(gain_db_l);
+            let gain_r = self.db_lut.db_to_linear(gain_db_r);
 
             // Apply gain to the original (unfiltered) input
             out_l[i] = (l * gain_l) as f32;

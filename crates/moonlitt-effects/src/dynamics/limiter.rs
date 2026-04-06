@@ -16,6 +16,7 @@
 use super::envelope::EnvelopeFollower;
 use crate::common::oversampler::Oversampler;
 use crate::common::param_smoother::ParamSmoother;
+use crate::common::DbLut;
 use moonlitt_core::{AudioBackend, BackendInfo, BackendType, ParamFlags, ParamInfo};
 
 // ---------------------------------------------------------------------------
@@ -110,6 +111,9 @@ pub struct Limiter {
     // Oversamplers (one per channel)
     oversampler_l: Oversampler,
     oversampler_r: Oversampler,
+
+    // dB→linear lookup table
+    db_lut: DbLut,
 }
 
 /// Compute lookahead delay in samples from milliseconds and sample rate.
@@ -161,6 +165,8 @@ impl Limiter {
 
             oversampler_l: Oversampler::new(1, max_block),
             oversampler_r: Oversampler::new(1, max_block),
+
+            db_lut: DbLut::new(),
         }
     }
 
@@ -206,7 +212,7 @@ impl Limiter {
             // Smoothed parameters
             let threshold = self.threshold_smoother.next();
             let ceiling = self.ceiling_smoother.next();
-            let ceiling_linear = 10.0_f64.powf(ceiling / 20.0);
+            let ceiling_linear = self.db_lut.db_to_linear(ceiling);
 
             // 1. Peak detection on un-delayed input (stereo-linked)
             let peak = l.abs().max(r.abs());
@@ -232,7 +238,7 @@ impl Limiter {
             };
 
             let final_gain_db = -smoothed_gr;
-            let gain_linear = 10.0_f64.powf(final_gain_db / 20.0);
+            let gain_linear = self.db_lut.db_to_linear(final_gain_db);
 
             // 4. Apply gain to lookahead-delayed signal
             let (delayed_l, delayed_r) = self.lookahead.process(l, r);

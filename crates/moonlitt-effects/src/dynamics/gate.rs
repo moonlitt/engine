@@ -19,6 +19,7 @@
 //! 5. Apply gain to the original (unfiltered) input
 
 use super::envelope::EnvelopeFollower;
+use crate::common::DbLut;
 use crate::eq::biquad::{Biquad, BiquadCoeffs, FilterType};
 use moonlitt_core::{AudioBackend, BackendInfo, BackendType, ParamFlags, ParamInfo};
 
@@ -128,6 +129,9 @@ pub struct Gate {
     sidechain_ext_l: Vec<f32>,
     sidechain_ext_r: Vec<f32>,
     use_external_sidechain: bool,
+
+    // dB→linear lookup table
+    db_lut: DbLut,
 }
 
 impl Gate {
@@ -165,6 +169,8 @@ impl Gate {
             sidechain_ext_l: Vec::new(),
             sidechain_ext_r: Vec::new(),
             use_external_sidechain: false,
+
+            db_lut: DbLut::new(),
         };
 
         gate.update_envelope_coeffs();
@@ -362,7 +368,7 @@ impl AudioBackend for Gate {
 
             // Use envelope follower to smooth the gain transition.
             // We feed the linear target to the envelope and get a smoothed value.
-            let target_linear = db_to_linear(target_gain_db);
+            let target_linear = self.db_lut.db_to_linear(target_gain_db);
             let smoothed_linear = self.envelope.process(target_linear);
 
             // Convert back to dB for state tracking
@@ -589,6 +595,7 @@ impl AudioBackend for Gate {
 // ---------------------------------------------------------------------------
 
 #[inline]
+#[allow(dead_code)]
 fn db_to_linear(db: f64) -> f64 {
     10.0_f64.powf(db / 20.0)
 }

@@ -16,6 +16,7 @@ members = [
     "crates/moonlitt-mixer",
     "crates/moonlitt-session",
     "crates/moonlitt-node",
+    "crates/moonlitt-bench",
 ]
 
 [workspace.package]

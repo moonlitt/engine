@@ -20,6 +20,7 @@
 //!   +0 threshold_db, +1 ratio, +2 attack_ms, +3 release_ms, +4 makeup_db
 
 use super::envelope::EnvelopeFollower;
+use crate::common::DbLut;
 use crate::eq::biquad::{Biquad, BiquadCoeffs, FilterType};
 use moonlitt_core::{AudioBackend, BackendInfo, BackendType, ParamFlags, ParamInfo};
 
@@ -149,13 +150,14 @@ impl BandCompressor {
 
     /// Process one stereo sample pair and return the compressed output.
     #[inline]
-    fn process(&mut self, l: f64, r: f64) -> (f64, f64) {
+    fn process(&mut self, l: f64, r: f64, db_lut: &DbLut) -> (f64, f64) {
         let out_l = Self::process_channel(
             l,
             self.threshold_db,
             self.ratio,
             self.makeup_db,
             &mut self.envelope_l,
+            db_lut,
         );
         let out_r = Self::process_channel(
             r,
@@ -163,6 +165,7 @@ impl BandCompressor {
             self.ratio,
             self.makeup_db,
             &mut self.envelope_r,
+            db_lut,
         );
         (out_l, out_r)
     }
@@ -175,6 +178,7 @@ impl BandCompressor {
         ratio: f64,
         makeup_db: f64,
         envelope: &mut EnvelopeFollower,
+        db_lut: &DbLut,
     ) -> f64 {
         let detected = sample.abs();
         let level_db = amp_to_db(detected);
@@ -182,7 +186,7 @@ impl BandCompressor {
         let gr_mag = (-gr).max(0.0);
         let smoothed_gr = envelope.process(gr_mag);
         let total_db = -smoothed_gr + makeup_db;
-        let gain = db_to_amp(total_db);
+        let gain = db_lut.db_to_linear(total_db);
         sample * gain
     }
 
@@ -208,6 +212,7 @@ fn amp_to_db(amp: f64) -> f64 {
 
 /// Convert dB to linear amplitude.
 #[inline]
+#[allow(dead_code)]
 fn db_to_amp(db: f64) -> f64 {
     10.0_f64.powf(db / 20.0)
 }
@@ -243,6 +248,9 @@ pub struct MultibandCompressor {
 
     // Per-band compressors
     bands: Vec<BandCompressor>,
+
+    // dB→linear lookup table
+    db_lut: DbLut,
 }
 
 impl MultibandCompressor {
@@ -267,6 +275,7 @@ impl MultibandCompressor {
             crossover_freqs: DEFAULT_CROSSOVER_FREQS,
             crossovers,
             bands,
+            db_lut: DbLut::new(),
         }
     }
 
@@ -302,10 +311,11 @@ impl MultibandCompressor {
     #[allow(clippy::needless_range_loop)]
     fn process_sample(&mut self, l: f64, r: f64) -> (f64, f64) {
         let n = self.band_count;
+        let db_lut = &self.db_lut;
 
         if n == 1 {
             // Single band: no crossover, just compress
-            return self.bands[0].process(l, r);
+            return self.bands[0].process(l, r, db_lut);
         }
 
         // Split into bands using cascaded crossovers.
@@ -332,7 +342,7 @@ impl MultibandCompressor {
         let mut sum_l = 0.0;
         let mut sum_r = 0.0;
         for i in 0..n {
-            let (cl, cr) = self.bands[i].process(band_signals[i].0, band_signals[i].1);
+            let (cl, cr) = self.bands[i].process(band_signals[i].0, band_signals[i].1, db_lut);
             sum_l += cl;
             sum_r += cr;
         }
@@ -394,7 +404,7 @@ impl AudioBackend for MultibandCompressor {
             return;
         }
 
-        let output_gain = db_to_amp(self.output_db);
+        let output_gain = self.db_lut.db_to_linear(self.output_db);
 
         for i in 0..len {
             let l = in_l[i] as f64;
