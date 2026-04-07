@@ -99,7 +99,7 @@ let addon: NativeAddon | null = null;
 try {
   // napi-rs build output -- platform-specific .node binary with JS wrapper.
   // After `cd crates/moonlitt-node && npx napi build`, this produces index.js + .node file.
-  const imported = await import('../../crates/moonlitt-node/index.js');
+  const imported = await import('../../../crates/moonlitt-node/index.js');
   addon = imported as unknown as NativeAddon;
 } catch {
   console.warn('[engine] moonlitt-node addon not found. Running in UI-only mode.');

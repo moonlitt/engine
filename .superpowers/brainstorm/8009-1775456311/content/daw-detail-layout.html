@@ -1,0 +1,308 @@
+<h2>Phase 1: Mixer + Transport — 详细布局</h2>
+<p class="subtitle">最终 UI 结构，5 个主要区域</p>
+
+<div class="mockup">
+  <div class="mockup-header">moonlitt Web DAW — Phase 1 Layout</div>
+  <div class="mockup-body" style="background:#12121e;padding:0;overflow:hidden;min-height:600px;display:flex;flex-direction:column;">
+
+    <!-- 1. Transport Bar -->
+    <div style="background:#1a1a2e;padding:8px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #2a2a40;flex-shrink:0;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span style="color:#7c4dff;font-weight:bold;font-size:14px;">moonlitt</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:16px;">
+        <div style="display:flex;gap:4px;">
+          <div style="width:28px;height:28px;background:#252540;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#666;font-size:10px;">◀◀</div>
+          <div style="width:28px;height:28px;background:#252540;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#666;font-size:14px;">■</div>
+          <div style="width:28px;height:28px;background:#7c4dff;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;">▶</div>
+          <div style="width:28px;height:28px;background:#252540;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#444;font-size:10px;">⏺</div>
+        </div>
+        <div style="background:#0e0e1a;border-radius:4px;padding:4px 12px;font-family:monospace;">
+          <span style="color:#888;font-size:10px;">POS</span>
+          <span style="color:#4fc3f7;font-size:13px;margin-left:4px;">001 : 1 : 000</span>
+        </div>
+        <div style="background:#0e0e1a;border-radius:4px;padding:4px 12px;font-family:monospace;">
+          <span style="color:#888;font-size:10px;">BPM</span>
+          <span style="color:#ffb74d;font-size:13px;margin-left:4px;">120.0</span>
+        </div>
+        <div style="background:#0e0e1a;border-radius:4px;padding:4px 8px;font-family:monospace;">
+          <span style="color:#888;font-size:10px;">SIG</span>
+          <span style="color:#81c784;font-size:13px;margin-left:4px;">4/4</span>
+        </div>
+      </div>
+      <div style="width:80px;"></div>
+    </div>
+
+    <!-- 2. Main Area: Arrange + Right Panel -->
+    <div style="flex:1;display:flex;overflow:hidden;">
+
+      <!-- Arrange View -->
+      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+
+        <!-- Timeline ruler -->
+        <div style="background:#1e1e32;padding:2px 0 2px 120px;border-bottom:1px solid #2a2a40;font-size:9px;color:#555;display:flex;flex-shrink:0;">
+          <span style="flex:1;">1</span><span style="flex:1;">2</span><span style="flex:1;">3</span><span style="flex:1;">4</span>
+          <span style="flex:1;">5</span><span style="flex:1;">6</span><span style="flex:1;">7</span><span style="flex:1;">8</span>
+        </div>
+
+        <!-- Tracks -->
+        <div style="flex:1;overflow-y:auto;">
+          <!-- Track 1: Piano -->
+          <div style="display:flex;height:56px;border-bottom:1px solid #1a1a30;">
+            <div style="width:120px;background:#1a1a2e;padding:6px 8px;display:flex;flex-direction:column;justify-content:center;border-right:1px solid #2a2a40;flex-shrink:0;">
+              <div style="display:flex;align-items:center;gap:6px;">
+                <div style="width:4px;height:24px;background:#4fc3f7;border-radius:2px;"></div>
+                <span style="color:#e0e0e0;font-size:11px;">Piano</span>
+              </div>
+              <div style="display:flex;gap:4px;margin-top:4px;margin-left:10px;">
+                <span style="font-size:9px;color:#555;background:#252540;padding:1px 4px;border-radius:2px;">M</span>
+                <span style="font-size:9px;color:#555;background:#252540;padding:1px 4px;border-radius:2px;">S</span>
+              </div>
+            </div>
+            <div style="flex:1;background:#16162a;position:relative;">
+              <!-- Playhead -->
+              <div style="position:absolute;left:25%;top:0;bottom:0;width:1px;background:#7c4dff;z-index:2;"></div>
+              <!-- MIDI clips -->
+              <div style="position:absolute;left:5%;top:8px;width:35%;bottom:8px;background:#4fc3f722;border:1px solid #4fc3f744;border-radius:3px;display:flex;align-items:center;padding:0 6px;">
+                <span style="color:#4fc3f7;font-size:9px;opacity:0.7;">Intro</span>
+              </div>
+              <div style="position:absolute;left:45%;top:8px;width:25%;bottom:8px;background:#4fc3f722;border:1px solid #4fc3f744;border-radius:3px;display:flex;align-items:center;padding:0 6px;">
+                <span style="color:#4fc3f7;font-size:9px;opacity:0.7;">Verse</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Track 2: Bass -->
+          <div style="display:flex;height:56px;border-bottom:1px solid #1a1a30;">
+            <div style="width:120px;background:#1a1a2e;padding:6px 8px;display:flex;flex-direction:column;justify-content:center;border-right:1px solid #2a2a40;flex-shrink:0;">
+              <div style="display:flex;align-items:center;gap:6px;">
+                <div style="width:4px;height:24px;background:#81c784;border-radius:2px;"></div>
+                <span style="color:#e0e0e0;font-size:11px;">Bass</span>
+              </div>
+              <div style="display:flex;gap:4px;margin-top:4px;margin-left:10px;">
+                <span style="font-size:9px;color:#555;background:#252540;padding:1px 4px;border-radius:2px;">M</span>
+                <span style="font-size:9px;color:#555;background:#252540;padding:1px 4px;border-radius:2px;">S</span>
+              </div>
+            </div>
+            <div style="flex:1;background:#16162a;position:relative;">
+              <div style="position:absolute;left:25%;top:0;bottom:0;width:1px;background:#7c4dff;z-index:2;"></div>
+              <div style="position:absolute;left:3%;top:8px;width:50%;bottom:8px;background:#81c78422;border:1px solid #81c78444;border-radius:3px;display:flex;align-items:center;padding:0 6px;">
+                <span style="color:#81c784;font-size:9px;opacity:0.7;">Bassline</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Track 3: Drums -->
+          <div style="display:flex;height:56px;border-bottom:1px solid #1a1a30;">
+            <div style="width:120px;background:#1a1a2e;padding:6px 8px;display:flex;flex-direction:column;justify-content:center;border-right:1px solid #2a2a40;flex-shrink:0;">
+              <div style="display:flex;align-items:center;gap:6px;">
+                <div style="width:4px;height:24px;background:#ffb74d;border-radius:2px;"></div>
+                <span style="color:#e0e0e0;font-size:11px;">Drums</span>
+              </div>
+              <div style="display:flex;gap:4px;margin-top:4px;margin-left:10px;">
+                <span style="font-size:9px;color:#555;background:#252540;padding:1px 4px;border-radius:2px;">M</span>
+                <span style="font-size:9px;color:#ffb74d;background:#3a2a1a;padding:1px 4px;border-radius:2px;">S</span>
+              </div>
+            </div>
+            <div style="flex:1;background:#16162a;position:relative;">
+              <div style="position:absolute;left:25%;top:0;bottom:0;width:1px;background:#7c4dff;z-index:2;"></div>
+              <div style="position:absolute;left:0%;top:8px;width:70%;bottom:8px;background:#ffb74d22;border:1px solid #ffb74d44;border-radius:3px;display:flex;align-items:center;padding:0 6px;">
+                <span style="color:#ffb74d;font-size:9px;opacity:0.7;">Beat Pattern</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Add Track -->
+          <div style="display:flex;height:36px;border-bottom:1px solid #1a1a30;">
+            <div style="width:120px;background:#1a1a2e;padding:6px 8px;display:flex;align-items:center;justify-content:center;border-right:1px solid #2a2a40;">
+              <span style="color:#555;font-size:11px;">+ Add Track</span>
+            </div>
+            <div style="flex:1;background:#12121e;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Panel (Track Inspector) -->
+      <div style="width:200px;background:#1a1a2e;border-left:1px solid #2a2a40;padding:12px;flex-shrink:0;overflow-y:auto;">
+        <div style="color:#888;font-size:9px;margin-bottom:8px;">TRACK INSPECTOR</div>
+        <div style="color:#e0e0e0;font-size:12px;margin-bottom:12px;display:flex;align-items:center;gap:6px;">
+          <div style="width:4px;height:16px;background:#4fc3f7;border-radius:2px;"></div>
+          Piano
+        </div>
+        <div style="color:#666;font-size:9px;margin-bottom:4px;">INSTRUMENT</div>
+        <div style="background:#252540;border-radius:4px;padding:6px 8px;margin-bottom:12px;">
+          <span style="color:#4fc3f7;font-size:10px;">Grand Piano.sf2</span>
+          <div style="color:#555;font-size:9px;margin-top:2px;">Program: Acoustic Grand</div>
+        </div>
+        <div style="color:#666;font-size:9px;margin-bottom:4px;">INSERT CHAIN</div>
+        <div style="display:flex;flex-direction:column;gap:2px;">
+          <div style="background:#252540;border-radius:3px;padding:4px 8px;display:flex;justify-content:space-between;align-items:center;">
+            <span style="color:#aaa;font-size:10px;">1. EQ</span>
+            <span style="color:#4fc3f7;font-size:8px;">●</span>
+          </div>
+          <div style="background:#252540;border-radius:3px;padding:4px 8px;display:flex;justify-content:space-between;align-items:center;">
+            <span style="color:#aaa;font-size:10px;">2. Compressor</span>
+            <span style="color:#4fc3f7;font-size:8px;">●</span>
+          </div>
+          <div style="background:#252540;border-radius:3px;padding:4px 8px;display:flex;justify-content:space-between;align-items:center;">
+            <span style="color:#555;font-size:10px;">+ Add Insert</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Mixer (collapsible bottom) -->
+    <div style="height:140px;background:#1a1a2e;border-top:2px solid #2a2a40;padding:8px 16px;flex-shrink:0;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="color:#666;font-size:9px;">MIXER</span>
+        <span style="color:#555;font-size:9px;">▼ Collapse</span>
+      </div>
+      <div style="display:flex;gap:16px;height:100px;align-items:flex-end;">
+        <!-- Channel Strip: Piano -->
+        <div style="display:flex;flex-direction:column;align-items:center;gap:3px;width:60px;">
+          <div style="display:flex;gap:3px;">
+            <span style="font-size:8px;color:#555;background:#252540;padding:1px 3px;border-radius:2px;">M</span>
+            <span style="font-size:8px;color:#555;background:#252540;padding:1px 3px;border-radius:2px;">S</span>
+          </div>
+          <div style="width:24px;height:4px;background:#333;border-radius:2px;position:relative;">
+            <div style="position:absolute;left:55%;width:6px;height:6px;background:#4fc3f7;border-radius:50%;top:-1px;"></div>
+          </div>
+          <div style="display:flex;gap:2px;height:50px;width:20px;">
+            <div style="flex:1;background:linear-gradient(to top,#4fc3f7 55%,#222 55%);border-radius:2px;"></div>
+            <div style="flex:1;background:linear-gradient(to top,#4fc3f7 50%,#222 50%);border-radius:2px;"></div>
+          </div>
+          <div style="width:40px;height:6px;background:#333;border-radius:3px;position:relative;">
+            <div style="position:absolute;left:65%;width:6px;height:8px;background:#e0e0e0;border-radius:2px;top:-1px;"></div>
+          </div>
+          <span style="color:#4fc3f7;font-size:8px;">Piano</span>
+        </div>
+
+        <!-- Channel Strip: Bass -->
+        <div style="display:flex;flex-direction:column;align-items:center;gap:3px;width:60px;">
+          <div style="display:flex;gap:3px;">
+            <span style="font-size:8px;color:#555;background:#252540;padding:1px 3px;border-radius:2px;">M</span>
+            <span style="font-size:8px;color:#555;background:#252540;padding:1px 3px;border-radius:2px;">S</span>
+          </div>
+          <div style="width:24px;height:4px;background:#333;border-radius:2px;position:relative;">
+            <div style="position:absolute;left:50%;width:6px;height:6px;background:#81c784;border-radius:50%;top:-1px;"></div>
+          </div>
+          <div style="display:flex;gap:2px;height:50px;width:20px;">
+            <div style="flex:1;background:linear-gradient(to top,#81c784 40%,#222 40%);border-radius:2px;"></div>
+            <div style="flex:1;background:linear-gradient(to top,#81c784 35%,#222 35%);border-radius:2px;"></div>
+          </div>
+          <div style="width:40px;height:6px;background:#333;border-radius:3px;position:relative;">
+            <div style="position:absolute;left:50%;width:6px;height:8px;background:#e0e0e0;border-radius:2px;top:-1px;"></div>
+          </div>
+          <span style="color:#81c784;font-size:8px;">Bass</span>
+        </div>
+
+        <!-- Channel Strip: Drums -->
+        <div style="display:flex;flex-direction:column;align-items:center;gap:3px;width:60px;">
+          <div style="display:flex;gap:3px;">
+            <span style="font-size:8px;color:#555;background:#252540;padding:1px 3px;border-radius:2px;">M</span>
+            <span style="font-size:8px;color:#ffb74d;background:#3a2a1a;padding:1px 3px;border-radius:2px;">S</span>
+          </div>
+          <div style="width:24px;height:4px;background:#333;border-radius:2px;position:relative;">
+            <div style="position:absolute;left:50%;width:6px;height:6px;background:#ffb74d;border-radius:50%;top:-1px;"></div>
+          </div>
+          <div style="display:flex;gap:2px;height:50px;width:20px;">
+            <div style="flex:1;background:linear-gradient(to top,#ffb74d 65%,#222 65%);border-radius:2px;"></div>
+            <div style="flex:1;background:linear-gradient(to top,#ffb74d 60%,#222 60%);border-radius:2px;"></div>
+          </div>
+          <div style="width:40px;height:6px;background:#333;border-radius:3px;position:relative;">
+            <div style="position:absolute;left:50%;width:6px;height:8px;background:#e0e0e0;border-radius:2px;top:-1px;"></div>
+          </div>
+          <span style="color:#ffb74d;font-size:8px;">Drums</span>
+        </div>
+
+        <div style="flex:1;"></div>
+
+        <!-- Master -->
+        <div style="display:flex;flex-direction:column;align-items:center;gap:3px;width:70px;border-left:1px solid #2a2a40;padding-left:16px;">
+          <div style="display:flex;gap:2px;height:60px;width:24px;">
+            <div style="flex:1;background:linear-gradient(to top,#4caf50 30%,#ffeb3b 60%,#222 60%);border-radius:2px;"></div>
+            <div style="flex:1;background:linear-gradient(to top,#4caf50 28%,#ffeb3b 58%,#222 58%);border-radius:2px;"></div>
+          </div>
+          <div style="width:50px;height:6px;background:#333;border-radius:3px;position:relative;">
+            <div style="position:absolute;left:70%;width:6px;height:8px;background:#e0e0e0;border-radius:2px;top:-1px;"></div>
+          </div>
+          <span style="color:#e0e0e0;font-size:9px;font-weight:bold;">Master</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. Bottom Panel (Virtual Keyboard) -->
+    <div style="height:60px;background:#16162a;border-top:1px solid #2a2a40;padding:6px 16px;flex-shrink:0;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span style="color:#666;font-size:9px;">KEYBOARD</span>
+          <span style="color:#555;font-size:9px;background:#252540;padding:1px 6px;border-radius:2px;">C3</span>
+          <span style="color:#555;font-size:9px;background:#252540;padding:1px 6px;border-radius:2px;">Vel: 100</span>
+        </div>
+        <span style="color:#555;font-size:9px;">Computer Keys: A S D F G H J K</span>
+      </div>
+      <div style="display:flex;gap:1px;height:30px;">
+        <div style="flex:1;background:#e8e8e8;border-radius:0 0 3px 3px;position:relative;">
+          <div style="position:absolute;left:60%;width:60%;height:60%;background:#333;border-radius:0 0 2px 2px;"></div>
+        </div>
+        <div style="flex:1;background:#e8e8e8;border-radius:0 0 3px 3px;position:relative;">
+          <div style="position:absolute;left:60%;width:60%;height:60%;background:#333;border-radius:0 0 2px 2px;"></div>
+        </div>
+        <div style="flex:1;background:#e8e8e8;border-radius:0 0 3px 3px;"></div>
+        <div style="flex:1;background:#e8e8e8;border-radius:0 0 3px 3px;position:relative;">
+          <div style="position:absolute;left:60%;width:60%;height:60%;background:#333;border-radius:0 0 2px 2px;"></div>
+        </div>
+        <div style="flex:1;background:#e8e8e8;border-radius:0 0 3px 3px;position:relative;">
+          <div style="position:absolute;left:60%;width:60%;height:60%;background:#333;border-radius:0 0 2px 2px;"></div>
+        </div>
+        <div style="flex:1;background:#e8e8e8;border-radius:0 0 3px 3px;position:relative;">
+          <div style="position:absolute;left:60%;width:60%;height:60%;background:#333;border-radius:0 0 2px 2px;"></div>
+        </div>
+        <div style="flex:1;background:#e8e8e8;border-radius:0 0 3px 3px;"></div>
+        <div style="flex:1;background:#e8e8e8;border-radius:0 0 3px 3px;position:relative;">
+          <div style="position:absolute;left:60%;width:60%;height:60%;background:#333;border-radius:0 0 2px 2px;"></div>
+        </div>
+        <div style="flex:1;background:#e8e8e8;border-radius:0 0 3px 3px;position:relative;">
+          <div style="position:absolute;left:60%;width:60%;height:60%;background:#333;border-radius:0 0 2px 2px;"></div>
+        </div>
+        <div style="flex:1;background:#e8e8e8;border-radius:0 0 3px 3px;"></div>
+        <div style="flex:1;background:#e8e8e8;border-radius:0 0 3px 3px;position:relative;">
+          <div style="position:absolute;left:60%;width:60%;height:60%;background:#333;border-radius:0 0 2px 2px;"></div>
+        </div>
+        <div style="flex:1;background:#e8e8e8;border-radius:0 0 3px 3px;position:relative;">
+          <div style="position:absolute;left:60%;width:60%;height:60%;background:#333;border-radius:0 0 2px 2px;"></div>
+        </div>
+        <div style="flex:1;background:#e8e8e8;border-radius:0 0 3px 3px;position:relative;">
+          <div style="position:absolute;left:60%;width:60%;height:60%;background:#333;border-radius:0 0 2px 2px;"></div>
+        </div>
+        <div style="flex:1;background:#e8e8e8;border-radius:0 0 3px 3px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:16px;">
+  <h3>5 个区域</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;">
+    <div style="background:#1e1e2e;padding:8px 12px;border-radius:6px;border-left:3px solid #7c4dff;">
+      <strong style="color:#7c4dff;">① Transport Bar</strong><br>
+      <span style="color:#888;">Play/Stop, BPM, 位置, 拍号</span>
+    </div>
+    <div style="background:#1e1e2e;padding:8px 12px;border-radius:6px;border-left:3px solid #4fc3f7;">
+      <strong style="color:#4fc3f7;">② Arrange View</strong><br>
+      <span style="color:#888;">多轨时间线, MIDI clips, 播放指针</span>
+    </div>
+    <div style="background:#1e1e2e;padding:8px 12px;border-radius:6px;border-left:3px solid #81c784;">
+      <strong style="color:#81c784;">③ Mixer</strong><br>
+      <span style="color:#888;">Fader, Pan, Meter, Mute/Solo, Master</span>
+    </div>
+    <div style="background:#1e1e2e;padding:8px 12px;border-radius:6px;border-left:3px solid #ffb74d;">
+      <strong style="color:#ffb74d;">④ Bottom Panel</strong><br>
+      <span style="color:#888;">虚拟键盘, 音色选择器</span>
+    </div>
+    <div style="background:#1e1e2e;padding:8px 12px;border-radius:6px;border-left:3px solid #e0e0e0;">
+      <strong style="color:#e0e0e0;">⑤ Track Inspector</strong><br>
+      <span style="color:#888;">音色信息, Insert Chain 预览</span>
+    </div>
+  </div>
+</div>
