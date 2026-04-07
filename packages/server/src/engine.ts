@@ -145,6 +145,13 @@ const EFFECT_FACTORIES: Record<string, (addon: NativeAddon, sr: number) => Nativ
 // Track metadata (server-side, not in the native addon)
 // ---------------------------------------------------------------------------
 
+interface ClipMeta {
+  id: number;
+  name: string;
+  startBar: number;
+  lengthBars: number;
+}
+
 interface TrackMeta {
   id: number;
   name: string;
@@ -155,6 +162,7 @@ interface TrackMeta {
   solo: boolean;
   instrumentPath: string | null;
   inserts: Array<{ id: number; name: string; bypassed: boolean }>;
+  clips: ClipMeta[];
 }
 
 // ---------------------------------------------------------------------------
@@ -167,6 +175,7 @@ export class EngineManager {
   private readonly bufferSize: number;
   private tracks: TrackMeta[] = [];
   private nextTrackName = 1;
+  private nextClipId = 1;
   private bpm = 120;
   private playing = false;
 
@@ -218,6 +227,7 @@ export class EngineManager {
         solo: false,
         instrumentPath: instrumentPath ?? null,
         inserts: [],
+        clips: [],
       };
       this.tracks.push(meta);
       return meta;
@@ -245,6 +255,30 @@ export class EngineManager {
     // A future version could remove + re-add. For now, log a warning.
     console.warn('[engine] loadInstrument: hot-swap not yet supported. Remove and re-add the track.');
     return false;
+  }
+
+  /** Load a MIDI file onto a track as a clip. */
+  loadMidi(trackId: number, filePath: string, fileName: string): ClipMeta | null {
+    const track = this.tracks.find((t) => t.id === trackId);
+    if (!track) {
+      console.error(`[engine] loadMidi: track ${trackId} not found`);
+      return null;
+    }
+
+    // TODO: Once moonlitt-node Session gains a loadMidi method, call it here
+    // to parse the MIDI file and schedule events on the sequencer.
+    // For now, store clip metadata so the UI can display it.
+    console.log(`[engine] loadMidi: ${fileName} -> track ${trackId} (path: ${filePath})`);
+
+    const clip: ClipMeta = {
+      id: this.nextClipId++,
+      name: fileName.replace(/\.midi?$/i, ''),
+      startBar: 0,
+      lengthBars: 8, // default until MIDI duration parsing is wired
+    };
+
+    track.clips = [...track.clips, clip];
+    return clip;
   }
 
   // --- Transport ----------------------------------------------------------
@@ -425,6 +459,7 @@ export class EngineManager {
       solo: false,
       instrumentPath,
       inserts: [],
+      clips: [],
     };
     this.tracks.push(meta);
     return meta;

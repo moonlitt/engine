@@ -8,9 +8,11 @@
     "build": "tsc"
   },
   "dependencies": {
+    "@moonlitt/protocol": "workspace:*",
+    "@types/multer": "^2.1.0",
     "express": "^4.21.0",
-    "ws": "^8.18.0",
-    "@moonlitt/protocol": "workspace:*"
+    "multer": "^2.1.1",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",

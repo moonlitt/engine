@@ -43,6 +43,7 @@ interface MixerStore {
   setMasterVolume(db: number): void;
   addTrack(trackId: number, name: string, color: string): void;
   removeTrack(trackId: number): void;
+  addClip(trackId: number, clip: Clip): void;
   initTracks(trackStates: TrackState[]): void;
   updateMeters(data: Float32Array): void;
   setTrackVolume(trackId: number, db: number): void;
@@ -121,6 +122,15 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
     set({
       tracks: tracks.filter((t) => t.id !== trackId),
       selectedTrackId: selectedTrackId === trackId ? null : selectedTrackId,
+    });
+  },
+
+  addClip(trackId: number, clip: Clip) {
+    set({
+      tracks: updateTrack(get().tracks, trackId, (t) => ({
+        ...t,
+        clips: [...t.clips, clip],
+      })),
     });
   },
 

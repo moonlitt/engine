@@ -23,7 +23,8 @@
       "Bash(xargs kill:*)",
       "Bash(curl -s http://localhost:3001)",
       "Read(//dev/**)",
-      "Bash(jobs)"
+      "Bash(jobs)",
+      "Bash(lsof -ti:5173)"
     ]
   }
 }

@@ -98,6 +98,10 @@ function handleJsonMessage(raw: string): void {
       useTransportStore.getState().updatePosition(event.position);
       break;
     }
+    case 'midi.clip_added': {
+      useMixerStore.getState().addClip(event.trackId, event.clip);
+      break;
+    }
     case 'error': {
       // Future: dispatch to a notification/toast store
       break;

@@ -1,6 +1,8 @@
 import express from 'express';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
+import multer from 'multer';
+import os from 'os';
 import { EngineManager } from './engine.js';
 import { handleCommand } from './protocol.js';
 import type { Command, ServerEvent } from '@moonlitt/protocol';
@@ -23,6 +25,38 @@ if (engine.isAvailable()) {
 
 const app = express();
 const server = createServer(app);
+
+// CORS for the Vite dev server
+app.use((_req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  next();
+});
+
+// --- MIDI file upload endpoint -------------------------------------------
+
+const upload = multer({ dest: os.tmpdir() });
+
+app.post('/api/upload-midi', upload.single('file'), (req, res) => {
+  if (!req.file) {
+    res.status(400).json({ error: 'No file uploaded' });
+    return;
+  }
+
+  const trackId = parseInt(req.body.trackId || '0', 10);
+  const clip = engine.loadMidi(trackId, req.file.path, req.file.originalname);
+
+  if (!clip) {
+    res.status(400).json({ error: `Track ${trackId} not found` });
+    return;
+  }
+
+  // Broadcast clip addition to all WebSocket clients
+  broadcast({ type: 'midi.clip_added', trackId, clip });
+
+  res.json({ ok: true, clip });
+});
 
 // ---------------------------------------------------------------------------
 // WebSocket

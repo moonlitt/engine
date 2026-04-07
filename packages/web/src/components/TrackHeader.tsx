@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import type { Track } from '../stores/mixer';
 import { useMixerStore } from '../stores/mixer';
 import { useSessionStore } from '../stores/session';
@@ -7,12 +7,14 @@ interface TrackHeaderProps {
   track: Track;
   selected: boolean;
   onSelect: () => void;
+  onFileUpload?: (file: File, trackId: number) => void;
 }
 
-export function TrackHeader({ track, selected, onSelect }: TrackHeaderProps) {
+export function TrackHeader({ track, selected, onSelect, onFileUpload }: TrackHeaderProps) {
   const send = useSessionStore((s) => s.send);
   const setTrackMute = useMixerStore((s) => s.setTrackMute);
   const setTrackSolo = useMixerStore((s) => s.setTrackSolo);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleMute = useCallback(
     (e: React.MouseEvent) => {
@@ -32,6 +34,25 @@ export function TrackHeader({ track, selected, onSelect }: TrackHeaderProps) {
       send({ type: 'track.set_solo', trackId: track.id, solo });
     },
     [track.id, track.solo, send, setTrackSolo],
+  );
+
+  const handleFileClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      fileInputRef.current?.click();
+    },
+    [],
+  );
+
+  const handleFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      onFileUpload?.(file, track.id);
+      // Reset so the same file can be selected again
+      e.target.value = '';
+    },
+    [track.id, onFileUpload],
   );
 
   return (
@@ -67,6 +88,20 @@ export function TrackHeader({ track, selected, onSelect }: TrackHeaderProps) {
           >
             S
           </button>
+          <button
+            onClick={handleFileClick}
+            className="w-4 h-4 text-[9px] font-bold rounded bg-daw-bg text-[#666] hover:text-white"
+            title="Load MIDI file"
+          >
+            +
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".mid,.midi"
+            onChange={handleFileChange}
+            className="hidden"
+          />
         </div>
       </div>
     </div>

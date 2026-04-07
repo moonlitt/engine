@@ -24,7 +24,15 @@ export type ServerEvent =
   | { type: 'track.added'; trackId: number; name: string; color: string }
   | { type: 'track.removed'; trackId: number }
   | { type: 'transport.state'; playing: boolean; position: number }
+  | { type: 'midi.clip_added'; trackId: number; clip: ClipState }
   | { type: 'error'; message: string };
+
+export interface ClipState {
+  id: number;
+  name: string;
+  startBar: number;
+  lengthBars: number;
+}
 
 export interface TrackState {
   id: number;
