@@ -148,6 +148,16 @@ export function ArrangeView() {
                   </div>
                 )}
 
+                {/* Empty-lane hint — drop affordance shown even before drag-over */}
+                {track.clips.length === 0 && dragOverTrackId !== track.id && (
+                  <div
+                    className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-[#3a3a3a] pointer-events-none select-none"
+                    style={{ left: `${Math.max(8, scrollLeft + 8)}px` }}
+                  >
+                    Drop a .mid file here  ·  or click <span className="text-daw-accent/60">+ MIDI</span> on the track
+                  </div>
+                )}
+
                 {/* Clips */}
                 {track.clips.map((clip) => (
                   <MidiClip
@@ -166,12 +176,18 @@ export function ArrangeView() {
         </div>
       </div>
 
-      {/* Empty state */}
+      {/* Empty state — first-run guide */}
       {tracks.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <span className="text-[#444] text-xs">
-            No tracks yet -- click "+ Add Track" to begin
-          </span>
+          <div className="text-center">
+            <div className="text-[#666] text-xs mb-3">Get started in 4 steps</div>
+            <ol className="text-[11px] text-[#888] flex flex-col gap-1 items-start">
+              <li><span className="text-daw-accent">1.</span> Click <span className="text-[#ccc]">+ Add Track</span> on the left</li>
+              <li><span className="text-daw-accent">2.</span> Pick an instrument in the right panel (<span className="text-[#ccc]">Load</span>)</li>
+              <li><span className="text-daw-accent">3.</span> Drop a <span className="text-[#ccc]">.mid</span> file on the track lane</li>
+              <li><span className="text-daw-accent">4.</span> Hit <span className="text-[#ccc]">Space</span> or the play button</li>
+            </ol>
+          </div>
         </div>
       )}
     </div>

@@ -73,7 +73,7 @@ export function TrackHeader({ track, selected, onSelect, onFileUpload }: TrackHe
         <span className="text-[11px] text-[#ccc] truncate" title={track.name}>
           {track.name}
         </span>
-        <div className="flex gap-1">
+        <div className="flex gap-1 items-center">
           <button
             onClick={handleMute}
             className={`w-4 h-4 text-[9px] font-bold rounded
@@ -90,10 +90,10 @@ export function TrackHeader({ track, selected, onSelect, onFileUpload }: TrackHe
           </button>
           <button
             onClick={handleFileClick}
-            className="w-4 h-4 text-[9px] font-bold rounded bg-daw-bg text-[#666] hover:text-white"
-            title="Load MIDI file"
+            className="text-[9px] font-bold rounded bg-daw-accent/20 text-daw-accent hover:bg-daw-accent hover:text-white px-1.5 py-0.5 transition-colors"
+            title="Upload a .mid file to this track (or drag a file onto the lane)"
           >
-            +
+            + MIDI
           </button>
           <input
             ref={fileInputRef}

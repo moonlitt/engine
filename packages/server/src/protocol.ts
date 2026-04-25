@@ -115,6 +115,13 @@ export function handleCommand(engine: EngineManager, cmd: Command): ServerEvent 
       engine.setInsertParam(cmd.trackId, cmd.insertId, cmd.paramId, cmd.value);
       return null;
 
+    // --- Plugin discovery -------------------------------------------------
+
+    case 'plugins.scan': {
+      const plugins = engine.scanPlugins(cmd.force ?? false);
+      return { type: 'plugins.list', plugins };
+    }
+
     default: {
       const exhaustive: never = cmd;
       return { type: 'error', message: `Unknown command: ${(exhaustive as any).type}` };

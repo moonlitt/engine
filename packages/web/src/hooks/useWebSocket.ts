@@ -3,6 +3,7 @@ import type { ServerEvent } from '@moonlitt/protocol';
 import { useSessionStore } from '../stores/session';
 import { useTransportStore } from '../stores/transport';
 import { useMixerStore } from '../stores/mixer';
+import { usePluginsStore } from '../stores/plugins';
 
 const WS_URL = 'ws://localhost:3001';
 const RECONNECT_DELAY_MS = 2000;
@@ -112,6 +113,10 @@ function handleJsonMessage(raw: string): void {
     }
     case 'insert.removed': {
       useMixerStore.getState().removeInsert(event.trackId, event.insertId);
+      break;
+    }
+    case 'plugins.list': {
+      usePluginsStore.getState().setList(event.plugins);
       break;
     }
     case 'error': {

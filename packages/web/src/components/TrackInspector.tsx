@@ -82,16 +82,32 @@ export function TrackInspector() {
         <div className="text-[10px] text-[#888] uppercase tracking-wider mb-1.5">
           Instrument
         </div>
-        <div className="text-xs text-[#aaa] truncate mb-2" title={track.instrumentPath ?? undefined}>
-          {instrumentDisplay}
-        </div>
-        <button
-          type="button"
-          onClick={() => setInstrumentSelectorOpen(true)}
-          className="text-[10px] px-2 py-1 rounded bg-daw-control hover:bg-daw-border text-[#ccc] transition-colors"
-        >
-          Load
-        </button>
+        {track.instrumentPath ? (
+          <>
+            <div className="text-xs text-[#aaa] truncate mb-2" title={track.instrumentPath}>
+              {instrumentDisplay}
+            </div>
+            <button
+              type="button"
+              onClick={() => setInstrumentSelectorOpen(true)}
+              className="text-[10px] px-2 py-1 rounded bg-daw-control hover:bg-daw-border text-[#ccc] transition-colors"
+            >
+              Change…
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="text-xs text-[#666] mb-2">No instrument loaded</div>
+            <button
+              type="button"
+              onClick={() => setInstrumentSelectorOpen(true)}
+              className="w-full text-xs px-3 py-1.5 rounded bg-daw-accent hover:bg-daw-accent/80 text-white transition-colors font-medium"
+            >
+              Load instrument…
+            </button>
+            <div className="text-[10px] text-[#555] mt-1.5">SF2 / VST3 / CLAP</div>
+          </>
+        )}
       </div>
 
       {/* Insert Chain */}

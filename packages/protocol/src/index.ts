@@ -16,7 +16,8 @@ export type Command =
   | { type: 'midi.load_file'; trackId: number; path: string }
   | { type: 'insert.add'; trackId: number; effectType: string }
   | { type: 'insert.remove'; trackId: number; insertId: number }
-  | { type: 'insert.set_param'; trackId: number; insertId: number; paramId: number; value: number };
+  | { type: 'insert.set_param'; trackId: number; insertId: number; paramId: number; value: number }
+  | { type: 'plugins.scan'; force?: boolean };
 
 // Server -> Client events
 export type ServerEvent =
@@ -28,7 +29,15 @@ export type ServerEvent =
   | { type: 'midi.clip_added'; trackId: number; clip: ClipState }
   | { type: 'insert.added'; trackId: number; insert: InsertState }
   | { type: 'insert.removed'; trackId: number; insertId: number }
+  | { type: 'plugins.list'; plugins: PluginInfo[] }
   | { type: 'error'; message: string };
+
+export interface PluginInfo {
+  name: string;
+  path: string;
+  /// "Sf2" | "Vst3" | "Clap" (from Rust enum debug)
+  format: string;
+}
 
 export interface ClipState {
   id: number;

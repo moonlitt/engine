@@ -81,9 +81,15 @@ interface NativeSession {
   shutdown(): void;
 }
 
+interface NativePluginInfo {
+  name: string;
+  path: string;
+  format: string;
+}
+
 interface NativeAddon {
   create(path: string, sampleRate: number, bufferSize: number): NativeBackend;
-  scanPlugins(sampleRate: number, bufferSize: number): Array<{ name: string; path: string; format: string }>;
+  scanPlugins(sampleRate: number, bufferSize: number): Array<NativePluginInfo>;
   supportedFormats(): string[];
   createEq(sampleRate: number): NativeBackend;
   createCompressor(sampleRate: number): NativeBackend;
@@ -234,6 +240,8 @@ export class EngineManager {
   private nextClipId = 1;
   private bpm = 120;
   private playing = false;
+  /// Lazily populated by scanPlugins().
+  private pluginCache: NativePluginInfo[] | null = null;
 
   constructor(sampleRate = 44100, bufferSize = 512) {
     this.sampleRate = sampleRate;
@@ -243,6 +251,19 @@ export class EngineManager {
   /** Whether the native addon is loaded. */
   isAvailable(): boolean {
     return addon !== null;
+  }
+
+  /** Scan system directories for VST3/CLAP plugins (cached after first call). */
+  scanPlugins(force = false): NativePluginInfo[] {
+    if (!addon) return [];
+    if (this.pluginCache !== null && !force) return this.pluginCache;
+    try {
+      this.pluginCache = addon.scanPlugins(this.sampleRate, this.bufferSize);
+    } catch (e) {
+      console.error('[engine] scanPlugins failed:', e);
+      this.pluginCache = [];
+    }
+    return this.pluginCache;
   }
 
   /** Whether a session has been created (at least one track added). */
