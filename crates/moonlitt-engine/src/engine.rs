@@ -6,7 +6,7 @@
 use crate::backend::AudioBackend;
 use crate::error::EngineError;
 use crate::plugin_info::PluginInfo;
-#[cfg(any(feature = "vst3", feature = "clap"))]
+#[cfg(any(feature = "vst3", feature = "clap", feature = "sf2"))]
 use crate::plugin_info::PluginFormat;
 use std::path::Path;
 
@@ -142,7 +142,102 @@ pub fn scan_plugins(sample_rate: u32, buffer_size: u32) -> Vec<PluginInfo> {
         }
     }
 
-    // TODO: scan for SF2 files in common directories
+    #[cfg(feature = "sf2")]
+    {
+        let _ = (sample_rate, buffer_size); // unused in SF2 scan, kept for signature parity
+        scan_sf2_into(&mut plugins);
+    }
 
     plugins
+}
+
+/// Scan common SoundFont locations and append discovered `.sf2` files to `out`.
+///
+/// Search order (each entry recursively walked, max depth 4):
+/// 1. `$MOONLITT_SF2_DIR` (env var, colon-separated)
+/// 2. `~/Library/Audio/Sounds/Banks` (macOS standard SoundFont dir)
+/// 3. `~/Documents/Soundfonts`
+/// 4. `<workspace>/tests` and `<workspace>/deps/oxisynth/testdata` for dev convenience
+///
+/// Caps at 100 entries to bound the cost of pathological dirs. Files smaller
+/// than 4 KiB are skipped — too small to be a real soundfont and likely test
+/// fixtures or junk.
+#[cfg(feature = "sf2")]
+fn scan_sf2_into(out: &mut Vec<PluginInfo>) {
+    use std::path::PathBuf;
+
+    const MAX_RESULTS: usize = 100;
+    const MAX_DEPTH: usize = 4;
+    const MIN_SIZE_BYTES: u64 = 4 * 1024;
+
+    let mut search_dirs: Vec<PathBuf> = Vec::new();
+
+    if let Ok(env) = std::env::var("MOONLITT_SF2_DIR") {
+        for raw in env.split(':') {
+            if !raw.is_empty() {
+                search_dirs.push(PathBuf::from(raw));
+            }
+        }
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        let home = PathBuf::from(home);
+        search_dirs.push(home.join("Library/Audio/Sounds/Banks"));
+        search_dirs.push(home.join("Documents/Soundfonts"));
+    }
+    // Dev convenience — works when binary is run from the workspace root.
+    search_dirs.push(PathBuf::from("tests"));
+    search_dirs.push(PathBuf::from("deps/oxisynth/testdata"));
+
+    let mut seen = std::collections::HashSet::<PathBuf>::new();
+
+    for root in search_dirs {
+        if out.len() >= MAX_RESULTS {
+            break;
+        }
+        walk_sf2(&root, 0, MAX_DEPTH, MIN_SIZE_BYTES, MAX_RESULTS, &mut seen, out);
+    }
+}
+
+#[cfg(feature = "sf2")]
+fn walk_sf2(
+    dir: &std::path::Path,
+    depth: usize,
+    max_depth: usize,
+    min_size: u64,
+    max_results: usize,
+    seen: &mut std::collections::HashSet<std::path::PathBuf>,
+    out: &mut Vec<PluginInfo>,
+) {
+    if depth > max_depth || out.len() >= max_results {
+        return;
+    }
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        if out.len() >= max_results {
+            return;
+        }
+        let path = entry.path();
+        if path.is_dir() {
+            walk_sf2(&path, depth + 1, max_depth, min_size, max_results, seen, out);
+        } else if path.extension().and_then(|e| e.to_str()).map(|s| s.eq_ignore_ascii_case("sf2")).unwrap_or(false) {
+            let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
+            if !seen.insert(canonical.clone()) {
+                continue;
+            }
+            if let Ok(meta) = entry.metadata() {
+                if meta.len() < min_size {
+                    continue;
+                }
+            }
+            let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("(unnamed)").to_string();
+            out.push(PluginInfo {
+                name,
+                path: canonical.to_string_lossy().into_owned(),
+                format: PluginFormat::Sf2,
+            });
+        }
+    }
 }
