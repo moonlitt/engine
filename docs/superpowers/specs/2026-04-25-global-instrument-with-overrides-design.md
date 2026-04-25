@@ -184,6 +184,31 @@ If step 1/2 doesn't make sound, the play snapshot log already added in
 the previous round will show whether the master has a backend and what
 its mask is — same diagnostic surface.
 
+## Localisation
+
+UI is single-user, single-language — Chinese. Hardcode Chinese strings,
+no i18n framework. Concrete copy:
+
+- Header transport: `▶ 播放 / ❚❚ 暂停 / ■ 停止`, `位置 / 节拍`
+- MIDI bar empty: `拖一个 .mid 文件到这里开始`
+- MIDI bar loaded: `MIDI: <name> · <N> 个通道 · <bpm> BPM · <num/den> · <bars> 小节 · [更换…]`
+- Default instrument: `默认音色`, `更换…`, `每个未单独指定音色的通道都用它播放`
+- Channel section heading: `通道 (来自 MIDI 文件)`
+- Channel row inherited: `沿用默认音色`, `[单独设置音色…]`
+- Channel row overridden: `单独设置: <name>`, `[更换…] [×恢复默认]`
+- Effect chain: `效果器`, `+ 添加效果`, `× 移除`
+
+GM Program → Chinese mapping for the 128 General-MIDI patches lives in
+`packages/web/src/i18n/gm-programs.ts`. Channel rows show:
+
+- If MIDI's TrackName for this channel is set → show that as the row title.
+- Else if the channel has a Program Change → look up GM Chinese name (e.g.
+  program 0 → "大钢琴", program 25 → "尼龙弦吉他", program 128 → "鼓组"
+  for channel 10).
+- Else → "通道 N".
+
+SF2 / VST3 / CLAP file names stay as-is (proper names).
+
 ## Out of scope (explicit)
 
 - Per-channel program-change override (use the SF2's bank — the MIDI's
