@@ -92,6 +92,12 @@ export declare class Session {
    * (volume, pan, sends, inserts, meter) intact.
    */
   swapTrackBackend(trackId: number, backend: Backend): void
+  /**
+   * Update which MIDI channels reach this track. Bit N set ⇒ channel N
+   * dispatches to this track. Used by the MIDI-import flow to give each
+   * MIDI channel its own DAW track.
+   */
+  setTrackChannelMask(trackId: number, channelMask: number): void
   /** Add an insert effect to a track. Returns the insert ID. */
   addInsert(trackId: number, effect: Backend): number
   /** Remove an insert effect from a track. */
@@ -143,6 +149,14 @@ export declare class Session {
   /** Shutdown the session and release audio resources. */
   shutdown(): void
 }
+
+/**
+ * Parse a MIDI file and report which channels contain notes.
+ *
+ * The server uses this on upload to decide how many DAW tracks to spin up
+ * (one per channel) and how to set their channel masks.
+ */
+export declare function analyzeMidi(path: string): MidiInfo
 
 /**
  * Create an audio backend from a file path (.sf2, .vst3, .clap).
@@ -220,6 +234,22 @@ export declare function createTremolo(sampleRate: number): Backend
 export interface MidiDevice {
   id: number
   name: string
+}
+
+/**
+ * Summary of a MIDI file's contents — channels in use and rough duration.
+ * Used by the multi-track import flow to spin up one DAW track per channel.
+ */
+export interface MidiInfo {
+  /**
+   * Distinct MIDI channels (0..15) that contain at least one note-on event,
+   * sorted ascending. Channels with only meta events are not listed.
+   */
+  channels: Array<number>
+  /** Number of MIDI tracks (chunks) in the SMF file. */
+  trackCount: number
+  /** Approximate duration in bars assuming 4/4 — best-effort estimate. */
+  lengthBars: number
 }
 
 /** Metadata for a single backend parameter. */
