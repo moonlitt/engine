@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "moonlitt",
+  "version": "0.1.0",
+  "identifier": "com.moonlitt.desktop",
+  "build": {
+    "beforeDevCommand": "pnpm --filter @moonlitt/web dev",
+    "beforeBuildCommand": "pnpm --filter @moonlitt/web build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../../web/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "moonlitt",
+        "width": 1080,
+        "height": 720,
+        "minWidth": 640,
+        "minHeight": 480,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon.png"
+    ]
+  },
+  "plugins": {}
+}

@@ -18,6 +18,7 @@ members = [
     "crates/moonlitt-session",
     "crates/moonlitt-node",
     "crates/moonlitt-bench",
+    "packages/desktop/src-tauri",
 ]
 
 [workspace.package]

@@ -1,0 +1,32 @@
+[package]
+name = "moonlitt-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "moonlitt_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2" }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+parking_lot = "0.12"
+midly = "0.5"
+
+moonlitt-core = { path = "../../../crates/moonlitt-core" }
+moonlitt-engine = { path = "../../../crates/moonlitt-engine", features = ["sf2", "vst3", "clap"] }
+moonlitt-audio-io = { path = "../../../crates/moonlitt-audio-io" }
+moonlitt-effects = { path = "../../../crates/moonlitt-effects", features = ["all"] }
+moonlitt-vst3 = { path = "../../../crates/moonlitt-vst3" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.5"
+objc2-foundation = "0.2"
+objc2-app-kit = "0.2"
+raw-window-handle = "0.6"

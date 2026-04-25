@@ -1,44 +1,62 @@
 import { useCallback, useRef, useState } from 'react';
 import type { MidiState } from '@moonlitt/protocol';
-import { uploadMidiFile } from '../services/upload';
+import { getTransport } from '../services/transport';
 
 interface MidiPanelProps {
   midi: MidiState | null;
 }
 
 export function MidiPanel({ midi }: MidiPanelProps) {
+  const transport = getTransport();
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const upload = useCallback(async (file: File) => {
+  const loadFromFile = useCallback(async (file: File) => {
     if (!file.name.match(/\.midi?$/i)) {
       setError(`不是 MIDI 文件: ${file.name}`);
       return;
     }
     setError(null);
     setBusy(true);
-    const ok = await uploadMidiFile(file, 0);
+    const ok = await transport.loadMidiFile(file);
     setBusy(false);
-    if (!ok) setError('上传失败（请查看服务端日志）');
-  }, []);
+    if (!ok) setError('加载失败（请查看控制台日志）');
+  }, [transport]);
 
-  const dropProps = {
-    onDragOver: (e: React.DragEvent) => { e.preventDefault(); setDragOver(true); },
-    onDragLeave: () => setDragOver(false),
-    onDrop: async (e: React.DragEvent) => {
-      e.preventDefault();
-      setDragOver(false);
-      const file = e.dataTransfer.files[0];
-      if (file) await upload(file);
-    },
-    onClick: () => fileInputRef.current?.click(),
-  };
+  const openPicker = useCallback(async () => {
+    if (transport.supportsFileDrop) {
+      fileInputRef.current?.click();
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    const ok = await transport.pickAndLoadMidi();
+    setBusy(false);
+    if (!ok) setError('未选择文件，或加载失败。');
+  }, [transport]);
+
+  const supportsDrop = transport.supportsFileDrop;
+  const dropProps = supportsDrop
+    ? {
+        onDragOver: (e: React.DragEvent) => { e.preventDefault(); setDragOver(true); },
+        onDragLeave: () => setDragOver(false),
+        onDrop: async (e: React.DragEvent) => {
+          e.preventDefault();
+          setDragOver(false);
+          const file = e.dataTransfer.files[0];
+          if (file) await loadFromFile(file);
+        },
+        onClick: () => openPicker(),
+      }
+    : {
+        onClick: () => openPicker(),
+      };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) upload(file);
+    if (file) void loadFromFile(file);
     e.target.value = '';
   };
 
@@ -55,22 +73,28 @@ export function MidiPanel({ midi }: MidiPanelProps) {
         >
           <div className="text-4xl mb-3">📁</div>
           <div className="text-base text-[#e0e0e0] mb-1">
-            {busy ? '上传中…' : '拖一个 .mid 文件到这里开始'}
+            {busy
+              ? '加载中…'
+              : supportsDrop
+                ? '拖一个 .mid 文件到这里开始'
+                : '点击此区域选择 MIDI 文件'}
           </div>
           <div className="text-xs text-[#888]">
-            {busy ? '' : '或者点击此区域选择文件'}
+            {busy ? '' : supportsDrop ? '或者点击此区域选择文件' : ''}
           </div>
           <div className="text-[10px] text-[#555] mt-3">
             通道会从文件解析出来，每个通道一行
           </div>
         </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".mid,.midi"
-          onChange={handleFileChange}
-          className="hidden"
-        />
+        {supportsDrop && (
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".mid,.midi"
+            onChange={handleFileChange}
+            className="hidden"
+          />
+        )}
         {error !== null && <div className="mt-3 text-xs text-red-400 text-center">{error}</div>}
       </div>
     );
@@ -97,16 +121,18 @@ export function MidiPanel({ midi }: MidiPanelProps) {
           </span>
         </div>
         <span className="text-[10px] text-daw-accent/80">
-          {busy ? '上传中…' : '更换…'}
+          {busy ? '加载中…' : '更换…'}
         </span>
       </div>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".mid,.midi"
-        onChange={handleFileChange}
-        className="hidden"
-      />
+      {supportsDrop && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".mid,.midi"
+          onChange={handleFileChange}
+          className="hidden"
+        />
+      )}
       {error !== null && <div className="mt-1 text-[11px] text-red-400">{error}</div>}
     </div>
   );

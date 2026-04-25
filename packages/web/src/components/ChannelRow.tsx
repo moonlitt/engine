@@ -9,6 +9,7 @@ import { useSessionStore } from '../stores/session';
 import { useUiStore } from '../stores/ui';
 import { useProjectStore } from '../stores/project';
 import { GM_PROGRAM_ZH, channelDisplayName } from '../i18n/gm-programs';
+import { isGuiSupported, openPluginGui } from '../services/pluginGui';
 
 interface ChannelRowProps {
   info: MidiChannelInfo;
@@ -253,6 +254,8 @@ function OverrideControls({ override }: { override: ChannelOverrideState }) {
   const send = useSessionStore((s) => s.send);
   const openPicker = useUiStore((s) => s.openInstrumentPicker);
   const updateChannel = useProjectStore((s) => s.updateChannel);
+  const isVst3 = override.instrumentPath.toLowerCase().endsWith('.vst3');
+  const guiSupported = isGuiSupported();
 
   return (
     <div className="flex items-center gap-1.5">
@@ -287,6 +290,17 @@ function OverrideControls({ override }: { override: ChannelOverrideState }) {
       >
         🎹 {override.instrumentName}
       </button>
+      {isVst3 && guiSupported && (
+        <button
+          type="button"
+          onClick={async () => {
+            const err = await openPluginGui({ kind: 'override', channel: override.channel });
+            if (err) console.error('[plugin-gui]', err);
+          }}
+          className="text-[11px] px-2 py-1 rounded bg-daw-control hover:bg-daw-border text-[#aaa] transition-colors"
+          title="打开插件原生界面"
+        >🎛 GUI</button>
+      )}
       <button
         type="button"
         onClick={() => send({ type: 'channel.remove_override', channel: override.channel })}
