@@ -120,10 +120,17 @@ let addon: NativeAddon | null = null;
 try {
   // napi-rs build output -- platform-specific .node binary with JS wrapper.
   // After `cd crates/moonlitt-node && npx napi build`, this produces index.js + .node file.
+  // index.js is CommonJS doing `module.exports = require('./moonlitt.node')`, so under ESM
+  // dynamic import the real addon lives on `.default` rather than on the top-level binding.
   const imported = await import('../../../crates/moonlitt-node/index.js');
-  addon = imported as unknown as NativeAddon;
-} catch {
-  console.warn('[engine] moonlitt-node addon not found. Running in UI-only mode.');
+  const candidate = (imported as { default?: unknown }).default ?? imported;
+  addon = candidate as NativeAddon;
+  if (typeof (addon as { createGain?: unknown }).createGain !== 'function') {
+    console.error('[engine] addon loaded but does not look right:', Object.keys(addon as object));
+    addon = null;
+  }
+} catch (e) {
+  console.warn('[engine] moonlitt-node addon not found:', (e as Error).message);
   console.warn('[engine] Build it with: cd crates/moonlitt-node && npx napi build');
 }
 
