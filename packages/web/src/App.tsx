@@ -3,7 +3,7 @@ import { useWebSocket } from './hooks/useWebSocket';
 import { useTransportShortcuts } from './hooks/useTransportShortcuts';
 import { useUiStore } from './stores/ui';
 import { useSessionStore } from './stores/session';
-import { TestbedView } from './components/TestbedView';
+import { PlayerView } from './components/PlayerView';
 import { InstrumentSelector } from './components/InstrumentSelector';
 
 export function App() {
@@ -25,7 +25,7 @@ export function App() {
 
   return (
     <>
-      <TestbedView />
+      <PlayerView />
       <InstrumentSelector
         open={targetTrackId !== null}
         onLoad={handleLoad}
