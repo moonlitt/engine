@@ -60,7 +60,15 @@ impl AudioOutput {
                             && c.max_sample_rate().0 >= desired_rate
                             && c.sample_format() == cpal::SampleFormat::F32
                     })
-                    .map(|c| c.with_sample_rate(cpal::SampleRate(desired_rate)).config())
+                    .map(|c| {
+                        let mut cfg = c.with_sample_rate(cpal::SampleRate(desired_rate)).config();
+                        // BufferSize::Default on macOS/CoreAudio can defer the first
+                        // audio callback by 15+ seconds, manifesting as "no sound".
+                        // Pin a small buffer (256 frames ≈ 5.8ms @ 44.1kHz) for
+                        // low-latency, predictable startup.
+                        cfg.buffer_size = cpal::BufferSize::Fixed(256);
+                        cfg
+                    })
                     .or_else(|| {
                         // Fallback: use device default config
                         device.default_output_config().ok().map(|c| c.config())
