@@ -106,9 +106,13 @@ impl SimpleAllpass {
 
     #[inline]
     fn process(&mut self, input: f32) -> f32 {
+        // Canonical Schroeder allpass (unity gain at all frequencies, DC included).
+        // Form 1 — `buffer = input + g·delayed` — has DC gain (1-g+g²)/(1-g) > 1
+        // and silently turns this into a comb-style filter that biases the
+        // reverb tank's DC accumulator (caught by analyze: -0.93 DC offset).
         let delayed = self.buffer[self.index];
         let output = -self.feedback * input + delayed;
-        self.buffer[self.index] = input + self.feedback * delayed;
+        self.buffer[self.index] = input + self.feedback * output;
         self.index += 1;
         if self.index >= self.buffer.len() {
             self.index = 0;

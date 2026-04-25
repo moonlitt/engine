@@ -66,9 +66,11 @@ impl ModAllpass {
         // Linear interpolation
         let delayed = self.buffer[idx0] * (1.0 - frac) + self.buffer[idx1] * frac;
 
-        // Allpass computation
+        // Canonical Schroeder allpass — feed back the OUTPUT so DC gain is 1.
+        // Feeding back `delayed` (form 1) gives DC gain (1-g+g²)/(1-g) > 1,
+        // which lets the reverb tank accumulate DC across feedback cycles.
         let output = -self.feedback * input + delayed;
-        self.buffer[self.index] = input + self.feedback * delayed;
+        self.buffer[self.index] = input + self.feedback * output;
 
         // Advance write pointer
         self.index += 1;
