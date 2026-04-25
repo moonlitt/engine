@@ -68,7 +68,7 @@ export function ArrangeView() {
   const totalWidth = TOTAL_BARS * PIXELS_PER_BAR;
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="relative flex flex-col h-full overflow-hidden">
       {/* Timeline ruler */}
       <TimelineRuler
         pixelsPerBar={PIXELS_PER_BAR}
@@ -231,7 +231,7 @@ function EmptyLaneCTA({ track, scrollLeft, onPickInstrument, onUploadMidi }: Emp
 
   return (
     <div
-      className="absolute top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-auto"
+      className="absolute top-1/2 -translate-y-1/2 z-20 flex items-center gap-2 pointer-events-auto"
       style={{ left: `${scrollLeft + 12}px` }}
     >
       {!hasInstrument && (
