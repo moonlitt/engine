@@ -374,6 +374,15 @@ impl Mixer {
         self.rebuild_render_order();
     }
 
+    /// Update which MIDI channels a track listens to. Bit N set ⇒ channel N
+    /// will reach this track's backend. Used by the multi-track MIDI import
+    /// flow to route each channel to its own DAW track.
+    pub fn set_track_channel_mask(&mut self, track_id: u32, channel_mask: u16) {
+        if let Some(t) = self.tracks.iter_mut().find(|t| t.id == track_id) {
+            t.channel_mask = channel_mask;
+        }
+    }
+
     /// Replace a track's audio backend, returning the old one. Inserts,
     /// volume, pan, sends, routing, and meter all stay attached — only the
     /// instrument is swapped. Active notes on the old backend are silenced

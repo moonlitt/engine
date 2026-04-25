@@ -24,6 +24,19 @@ pub struct MidiDevice {
     pub name: String,
 }
 
+/// Summary of a MIDI file's contents — channels in use and rough duration.
+/// Used by the multi-track import flow to spin up one DAW track per channel.
+#[napi(object)]
+pub struct MidiInfo {
+    /// Distinct MIDI channels (0..15) that contain at least one note-on event,
+    /// sorted ascending. Channels with only meta events are not listed.
+    pub channels: Vec<u32>,
+    /// Number of MIDI tracks (chunks) in the SMF file.
+    pub track_count: u32,
+    /// Approximate duration in bars assuming 4/4 — best-effort estimate.
+    pub length_bars: f64,
+}
+
 /// Metadata for a single backend parameter.
 #[napi(object)]
 pub struct ParamInfo {

@@ -306,6 +306,13 @@ impl Runtime {
         }));
     }
 
+    /// Update which MIDI channels a track listens to (bit N = channel N).
+    pub fn set_track_channel_mask(&mut self, track_id: u32, channel_mask: u16) {
+        let _ = self.command_tx.send(Box::new(move |mixer| {
+            mixer.set_track_channel_mask(track_id, channel_mask);
+        }));
+    }
+
     /// Remove a track at runtime. Notes are silenced before removal.
     pub fn remove_track(&mut self, track_id: u32) {
         self.track_meters.remove(&track_id);

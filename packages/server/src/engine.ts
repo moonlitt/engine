@@ -49,6 +49,7 @@ interface NativeSession {
   loadMidi(path: string): void;
   unloadMidi(): void;
   swapTrackBackend(trackId: number, backend: NativeBackend): void;
+  setTrackChannelMask(trackId: number, channelMask: number): void;
   noteOn(channel: number, note: number, velocity: number): void;
   noteOff(channel: number, note: number): void;
   cc(channel: number, cc: number, value: number): void;
@@ -87,10 +88,17 @@ interface NativePluginInfo {
   format: string;
 }
 
+interface NativeMidiInfo {
+  channels: number[];
+  trackCount: number;
+  lengthBars: number;
+}
+
 interface NativeAddon {
   create(path: string, sampleRate: number, bufferSize: number): NativeBackend;
   scanPlugins(sampleRate: number, bufferSize: number): Array<NativePluginInfo>;
   supportedFormats(): string[];
+  analyzeMidi(path: string): NativeMidiInfo;
   createEq(sampleRate: number): NativeBackend;
   createCompressor(sampleRate: number): NativeBackend;
   createReverb(sampleRate: number): NativeBackend;
@@ -207,6 +215,10 @@ interface TrackMeta {
   muted: boolean;
   solo: boolean;
   instrumentPath: string | null;
+  /// 16-bit MIDI channel mask. Bit N set ⇒ track listens to MIDI channel N.
+  /// Default 0xFFFF (all channels). Multi-track MIDI import narrows this so
+  /// each DAW track only hears one channel.
+  channelMask: number;
   inserts: InsertMeta[];
   clips: ClipMeta[];
 }
@@ -280,8 +292,8 @@ export class EngineManager {
 
   // --- Track management ---------------------------------------------------
 
-  addTrack(instrumentPath?: string): TrackMeta | null {
-    if (!addon) return this.addMockTrack(instrumentPath ?? null);
+  addTrack(instrumentPath?: string, channelMask = 0xFFFF, name?: string): TrackMeta | null {
+    if (!addon) return this.addMockTrack(instrumentPath ?? null, channelMask, name);
 
     try {
       const backend = instrumentPath
@@ -303,21 +315,27 @@ export class EngineManager {
         this.session.setTempo(this.bpm);
         trackId = 0;
         console.log(`[engine] session started (sr=${this.sampleRate}, buf=${this.bufferSize})`);
+        // The Session was constructed with the default 0xFFFF mask. If the
+        // caller wanted something narrower, apply it now.
+        if (channelMask !== 0xFFFF) {
+          this.session.setTrackChannelMask(0, channelMask);
+        }
       } else {
         // Subsequent tracks
-        trackId = this.session.addTrack(backend, 0xFFFF);
+        trackId = this.session.addTrack(backend, channelMask);
       }
-      console.log(`[engine] addTrack id=${trackId} instrument=${instrumentPath ?? '(silent placeholder)'}`);
+      console.log(`[engine] addTrack id=${trackId} mask=0x${channelMask.toString(16)} instrument=${instrumentPath ?? '(silent placeholder)'}`);
 
       const meta: TrackMeta = {
         id: trackId,
-        name: `Track ${this.nextTrackName++}`,
+        name: name ?? `Track ${this.nextTrackName++}`,
         color: COLORS[this.tracks.length % COLORS.length],
         volume: 0,
         pan: 0,
         muted: false,
         solo: false,
         instrumentPath: instrumentPath ?? null,
+        channelMask,
         inserts: [],
         clips: [],
       };
@@ -326,6 +344,22 @@ export class EngineManager {
     } catch (e) {
       console.error('[engine] addTrack failed:', e);
       return null;
+    }
+  }
+
+  /** Update an existing track's MIDI channel mask without recreating it. */
+  setTrackChannelMask(trackId: number, channelMask: number): boolean {
+    if (!this.session) return false;
+    const track = this.tracks.find((t) => t.id === trackId);
+    if (!track) return false;
+    try {
+      this.session.setTrackChannelMask(trackId, channelMask);
+      track.channelMask = channelMask;
+      console.log(`[engine] setTrackChannelMask track=${trackId} mask=0x${channelMask.toString(16)}`);
+      return true;
+    } catch (e) {
+      console.error('[engine] setTrackChannelMask failed:', e);
+      return false;
     }
   }
 
@@ -395,6 +429,96 @@ export class EngineManager {
 
     track.clips = [...track.clips, clip];
     return clip;
+  }
+
+  /**
+   * Multi-track MIDI import.
+   *
+   * Parses the file, finds which channels carry notes, and ensures there's
+   * one DAW track per channel with the correct channel mask. Auto-creates
+   * tracks as needed; reuses the implicit "first track" by narrowing its
+   * mask to the first MIDI channel. Then stages the sequencer.
+   *
+   * Returns the list of (track, clip) tuples touched, plus a flag for
+   * whether each track is brand-new — the caller broadcasts both
+   * `track.added` and `midi.clip_added` events accordingly.
+   */
+  loadMidiMultitrack(filePath: string, fileName: string): {
+    touched: Array<{ track: TrackMeta; clip: ClipMeta; isNew: boolean }>;
+    info: NativeMidiInfo;
+  } | null {
+    if (!addon) {
+      console.warn('[engine] loadMidiMultitrack: addon unavailable');
+      return null;
+    }
+
+    let info: NativeMidiInfo;
+    try {
+      info = addon.analyzeMidi(filePath);
+    } catch (e) {
+      console.error('[engine] analyzeMidi failed:', e);
+      return null;
+    }
+
+    // Fall back to channel 0 if the MIDI has no note events at all (still
+    // legal — meta-only files do exist). The user gets one track that just
+    // won't make sound, which is the right outcome.
+    const channels = info.channels.length > 0 ? info.channels : [0];
+    console.log(`[engine] loadMidiMultitrack: ${fileName} channels=[${channels.join(',')}] tracks=${info.trackCount} bars=${info.lengthBars.toFixed(1)}`);
+
+    const baseClipName = fileName.replace(/\.midi?$/i, '');
+    const lengthBars = Math.max(1, Math.round(info.lengthBars));
+
+    const touched: Array<{ track: TrackMeta; clip: ClipMeta; isNew: boolean }> = [];
+
+    for (let i = 0; i < channels.length; i++) {
+      const channel = channels[i];
+      const mask = 1 << channel;
+      const clipName = channels.length > 1 ? `${baseClipName} (ch ${channel + 1})` : baseClipName;
+
+      // Find an existing track whose mask covers this channel uniquely
+      // (single-bit). Tracks with the wide 0xFFFF mask qualify too — they're
+      // the "implicit first track" left from auto-create on connect.
+      let track = this.tracks.find((t) =>
+        (t.channelMask === mask) ||
+        (t.channelMask === 0xFFFF && !this.tracks.some((other) => other !== t && other.channelMask === mask))
+      ) ?? null;
+
+      let isNew = false;
+      if (track === null) {
+        const created = this.addTrack(undefined, mask, `Track ${this.nextTrackName} · ch ${channel + 1}`);
+        if (!created) {
+          console.error(`[engine] loadMidiMultitrack: could not add track for channel ${channel}`);
+          continue;
+        }
+        track = created;
+        isNew = true;
+      } else if (track.channelMask !== mask) {
+        // Narrow the implicit track's wide mask down to just this channel.
+        this.setTrackChannelMask(track.id, mask);
+      }
+
+      const clip: ClipMeta = {
+        id: this.nextClipId++,
+        name: clipName,
+        startBar: 0,
+        lengthBars,
+      };
+      track.clips = [...track.clips, clip];
+      touched.push({ track, clip, isNew });
+    }
+
+    // Stage the sequencer once — events route to the right tracks via masks.
+    if (this.session) {
+      try {
+        this.session.loadMidi(filePath);
+      } catch (e) {
+        console.error('[engine] loadMidi (native) failed during multitrack import:', e);
+        return null;
+      }
+    }
+
+    return { touched, info };
   }
 
   // --- Transport ----------------------------------------------------------
@@ -585,16 +709,17 @@ export class EngineManager {
 
   // --- Mock mode (no addon) -----------------------------------------------
 
-  private addMockTrack(instrumentPath: string | null): TrackMeta {
+  private addMockTrack(instrumentPath: string | null, channelMask = 0xFFFF, name?: string): TrackMeta {
     const meta: TrackMeta = {
       id: this.tracks.length,
-      name: `Track ${this.nextTrackName++}`,
+      name: name ?? `Track ${this.nextTrackName++}`,
       color: COLORS[this.tracks.length % COLORS.length],
       volume: 0,
       pan: 0,
       muted: false,
       solo: false,
       instrumentPath,
+      channelMask,
       inserts: [],
       clips: [],
     };

@@ -107,3 +107,52 @@ pub fn supported_formats() -> Vec<String> {
         .map(|s| s.to_string())
         .collect()
 }
+
+/// Parse a MIDI file and report which channels contain notes.
+///
+/// The server uses this on upload to decide how many DAW tracks to spin up
+/// (one per channel) and how to set their channel masks.
+#[napi]
+pub fn analyze_midi(path: String) -> Result<crate::types::MidiInfo> {
+    use midly::{MidiMessage, Smf, TrackEventKind};
+    use std::collections::BTreeSet;
+
+    let bytes = std::fs::read(&path)
+        .map_err(|e| napi::Error::from_reason(format!("read {path}: {e}")))?;
+    let smf = Smf::parse(&bytes)
+        .map_err(|e| napi::Error::from_reason(format!("parse {path}: {e}")))?;
+
+    let ticks_per_beat: u32 = match smf.header.timing {
+        midly::Timing::Metrical(t) => t.as_int() as u32,
+        midly::Timing::Timecode(_, _) => 480, // best-effort fallback
+    };
+
+    let mut channels = BTreeSet::<u32>::new();
+    let mut max_ticks: u64 = 0;
+    for track in &smf.tracks {
+        let mut t: u64 = 0;
+        for event in track {
+            t += event.delta.as_int() as u64;
+            if let TrackEventKind::Midi { channel, message } = event.kind {
+                if matches!(message, MidiMessage::NoteOn { .. }) {
+                    channels.insert(channel.as_int() as u32);
+                }
+            }
+        }
+        if t > max_ticks {
+            max_ticks = t;
+        }
+    }
+
+    let length_bars = if ticks_per_beat == 0 {
+        0.0
+    } else {
+        max_ticks as f64 / (ticks_per_beat as f64 * 4.0)
+    };
+
+    Ok(crate::types::MidiInfo {
+        channels: channels.into_iter().collect(),
+        track_count: smf.tracks.len() as u32,
+        length_bars,
+    })
+}

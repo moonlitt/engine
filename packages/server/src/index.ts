@@ -23,15 +23,13 @@ for (let i = 0; i < 10; i++) {
   if (existsSync(path.join(workspace, 'Cargo.lock'))) break;
   workspace = path.dirname(workspace);
 }
-if (existsSync(path.join(workspace, 'Cargo.lock'))) {
-  const sf2Dirs = [
-    path.join(workspace, 'tests'),
-    path.join(workspace, 'deps/oxisynth/testdata'),
-  ].filter(existsSync);
-  const existing = process.env.MOONLITT_SF2_DIR ?? '';
-  const merged = [existing, ...sf2Dirs].filter(Boolean).join(':');
-  process.env.MOONLITT_SF2_DIR = merged;
-  console.log(`[server] SF2 search dirs: ${merged}`);
+// Only forward MOONLITT_SF2_DIR if the user already set it explicitly.
+// We deliberately stopped pointing the engine at workspace test fixtures —
+// "sf_spec_test", "filter_NRPN_test" etc. are ABI conformance files, not
+// real soundfonts, and they polluted the picker. Real SF2s live in the
+// engine's standard scan dirs (~/Library/Audio/Sounds/Banks etc.).
+if (process.env.MOONLITT_SF2_DIR) {
+  console.log(`[server] SF2 search dirs (from env): ${process.env.MOONLITT_SF2_DIR}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -71,18 +69,28 @@ app.post('/api/upload-midi', upload.single('file'), (req, res) => {
     return;
   }
 
-  const trackId = parseInt(req.body.trackId || '0', 10);
-  const clip = engine.loadMidi(trackId, req.file.path, req.file.originalname);
-
-  if (!clip) {
-    res.status(400).json({ error: `Track ${trackId} not found` });
+  // Multi-track import: parse the MIDI, ensure one DAW track per channel,
+  // broadcast `track.added` for any new tracks plus `midi.clip_added` per
+  // touched track. The legacy single-track loadMidi path is no longer used
+  // by the upload endpoint — the user always wants the parsed split.
+  const result = engine.loadMidiMultitrack(req.file.path, req.file.originalname);
+  if (!result) {
+    res.status(400).json({ error: 'Failed to parse / stage MIDI' });
     return;
   }
 
-  // Broadcast clip addition to all WebSocket clients
-  broadcast({ type: 'midi.clip_added', trackId, clip });
+  for (const { track, clip, isNew } of result.touched) {
+    if (isNew) {
+      broadcast({ type: 'track.added', trackId: track.id, name: track.name, color: track.color });
+    }
+    broadcast({ type: 'midi.clip_added', trackId: track.id, clip });
+  }
 
-  res.json({ ok: true, clip });
+  res.json({
+    ok: true,
+    channels: result.info.channels,
+    tracks: result.touched.map(({ track, isNew }) => ({ id: track.id, isNew })),
+  });
 });
 
 // ---------------------------------------------------------------------------

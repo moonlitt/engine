@@ -210,6 +210,16 @@ impl Session {
         Ok(())
     }
 
+    /// Update which MIDI channels reach this track. Bit N set ⇒ channel N
+    /// dispatches to this track. Used by the MIDI-import flow to give each
+    /// MIDI channel its own DAW track.
+    #[napi]
+    pub fn set_track_channel_mask(&mut self, track_id: u32, channel_mask: u32) -> Result<()> {
+        self.rt_mut()?
+            .set_track_channel_mask(track_id, channel_mask as u16);
+        Ok(())
+    }
+
     /// Add an insert effect to a track. Returns the insert ID.
     #[napi]
     pub fn add_insert(&mut self, track_id: u32, effect: &mut Backend) -> Result<u32> {

@@ -16,6 +16,7 @@ moonlitt-audio-io = { path = "../moonlitt-audio-io" }
 moonlitt-effects = { path = "../moonlitt-effects", features = ["all"] }
 napi = { version = "3", features = ["napi8"] }
 napi-derive = "3"
+midly = "0.5"
 
 [build-dependencies]
 napi-build = "2"

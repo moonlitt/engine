@@ -220,6 +220,10 @@ fn walk_sf2(
             return;
         }
         let path = entry.path();
+        // `path.is_dir()` and `path.metadata()` (vs entry.metadata()) follow
+        // symlinks on macOS — entry.metadata() reports the link's own size,
+        // which made every symlinked SoundFont look like ~80 bytes and got
+        // skipped by the size threshold.
         if path.is_dir() {
             walk_sf2(&path, depth + 1, max_depth, min_size, max_results, seen, out);
         } else if path.extension().and_then(|e| e.to_str()).map(|s| s.eq_ignore_ascii_case("sf2")).unwrap_or(false) {
@@ -227,7 +231,7 @@ fn walk_sf2(
             if !seen.insert(canonical.clone()) {
                 continue;
             }
-            if let Ok(meta) = entry.metadata() {
+            if let Ok(meta) = path.metadata() {
                 if meta.len() < min_size {
                     continue;
                 }
