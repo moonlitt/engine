@@ -1,11 +1,12 @@
 import { create } from 'zustand';
-import type { TrackState } from '@moonlitt/protocol';
+import type { TrackState, ParamMeta, InsertState } from '@moonlitt/protocol';
 import { TRACK_COLORS } from '@moonlitt/protocol';
 
 export interface Insert {
   id: number;
   name: string;
   bypassed: boolean;
+  params: ParamMeta[];
 }
 
 export interface Clip {
@@ -43,6 +44,10 @@ interface MixerStore {
   setMasterVolume(db: number): void;
   addTrack(trackId: number, name: string, color: string): void;
   removeTrack(trackId: number): void;
+  setTrackInstrument(trackId: number, instrumentPath: string | null): void;
+  addInsert(trackId: number, insert: InsertState): void;
+  removeInsert(trackId: number, insertId: number): void;
+  setInsertParam(trackId: number, insertId: number, paramId: number, value: number): void;
   addClip(trackId: number, clip: Clip): void;
   initTracks(trackStates: TrackState[]): void;
   updateMeters(data: Float32Array): void;
@@ -69,6 +74,7 @@ function trackFromState(state: TrackState): Track {
       id: ins.id,
       name: ins.name,
       bypassed: ins.bypassed,
+      params: ins.params ?? [],
     })),
     clips: [],
   };
@@ -122,6 +128,59 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
     set({
       tracks: tracks.filter((t) => t.id !== trackId),
       selectedTrackId: selectedTrackId === trackId ? null : selectedTrackId,
+    });
+  },
+
+  setTrackInstrument(trackId: number, instrumentPath: string | null) {
+    const name = instrumentPath ? instrumentPath.split('/').pop() ?? null : null;
+    set({
+      tracks: updateTrack(get().tracks, trackId, (t) => ({
+        ...t,
+        instrumentPath,
+        instrumentName: name,
+      })),
+    });
+  },
+
+  addInsert(trackId: number, insertState: InsertState) {
+    set({
+      tracks: updateTrack(get().tracks, trackId, (t) => ({
+        ...t,
+        inserts: [
+          ...t.inserts,
+          {
+            id: insertState.id,
+            name: insertState.name,
+            bypassed: insertState.bypassed,
+            params: insertState.params ?? [],
+          },
+        ],
+      })),
+    });
+  },
+
+  removeInsert(trackId: number, insertId: number) {
+    set({
+      tracks: updateTrack(get().tracks, trackId, (t) => ({
+        ...t,
+        inserts: t.inserts.filter((ins) => ins.id !== insertId),
+      })),
+    });
+  },
+
+  setInsertParam(trackId: number, insertId: number, paramId: number, value: number) {
+    set({
+      tracks: updateTrack(get().tracks, trackId, (t) => ({
+        ...t,
+        inserts: t.inserts.map((ins) =>
+          ins.id !== insertId
+            ? ins
+            : {
+                ...ins,
+                params: ins.params.map((p) => (p.id === paramId ? { ...p, value } : p)),
+              },
+        ),
+      })),
     });
   },
 

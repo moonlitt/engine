@@ -23,8 +23,11 @@ export type ServerEvent =
   | { type: 'state.init'; tracks: TrackState[]; bpm: number; playing: boolean }
   | { type: 'track.added'; trackId: number; name: string; color: string }
   | { type: 'track.removed'; trackId: number }
+  | { type: 'track.instrument_changed'; trackId: number; instrumentPath: string | null }
   | { type: 'transport.state'; playing: boolean; position: number }
   | { type: 'midi.clip_added'; trackId: number; clip: ClipState }
+  | { type: 'insert.added'; trackId: number; insert: InsertState }
+  | { type: 'insert.removed'; trackId: number; insertId: number }
   | { type: 'error'; message: string };
 
 export interface ClipState {
@@ -50,6 +53,21 @@ export interface InsertState {
   id: number;
   name: string;
   bypassed: boolean;
+  params: ParamMeta[];
+}
+
+/// Metadata + current value for a single backend parameter.
+export interface ParamMeta {
+  id: number;
+  name: string;
+  group: string;
+  min: number;
+  max: number;
+  default: number;
+  /// 0 = continuous, >0 = discrete steps.
+  stepCount: number;
+  /// Current value (mirrors what the audio thread holds).
+  value: number;
 }
 
 // Track colors cycle

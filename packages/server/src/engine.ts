@@ -17,11 +17,23 @@ interface NativeTrackLevels {
   peakR: number;
 }
 
+interface NativeParamInfo {
+  id: number;
+  name: string;
+  group: string;
+  min: number;
+  max: number;
+  default: number;
+  stepCount: number;
+}
+
 interface NativeBackend {
   sampleRate(): number;
   paramCount(): number;
   setParam(id: number, value: number): void;
   getParam(id: number): number | null;
+  paramInfo(index: number): NativeParamInfo | null;
+  paramDisplay(id: number, value: number): string | null;
   isConsumed(): boolean;
 }
 
@@ -34,6 +46,9 @@ interface NativeSession {
   isPlaying(): boolean;
   setTempo(bpm: number): void;
   setLoop(enabled: boolean): void;
+  loadMidi(path: string): void;
+  unloadMidi(): void;
+  swapTrackBackend(trackId: number, backend: NativeBackend): void;
   noteOn(channel: number, note: number, velocity: number): void;
   noteOff(channel: number, note: number): void;
   cc(channel: number, cc: number, value: number): void;
@@ -152,6 +167,24 @@ interface ClipMeta {
   lengthBars: number;
 }
 
+interface ParamMeta {
+  id: number;
+  name: string;
+  group: string;
+  min: number;
+  max: number;
+  default: number;
+  stepCount: number;
+  value: number;
+}
+
+interface InsertMeta {
+  id: number;
+  name: string;
+  bypassed: boolean;
+  params: ParamMeta[];
+}
+
 interface TrackMeta {
   id: number;
   name: string;
@@ -161,8 +194,31 @@ interface TrackMeta {
   muted: boolean;
   solo: boolean;
   instrumentPath: string | null;
-  inserts: Array<{ id: number; name: string; bypassed: boolean }>;
+  inserts: InsertMeta[];
   clips: ClipMeta[];
+}
+
+/// Snapshot a backend's full parameter list (called before the backend is
+/// consumed by addInsert). Each entry carries its current value.
+function snapshotParams(backend: NativeBackend): ParamMeta[] {
+  const out: ParamMeta[] = [];
+  const count = backend.paramCount();
+  for (let i = 0; i < count; i++) {
+    const info = backend.paramInfo(i);
+    if (!info) continue;
+    const value = backend.getParam(info.id);
+    out.push({
+      id: info.id,
+      name: info.name,
+      group: info.group,
+      min: info.min,
+      max: info.max,
+      default: info.default,
+      stepCount: info.stepCount,
+      value: value ?? info.default,
+    });
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -251,13 +307,27 @@ export class EngineManager {
   }
 
   loadInstrument(trackId: number, path: string): boolean {
-    // The current napi API does not support hot-swapping a track's backend.
-    // A future version could remove + re-add. For now, log a warning.
-    console.warn('[engine] loadInstrument: hot-swap not yet supported. Remove and re-add the track.');
-    return false;
+    if (!addon || !this.session) {
+      console.warn('[engine] loadInstrument: no session');
+      return false;
+    }
+    const track = this.tracks.find((t) => t.id === trackId);
+    if (!track) {
+      console.error(`[engine] loadInstrument: track ${trackId} not found`);
+      return false;
+    }
+    try {
+      const backend = addon.create(path, this.sampleRate, this.bufferSize);
+      this.session.swapTrackBackend(trackId, backend);
+      track.instrumentPath = path;
+      return true;
+    } catch (e) {
+      console.error('[engine] loadInstrument failed:', e);
+      return false;
+    }
   }
 
-  /** Load a MIDI file onto a track as a clip. */
+  /** Load a MIDI file onto a track as a clip and stage it on the audio thread. */
   loadMidi(trackId: number, filePath: string, fileName: string): ClipMeta | null {
     const track = this.tracks.find((t) => t.id === trackId);
     if (!track) {
@@ -265,16 +335,25 @@ export class EngineManager {
       return null;
     }
 
-    // TODO: Once moonlitt-node Session gains a loadMidi method, call it here
-    // to parse the MIDI file and schedule events on the sequencer.
-    // For now, store clip metadata so the UI can display it.
-    console.log(`[engine] loadMidi: ${fileName} -> track ${trackId} (path: ${filePath})`);
+    // Stage the file on the audio thread sequencer. Transport state stays
+    // unchanged — the user presses Play to start playback.
+    if (this.session) {
+      try {
+        this.session.loadMidi(filePath);
+        console.log(`[engine] loadMidi: ${fileName} -> sequencer (track ${trackId})`);
+      } catch (e) {
+        console.error('[engine] loadMidi (native) failed:', e);
+        return null;
+      }
+    } else {
+      console.warn(`[engine] loadMidi: ${fileName} accepted but no session yet (add a track first)`);
+    }
 
     const clip: ClipMeta = {
       id: this.nextClipId++,
       name: fileName.replace(/\.midi?$/i, ''),
       startBar: 0,
-      lengthBars: 8, // default until MIDI duration parsing is wired
+      lengthBars: 8, // duration parsing is a future polish item
     };
 
     track.clips = [...track.clips, clip];
@@ -359,7 +438,7 @@ export class EngineManager {
 
   // --- Inserts ------------------------------------------------------------
 
-  addInsert(trackId: number, effectType: string): number | null {
+  addInsert(trackId: number, effectType: string): InsertMeta | null {
     if (!addon || !this.session) return null;
 
     const factory = EFFECT_FACTORIES[effectType];
@@ -370,13 +449,21 @@ export class EngineManager {
 
     try {
       const effect = factory(addon, this.sampleRate);
+      // Snapshot params BEFORE addInsert consumes the backend.
+      const params = snapshotParams(effect);
       const insertId = this.session.addInsert(trackId, effect);
 
+      const insert: InsertMeta = {
+        id: insertId,
+        name: effectType,
+        bypassed: false,
+        params,
+      };
       const track = this.tracks.find((t) => t.id === trackId);
       if (track) {
-        track.inserts.push({ id: insertId, name: effectType, bypassed: false });
+        track.inserts.push(insert);
       }
-      return insertId;
+      return insert;
     } catch (e) {
       console.error('[engine] addInsert failed:', e);
       return null;
@@ -394,6 +481,11 @@ export class EngineManager {
 
   setInsertParam(trackId: number, insertId: number, paramId: number, value: number): void {
     this.session?.setInsertParam(trackId, insertId, paramId, value);
+    // Mirror locally so getState() returns up-to-date values for late joiners.
+    const track = this.tracks.find((t) => t.id === trackId);
+    const insert = track?.inserts.find((i) => i.id === insertId);
+    const param = insert?.params.find((p) => p.id === paramId);
+    if (param) param.value = value;
   }
 
   // --- Metering -----------------------------------------------------------

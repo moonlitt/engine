@@ -54,9 +54,9 @@ export function handleCommand(engine: EngineManager, cmd: Command): ServerEvent 
     case 'track.load_instrument': {
       const loaded = engine.loadInstrument(cmd.trackId, cmd.path);
       if (!loaded) {
-        return { type: 'error', message: 'Instrument hot-swap not yet supported. Remove and re-add the track.' };
+        return { type: 'error', message: `Failed to load instrument on track ${cmd.trackId}` };
       }
-      return null;
+      return { type: 'track.instrument_changed', trackId: cmd.trackId, instrumentPath: cmd.path };
     }
 
     // --- Track mixer controls ---------------------------------------------
@@ -100,16 +100,16 @@ export function handleCommand(engine: EngineManager, cmd: Command): ServerEvent 
     // --- Insert effects ---------------------------------------------------
 
     case 'insert.add': {
-      const insertId = engine.addInsert(cmd.trackId, cmd.effectType);
-      if (insertId === null) {
+      const insert = engine.addInsert(cmd.trackId, cmd.effectType);
+      if (insert === null) {
         return { type: 'error', message: `Failed to add ${cmd.effectType} insert` };
       }
-      return null;
+      return { type: 'insert.added', trackId: cmd.trackId, insert };
     }
 
     case 'insert.remove':
       engine.removeInsert(cmd.trackId, cmd.insertId);
-      return null;
+      return { type: 'insert.removed', trackId: cmd.trackId, insertId: cmd.insertId };
 
     case 'insert.set_param':
       engine.setInsertParam(cmd.trackId, cmd.insertId, cmd.paramId, cmd.value);

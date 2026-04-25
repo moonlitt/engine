@@ -102,6 +102,18 @@ function handleJsonMessage(raw: string): void {
       useMixerStore.getState().addClip(event.trackId, event.clip);
       break;
     }
+    case 'track.instrument_changed': {
+      useMixerStore.getState().setTrackInstrument(event.trackId, event.instrumentPath);
+      break;
+    }
+    case 'insert.added': {
+      useMixerStore.getState().addInsert(event.trackId, event.insert);
+      break;
+    }
+    case 'insert.removed': {
+      useMixerStore.getState().removeInsert(event.trackId, event.insertId);
+      break;
+    }
     case 'error': {
       // Future: dispatch to a notification/toast store
       break;
