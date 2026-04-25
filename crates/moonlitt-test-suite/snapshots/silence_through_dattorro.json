@@ -1,0 +1,35 @@
+{
+  "sample_rate": 44100,
+  "channels": "Stereo",
+  "frames": 88200,
+  "duration_sec": 2.0,
+  "peak": {
+    "sample_peak_l_dbfs": -200.0,
+    "sample_peak_r_dbfs": -200.0,
+    "true_peak_l_dbtp": -200.0,
+    "true_peak_r_dbtp": -200.0
+  },
+  "rms": {
+    "l_dbfs": -200.0,
+    "r_dbfs": -200.0
+  },
+  "loudness": {
+    "integrated_lufs": -200.0,
+    "short_term_max_lufs": -200.0,
+    "momentary_max_lufs": -200.0,
+    "lra_lu": 0.0
+  },
+  "anomalies": {
+    "nan_count": 0,
+    "inf_count": 0,
+    "denormal_count": 0,
+    "dc_offset_l": 0.0,
+    "dc_offset_r": 0.0,
+    "silence_segments": [
+      [
+        0.0,
+        2.0
+      ]
+    ]
+  }
+}
