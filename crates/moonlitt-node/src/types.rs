@@ -23,3 +23,16 @@ pub struct MidiDevice {
     pub id: u32,
     pub name: String,
 }
+
+/// Metadata for a single backend parameter.
+#[napi(object)]
+pub struct ParamInfo {
+    pub id: u32,
+    pub name: String,
+    pub group: String,
+    pub min: f64,
+    pub max: f64,
+    pub default: f64,
+    /// 0 = continuous, >0 = number of discrete steps.
+    pub step_count: u32,
+}

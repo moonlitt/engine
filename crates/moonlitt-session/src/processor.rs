@@ -11,6 +11,11 @@ use std::sync::Arc;
 /// heap-allocated data (Engine) that can't fit in a Copy event.
 pub type MixerCommand = Box<dyn FnOnce(&mut Mixer) + Send>;
 
+/// A command that mutates the audio thread's sequencer slot.
+/// Used to load / unload MIDI files at runtime — separated from `MixerCommand`
+/// so the two channels can be drained independently.
+pub type SequencerCommand = Box<dyn FnOnce(&mut Option<Sequencer>) + Send>;
+
 /// A delayed event waiting to be dispatched at the right sample.
 #[derive(Clone, Copy)]
 struct PendingEvent {
@@ -26,6 +31,8 @@ pub struct AudioThread {
     pub consumer: Consumer<TimedEvent>,
     /// Receiver for structural commands (add/remove tracks, inserts, buses).
     pub command_rx: mpsc::Receiver<MixerCommand>,
+    /// Receiver for sequencer load/unload commands.
+    pub sequencer_rx: mpsc::Receiver<SequencerCommand>,
     pub sequencer: Option<Sequencer>,
     pub transport: Arc<Transport>,
     /// Pre-allocated sequencer event buffer
@@ -42,6 +49,7 @@ impl AudioThread {
         mixer: Mixer,
         consumer: Consumer<TimedEvent>,
         command_rx: mpsc::Receiver<MixerCommand>,
+        sequencer_rx: mpsc::Receiver<SequencerCommand>,
         sequencer: Option<Sequencer>,
         transport: Arc<Transport>,
         buffer_size: usize,
@@ -50,6 +58,7 @@ impl AudioThread {
             mixer,
             consumer,
             command_rx,
+            sequencer_rx,
             sequencer,
             transport,
             seq_events: Vec::with_capacity(64),
@@ -72,6 +81,11 @@ impl AudioThread {
             // Processed BEFORE MIDI events so new tracks are ready to receive notes.
             while let Ok(cmd) = self.command_rx.try_recv() {
                 cmd(&mut self.mixer);
+            }
+
+            // 1b. Drain sequencer commands (load / unload MIDI).
+            while let Ok(cmd) = self.sequencer_rx.try_recv() {
+                cmd(&mut self.sequencer);
             }
 
             // 2. Drain event queue — separate immediate and delayed

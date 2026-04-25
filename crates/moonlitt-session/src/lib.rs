@@ -11,6 +11,6 @@ pub mod sequencer;
 pub mod transport;
 
 pub use persistence::Session;
-pub use processor::{AudioThread, MixerCommand};
+pub use processor::{AudioThread, MixerCommand, SequencerCommand};
 pub use sequencer::Sequencer;
 pub use transport::{Transport, TransportState};

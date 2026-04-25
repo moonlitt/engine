@@ -15,6 +15,13 @@ export declare class Backend {
   setParam(id: number, value: number): void
   /** Get a parameter's current value. */
   getParam(id: number): number | null
+  /**
+   * Metadata for the parameter at the given index (0..param_count).
+   * Returns None if the index is out of range or the backend has been consumed.
+   */
+  paramInfo(index: number): ParamInfo | null
+  /** Human-readable display string for a parameter value (e.g., "+3.5 dB"). */
+  paramDisplay(id: number, value: number): string | null
   /** Whether this backend has been consumed (passed to a Session). */
   isConsumed(): boolean
 }
@@ -49,6 +56,13 @@ export declare class Session {
   setTempo(bpm: number): void
   /** Enable or disable loop playback. */
   setLoop(enabled: boolean): void
+  /**
+   * Load a MIDI file. Sequencer takes effect on the next audio callback.
+   * Transport state is unchanged — call `play()` to start playback.
+   */
+  loadMidi(path: string): void
+  /** Remove any loaded MIDI sequence. */
+  unloadMidi(): void
   /** Send MIDI note on. */
   noteOn(channel: number, note: number, velocity: number): void
   /** Send MIDI note off. */
@@ -73,6 +87,11 @@ export declare class Session {
   addTrack(backend: Backend, channelMask: number): number
   /** Remove a track by ID. */
   removeTrack(trackId: number): void
+  /**
+   * Replace a track's instrument while keeping the channel strip
+   * (volume, pan, sends, inserts, meter) intact.
+   */
+  swapTrackBackend(trackId: number, backend: Backend): void
   /** Add an insert effect to a track. Returns the insert ID. */
   addInsert(trackId: number, effect: Backend): number
   /** Remove an insert effect from a track. */
@@ -201,6 +220,18 @@ export declare function createTremolo(sampleRate: number): Backend
 export interface MidiDevice {
   id: number
   name: string
+}
+
+/** Metadata for a single backend parameter. */
+export interface ParamInfo {
+  id: number
+  name: string
+  group: string
+  min: number
+  max: number
+  default: number
+  /** 0 = continuous, >0 = number of discrete steps. */
+  stepCount: number
 }
 
 /** Discovered audio plugin metadata. */

@@ -103,6 +103,22 @@ impl Session {
         Ok(())
     }
 
+    /// Load a MIDI file. Sequencer takes effect on the next audio callback.
+    /// Transport state is unchanged — call `play()` to start playback.
+    #[napi]
+    pub fn load_midi(&mut self, path: String) -> Result<()> {
+        self.rt_mut()?
+            .load_midi(&path)
+            .map_err(napi::Error::from_reason)
+    }
+
+    /// Remove any loaded MIDI sequence.
+    #[napi]
+    pub fn unload_midi(&mut self) -> Result<()> {
+        self.rt_mut()?.unload_midi();
+        Ok(())
+    }
+
     // --- MIDI events ---
 
     /// Send MIDI note on.
@@ -179,6 +195,18 @@ impl Session {
     #[napi]
     pub fn remove_track(&mut self, track_id: u32) -> Result<()> {
         self.rt_mut()?.remove_track(track_id);
+        Ok(())
+    }
+
+    /// Replace a track's instrument while keeping the channel strip
+    /// (volume, pan, sends, inserts, meter) intact.
+    #[napi]
+    pub fn swap_track_backend(&mut self, track_id: u32, backend: &mut Backend) -> Result<()> {
+        let b = backend
+            .inner
+            .take()
+            .ok_or_else(|| napi::Error::from_reason("Backend already consumed"))?;
+        self.rt_mut()?.swap_track_backend(track_id, b);
         Ok(())
     }
 

@@ -2,7 +2,7 @@ use crate::audio_output::AudioOutput;
 use crate::midi_input::{MidiDeviceInfo, MidiInputConnection};
 use moonlitt_core::{AudioBackend, AudioEvent, TimedEvent};
 use moonlitt_mixer::{LevelMeter, Mixer};
-use moonlitt_session::{AudioThread, MixerCommand, Transport};
+use moonlitt_session::{AudioThread, MixerCommand, Sequencer, SequencerCommand, Transport};
 use rtrb::RingBuffer;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -13,6 +13,8 @@ pub struct Runtime {
     producer: rtrb::Producer<TimedEvent>,
     /// Channel for structural commands (add/remove tracks, inserts, buses).
     command_tx: mpsc::Sender<MixerCommand>,
+    /// Channel for sequencer load/unload.
+    sequencer_tx: mpsc::Sender<SequencerCommand>,
     audio_output: Option<AudioOutput>,
     #[allow(dead_code)]
     midi_connection: Option<MidiInputConnection>,
@@ -77,12 +79,14 @@ impl Runtime {
         // typical rates; events are drained every audio callback (~5ms).
         let (producer, consumer) = RingBuffer::new(1024);
         let (command_tx, command_rx) = mpsc::channel();
+        let (sequencer_tx, sequencer_rx) = mpsc::channel();
         let transport = Arc::new(Transport::new());
 
         let audio_thread = AudioThread::new(
             mixer,
             consumer,
             command_rx,
+            sequencer_rx,
             None,
             transport.clone(),
             buffer_size as usize,
@@ -93,6 +97,7 @@ impl Runtime {
         Ok(Self {
             producer,
             command_tx,
+            sequencer_tx,
             audio_output: Some(audio_output),
             midi_connection: None,
             transport,
@@ -292,6 +297,15 @@ impl Runtime {
         id
     }
 
+    /// Hot-swap a track's backend at runtime. Inserts, volume, pan, sends
+    /// and meter are preserved; only the instrument changes. Active notes on
+    /// the old backend are silenced.
+    pub fn swap_track_backend(&mut self, track_id: u32, backend: Box<dyn AudioBackend>) {
+        let _ = self.command_tx.send(Box::new(move |mixer| {
+            mixer.replace_track_backend(track_id, backend, None);
+        }));
+    }
+
     /// Remove a track at runtime. Notes are silenced before removal.
     pub fn remove_track(&mut self, track_id: u32) {
         self.track_meters.remove(&track_id);
@@ -375,6 +389,31 @@ impl Runtime {
 
     pub fn set_loop(&self, enabled: bool) {
         self.transport.set_loop(enabled);
+    }
+
+    // --- MIDI file loading ---
+
+    /// Parse a MIDI file and stage it on the audio thread for playback.
+    /// The new sequencer takes effect on the next audio callback. Transport
+    /// state (play/pause/stop) is unchanged — the caller decides when to start.
+    pub fn load_midi(&mut self, path: &str) -> Result<(), String> {
+        let mut seq = Sequencer::from_file(path)?;
+        // The sequencer's own state gates `advance()`; AudioThread additionally
+        // gates on Transport. We open the inner gate here so transport alone
+        // controls playback once the sequencer is staged.
+        seq.play();
+        self.sequencer_tx
+            .send(Box::new(move |slot| {
+                *slot = Some(seq);
+            }))
+            .map_err(|e| format!("audio thread closed: {e}"))
+    }
+
+    /// Remove any loaded MIDI sequence from the audio thread.
+    pub fn unload_midi(&mut self) {
+        let _ = self.sequencer_tx.send(Box::new(|slot| {
+            *slot = None;
+        }));
     }
 
     // --- MIDI Input ---

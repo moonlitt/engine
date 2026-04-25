@@ -42,6 +42,29 @@ impl Backend {
         self.inner.as_ref().and_then(|b| b.get_param(id))
     }
 
+    /// Metadata for the parameter at the given index (0..param_count).
+    /// Returns None if the index is out of range or the backend has been consumed.
+    #[napi]
+    pub fn param_info(&self, index: u32) -> Option<crate::types::ParamInfo> {
+        self.inner.as_ref().and_then(|b| b.param_info(index)).map(|info| {
+            crate::types::ParamInfo {
+                id: info.id,
+                name: info.name,
+                group: info.group,
+                min: info.min,
+                max: info.max,
+                default: info.default,
+                step_count: info.step_count,
+            }
+        })
+    }
+
+    /// Human-readable display string for a parameter value (e.g., "+3.5 dB").
+    #[napi]
+    pub fn param_display(&self, id: u32, value: f64) -> Option<String> {
+        self.inner.as_ref().and_then(|b| b.param_display(id, value))
+    }
+
     /// Whether this backend has been consumed (passed to a Session).
     #[napi]
     pub fn is_consumed(&self) -> bool {

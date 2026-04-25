@@ -374,6 +374,23 @@ impl Mixer {
         self.rebuild_render_order();
     }
 
+    /// Replace a track's audio backend, returning the old one. Inserts,
+    /// volume, pan, sends, routing, and meter all stay attached — only the
+    /// instrument is swapped. Active notes on the old backend are silenced
+    /// before the swap.
+    pub fn replace_track_backend(
+        &mut self,
+        track_id: u32,
+        new_backend: Box<dyn AudioBackend>,
+        new_source_path: Option<String>,
+    ) -> Option<Box<dyn AudioBackend>> {
+        let track = self.tracks.iter_mut().find(|t| t.id == track_id)?;
+        track.backend.all_notes_off();
+        let old = std::mem::replace(&mut track.backend, new_backend);
+        track.source_path = new_source_path;
+        Some(old)
+    }
+
     /// Remove a track by ID. Returns the backend if found.
     pub fn remove_track(&mut self, id: u32) -> Option<Box<dyn AudioBackend>> {
         // Reset any tracks routing to this group
