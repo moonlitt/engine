@@ -536,6 +536,23 @@ export class EngineManager {
     return true;
   }
 
+  // --- Per-channel program selection (manual override of MIDI PC) -------
+
+  /** Send a Program Change for the given MIDI channel via the audio thread. */
+  setChannelProgram(channel: number, program: number): boolean {
+    if (!this.session) return false;
+    if (channel < 0 || channel > 15) return false;
+    if (program < 0 || program > 127) return false;
+    try {
+      this.session.programChange(channel, program);
+      console.log(`[engine] program ch=${channel + 1} → ${program}`);
+      return true;
+    } catch (e) {
+      console.error('[engine] setChannelProgram failed:', e);
+      return false;
+    }
+  }
+
   // --- Transport ----------------------------------------------------------
 
   play(): void {

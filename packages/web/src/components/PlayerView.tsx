@@ -43,7 +43,14 @@ export function PlayerView() {
               <div className="flex flex-col gap-3">
                 {midi.channels.map((ch) => {
                   const ov = overrides.find((o) => o.channel === ch.channel) ?? null;
-                  return <ChannelRow key={ch.channel} info={ch} override={ov} />;
+                  return (
+                    <ChannelRow
+                      key={ch.channel}
+                      info={ch}
+                      override={ov}
+                      defaultInstrumentPath={defaultInstrumentPath}
+                    />
+                  );
                 })}
               </div>
             </section>

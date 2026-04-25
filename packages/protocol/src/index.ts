@@ -19,6 +19,10 @@ export type Command =
   | { type: 'channel.set_volume'; channel: number; db: number }
   | { type: 'channel.set_mute'; channel: number; muted: boolean }
   | { type: 'channel.set_solo'; channel: number; solo: boolean }
+  // Pick a GM preset for a channel by sending a Program Change. Works for
+  // any backend that responds to MIDI PC (SF2 always does; VST3/CLAP varies).
+  // The MIDI file's own PC events will override this on the next event.
+  | { type: 'channel.set_program'; channel: number; program: number }
 
   // --- Inserts on the channel-override track -------------------------------
   | { type: 'insert.add'; channel: number; effectType: string }
@@ -34,7 +38,7 @@ export type ServerEvent =
   | { type: 'default.instrument_changed'; instrumentPath: string | null }
   | { type: 'channel.override_added'; override: ChannelOverrideState }
   | { type: 'channel.override_removed'; channel: number }
-  | { type: 'channel.updated'; channel: number; volume?: number; muted?: boolean; solo?: boolean }
+  | { type: 'channel.updated'; channel: number; volume?: number; muted?: boolean; solo?: boolean; userProgram?: number | null }
   | { type: 'insert.added'; channel: number; insert: InsertState }
   | { type: 'insert.removed'; channel: number; insertId: number }
   | { type: 'plugins.list'; plugins: PluginInfo[] }

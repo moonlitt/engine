@@ -8,11 +8,12 @@ import type {
 import { useSessionStore } from '../stores/session';
 import { useUiStore } from '../stores/ui';
 import { useProjectStore } from '../stores/project';
-import { channelDisplayName } from '../i18n/gm-programs';
+import { GM_PROGRAM_ZH, channelDisplayName } from '../i18n/gm-programs';
 
 interface ChannelRowProps {
   info: MidiChannelInfo;
   override: ChannelOverrideState | null;
+  defaultInstrumentPath: string | null;
 }
 
 const EFFECT_TYPES: readonly { label: string; value: string }[] = [
@@ -37,12 +38,17 @@ const EFFECT_TYPES: readonly { label: string; value: string }[] = [
   { label: '增益', value: 'gain' },
 ];
 
-export function ChannelRow({ info, override }: ChannelRowProps) {
+export function ChannelRow({ info, override, defaultInstrumentPath }: ChannelRowProps) {
   const send = useSessionStore((s) => s.send);
   const openPicker = useUiStore((s) => s.openInstrumentPicker);
 
   const inherited = override === null;
   const displayName = channelDisplayName(info.displayNumber, info.trackName, info.program);
+
+  // What instrument actually plays this channel right now?
+  const activeInstrument = inherited
+    ? defaultInstrumentPath?.split('/').pop() ?? null
+    : override.instrumentName;
 
   return (
     <section className="bg-daw-panel border border-daw-border rounded-lg overflow-hidden">
@@ -55,9 +61,15 @@ export function ChannelRow({ info, override }: ChannelRowProps) {
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-sm text-[#e0e0e0] truncate">{displayName}</div>
-          {info.program !== undefined && info.trackName === undefined && (
-            <div className="text-[10px] text-[#666]">GM 音色 #{info.program}</div>
-          )}
+          <div className="text-[10px] text-[#888] truncate">
+            {inherited ? '沿用默认音色' : '单独指定音色'}
+            {activeInstrument && (
+              <span className="text-[#bbb] ml-1.5">· {activeInstrument}</span>
+            )}
+            {info.program !== undefined && info.trackName === undefined && (
+              <span className="text-[#666] ml-1.5">· MIDI 默认 #{info.program} {GM_PROGRAM_ZH[info.program] ?? ''}</span>
+            )}
+          </div>
         </div>
 
         {inherited ? (
@@ -74,19 +86,168 @@ export function ChannelRow({ info, override }: ChannelRowProps) {
         )}
       </div>
 
-      {/* Inherited body */}
-      {inherited ? (
-        <div className="px-3 py-1.5 text-[10px] text-[#666]">
-          沿用默认音色
-        </div>
-      ) : (
-        <OverrideBody channel={info.channel} override={override} send={send} />
-      )}
+      {/* Body — preset picker is universal; volume/effects only on overrides */}
+      <ChannelBody info={info} override={override} send={send} />
     </section>
   );
 }
 
 // ---------------------------------------------------------------------------
+
+function ChannelBody({
+  info, override, send,
+}: {
+  info: MidiChannelInfo;
+  override: ChannelOverrideState | null;
+  send: ReturnType<typeof useSessionStore.getState>['send'];
+}) {
+  const isOverride = override !== null;
+  return (
+    <div className="px-3 py-2 flex flex-col gap-2">
+      <PresetPicker
+        channel={info.channel}
+        midiProgram={info.program}
+        onPick={(program) => send({ type: 'channel.set_program', channel: info.channel, program })}
+      />
+
+      {isOverride && (
+        <>
+          <VolumeRow channel={info.channel} db={override.volume} />
+          <EffectsBlock channel={info.channel} inserts={override.inserts} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function PresetPicker({
+  channel, midiProgram, onPick,
+}: {
+  channel: number;
+  midiProgram: number | undefined;
+  onPick(program: number): void;
+}) {
+  const [value, setValue] = useState<string>('');
+  // Channel 10 (display) is GM percussion — preset selection isn't really
+  // meaningful; show a hint instead.
+  const isDrumChannel = channel === 9;
+  return (
+    <div className="flex items-center gap-2 text-[11px]">
+      <span className="text-[#888] w-12 shrink-0">音色</span>
+      {isDrumChannel ? (
+        <span className="text-[#aaa]">鼓组（GM 通道 10 固定为打击乐）</span>
+      ) : (
+        <>
+          <select
+            value={value}
+            onChange={(e) => {
+              const n = parseInt(e.target.value, 10);
+              if (!Number.isNaN(n)) {
+                onPick(n);
+                setValue(String(n));
+              }
+            }}
+            className="flex-1 bg-daw-control border border-daw-border rounded px-2 py-1 text-xs text-[#e0e0e0] outline-none focus:border-daw-accent"
+            title="切换 GM 音色 — 注意 MIDI 文件本身的 Program Change 事件在播放过程中可能再次覆盖"
+          >
+            <option value="" disabled>
+              {midiProgram !== undefined
+                ? `沿用 MIDI 默认: #${midiProgram} ${GM_PROGRAM_ZH[midiProgram] ?? ''}`
+                : '选择 GM 音色…'}
+            </option>
+            {GM_PROGRAM_ZH.map((name, i) => (
+              <option key={i} value={i}>
+                #{i} {name}
+              </option>
+            ))}
+          </select>
+          <span className="text-[10px] text-[#666] shrink-0" title="MIDI 文件里的 PC 事件可能在播放中再次覆盖">
+            ⓘ
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
+function VolumeRow({ channel, db }: { channel: number; db: number }) {
+  const send = useSessionStore((s) => s.send);
+  const updateChannel = useProjectStore((s) => s.updateChannel);
+  return (
+    <div className="flex items-center gap-3 text-[11px] text-[#888]">
+      <span className="w-12 shrink-0">音量</span>
+      <input
+        type="range"
+        min={-60} max={6} step={0.5}
+        value={db}
+        onChange={(e) => {
+          const v = parseFloat(e.target.value);
+          updateChannel(channel, { volume: v });
+          send({ type: 'channel.set_volume', channel, db: v });
+        }}
+        className="flex-1 accent-daw-accent"
+      />
+      <span className="w-12 text-right tabular-nums font-mono">{db.toFixed(1)} dB</span>
+    </div>
+  );
+}
+
+function EffectsBlock({ channel, inserts }: { channel: number; inserts: InsertState[] }) {
+  const send = useSessionStore((s) => s.send);
+  const removeInsertLocal = useProjectStore((s) => s.removeInsert);
+  const setInsertParamLocal = useProjectStore((s) => s.setInsertParam);
+  const [adding, setAdding] = useState(false);
+
+  return (
+    <div className="border-t border-daw-border pt-2 flex flex-col gap-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-widest text-[#888]">
+          效果器（{inserts.length}）
+        </span>
+        {!adding && (
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            className="text-[10px] px-2 py-0.5 rounded bg-daw-control hover:bg-daw-border text-[#ccc] transition-colors"
+          >+ 添加效果</button>
+        )}
+      </div>
+      {adding && (
+        <select
+          autoFocus defaultValue=""
+          onChange={(e) => {
+            if (e.target.value) {
+              send({ type: 'insert.add', channel, effectType: e.target.value });
+            }
+            setAdding(false);
+          }}
+          onBlur={() => setAdding(false)}
+          className="bg-daw-control border border-daw-accent rounded px-2 py-1 text-xs text-[#e0e0e0] outline-none"
+        >
+          <option value="" disabled>选择效果…</option>
+          {EFFECT_TYPES.map((fx) => (
+            <option key={fx.value} value={fx.value}>{fx.label}</option>
+          ))}
+        </select>
+      )}
+
+      {inserts.map((insert) => (
+        <InsertCard
+          key={insert.id}
+          insert={insert}
+          onRemove={() => {
+            removeInsertLocal(channel, insert.id);
+            send({ type: 'insert.remove', channel, insertId: insert.id });
+          }}
+          onParam={(paramId, value) => {
+            setInsertParamLocal(channel, insert.id, paramId, value);
+            send({ type: 'insert.set_param', channel, insertId: insert.id, paramId, value });
+          }}
+        />
+      ))}
+    </div>
+  );
+}
 
 function OverrideControls({ override }: { override: ChannelOverrideState }) {
   const send = useSessionStore((s) => s.send);
@@ -136,91 +297,9 @@ function OverrideControls({ override }: { override: ChannelOverrideState }) {
   );
 }
 
-function OverrideBody({
-  channel, override, send,
-}: { channel: number; override: ChannelOverrideState; send: ReturnType<typeof useSessionStore.getState>['send'] }) {
-  const [adding, setAdding] = useState(false);
-  const updateChannel = useProjectStore((s) => s.updateChannel);
-  const removeInsertLocal = useProjectStore((s) => s.removeInsert);
-  const setInsertParamLocal = useProjectStore((s) => s.setInsertParam);
-
-  const handleVolume = useCallback((db: number) => {
-    updateChannel(channel, { volume: db });
-    send({ type: 'channel.set_volume', channel, db });
-  }, [channel, send, updateChannel]);
-
-  return (
-    <div className="px-3 py-2 flex flex-col gap-2">
-      {/* Volume row */}
-      <div className="flex items-center gap-3 text-[11px] text-[#888]">
-        <span className="w-12 shrink-0">音量</span>
-        <input
-          type="range"
-          min={-60} max={6} step={0.5}
-          value={override.volume}
-          onChange={(e) => handleVolume(parseFloat(e.target.value))}
-          className="flex-1 accent-daw-accent"
-        />
-        <span className="w-12 text-right tabular-nums font-mono">{override.volume.toFixed(1)} dB</span>
-      </div>
-
-      {/* Effects */}
-      <div className="border-t border-daw-border pt-2 flex flex-col gap-1.5">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] uppercase tracking-widest text-[#888]">
-            效果器（{override.inserts.length}）
-          </span>
-          {!adding && (
-            <button
-              type="button"
-              onClick={() => setAdding(true)}
-              className="text-[10px] px-2 py-0.5 rounded bg-daw-control hover:bg-daw-border text-[#ccc] transition-colors"
-            >+ 添加效果</button>
-          )}
-        </div>
-        {adding && (
-          <select
-            autoFocus defaultValue=""
-            onChange={(e) => {
-              if (e.target.value) {
-                send({ type: 'insert.add', channel, effectType: e.target.value });
-              }
-              setAdding(false);
-            }}
-            onBlur={() => setAdding(false)}
-            className="bg-daw-control border border-daw-accent rounded px-2 py-1 text-xs text-[#e0e0e0] outline-none"
-          >
-            <option value="" disabled>选择效果…</option>
-            {EFFECT_TYPES.map((fx) => (
-              <option key={fx.value} value={fx.value}>{fx.label}</option>
-            ))}
-          </select>
-        )}
-
-        {override.inserts.map((insert) => (
-          <InsertCard
-            key={insert.id}
-            channel={channel}
-            insert={insert}
-            onRemove={() => {
-              removeInsertLocal(channel, insert.id);
-              send({ type: 'insert.remove', channel, insertId: insert.id });
-            }}
-            onParam={(paramId, value) => {
-              setInsertParamLocal(channel, insert.id, paramId, value);
-              send({ type: 'insert.set_param', channel, insertId: insert.id, paramId, value });
-            }}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function InsertCard({
   insert, onRemove, onParam,
 }: {
-  channel: number;
   insert: InsertState;
   onRemove(): void;
   onParam(paramId: number, value: number): void;

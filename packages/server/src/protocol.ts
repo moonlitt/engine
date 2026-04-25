@@ -77,6 +77,10 @@ export function handleCommand(engine: EngineManager, cmd: Command): ServerEvent 
       engine.setChannelSolo(cmd.channel, cmd.solo);
       return { type: 'channel.updated', channel: cmd.channel, solo: cmd.solo };
 
+    case 'channel.set_program':
+      engine.setChannelProgram(cmd.channel, cmd.program);
+      return { type: 'channel.updated', channel: cmd.channel, userProgram: cmd.program };
+
     // --- Inserts (on override tracks) ------------------------------------
 
     case 'insert.add': {
