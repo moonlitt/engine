@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import type { ParamMeta } from '@moonlitt/protocol';
 import { useMixerStore, type Insert } from '../stores/mixer';
 import { useSessionStore } from '../stores/session';
-import { InstrumentSelector } from './InstrumentSelector';
+import { useUiStore } from '../stores/ui';
 
 const EFFECT_TYPES: readonly { label: string; value: string }[] = [
   { label: 'EQ', value: 'eq' },
@@ -30,8 +30,7 @@ export function TrackInspector() {
   const selectedTrackId = useMixerStore((s) => s.selectedTrackId);
   const tracks = useMixerStore((s) => s.tracks);
   const send = useSessionStore((s) => s.send);
-
-  const [instrumentSelectorOpen, setInstrumentSelectorOpen] = useState(false);
+  const openInstrumentSelector = useUiStore((s) => s.openInstrumentSelector);
 
   const track = tracks.find((t) => t.id === selectedTrackId) ?? null;
 
@@ -43,14 +42,10 @@ export function TrackInspector() {
     [track, send],
   );
 
-  const handleLoadInstrument = useCallback(
-    (path: string) => {
-      if (track === null) return;
-      send({ type: 'track.load_instrument', trackId: track.id, path });
-      setInstrumentSelectorOpen(false);
-    },
-    [track, send],
-  );
+  const handleOpenSelector = useCallback(() => {
+    if (track === null) return;
+    openInstrumentSelector(track.id);
+  }, [track, openInstrumentSelector]);
 
   if (track === null) {
     return (
@@ -89,7 +84,7 @@ export function TrackInspector() {
             </div>
             <button
               type="button"
-              onClick={() => setInstrumentSelectorOpen(true)}
+              onClick={handleOpenSelector}
               className="text-[10px] px-2 py-1 rounded bg-daw-control hover:bg-daw-border text-[#ccc] transition-colors"
             >
               Change…
@@ -100,7 +95,7 @@ export function TrackInspector() {
             <div className="text-xs text-[#666] mb-2">No instrument loaded</div>
             <button
               type="button"
-              onClick={() => setInstrumentSelectorOpen(true)}
+              onClick={handleOpenSelector}
               className="w-full text-xs px-3 py-1.5 rounded bg-daw-accent hover:bg-daw-accent/80 text-white transition-colors font-medium"
             >
               Load instrument…
@@ -128,13 +123,6 @@ export function TrackInspector() {
 
         <InsertAdder onAdd={handleAddInsert} />
       </div>
-
-      {/* Instrument Selector Modal */}
-      <InstrumentSelector
-        open={instrumentSelectorOpen}
-        onLoad={handleLoadInstrument}
-        onClose={() => setInstrumentSelectorOpen(false)}
-      />
     </div>
   );
 }

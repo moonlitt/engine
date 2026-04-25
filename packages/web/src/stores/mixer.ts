@@ -120,7 +120,10 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
       inserts: [],
       clips: [],
     };
-    set({ tracks: [...tracks, newTrack] });
+    // Auto-select the new track so the right-hand inspector immediately shows
+    // its actions — otherwise a user who just clicked "+ Add Track" sees
+    // nothing change in the inspector and assumes the app is broken.
+    set({ tracks: [...tracks, newTrack], selectedTrackId: trackId });
   },
 
   removeTrack(trackId: number) {

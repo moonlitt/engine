@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { useMixerStore } from '../stores/mixer';
 import { useTransportStore } from '../stores/transport';
 import { useSessionStore } from '../stores/session';
+import { useUiStore } from '../stores/ui';
 import { uploadMidiFile } from '../services/upload';
 import { TimelineRuler } from './TimelineRuler';
 import { TrackHeader } from './TrackHeader';
@@ -18,6 +19,7 @@ export function ArrangeView() {
   const selectTrack = useMixerStore((s) => s.selectTrack);
   const position = useTransportStore((s) => s.position);
   const send = useSessionStore((s) => s.send);
+  const openInstrumentSelector = useUiStore((s) => s.openInstrumentSelector);
 
   const [scrollLeft, setScrollLeft] = useState(0);
   const [dragOverTrackId, setDragOverTrackId] = useState<number | null>(null);
@@ -141,21 +143,22 @@ export function ArrangeView() {
 
                 {/* Drop indicator */}
                 {dragOverTrackId === track.id && (
-                  <div className="absolute inset-0 border-2 border-dashed border-daw-accent/50 rounded pointer-events-none z-10 flex items-center justify-center">
-                    <span className="text-[10px] text-daw-accent/70 bg-daw-bg/80 px-2 py-0.5 rounded">
+                  <div className="absolute inset-0 border-2 border-dashed border-daw-accent rounded pointer-events-none z-10 flex items-center justify-center bg-daw-accent/10">
+                    <span className="text-xs text-daw-accent bg-daw-bg/80 px-3 py-1 rounded font-medium">
                       Drop .mid file
                     </span>
                   </div>
                 )}
 
-                {/* Empty-lane hint — drop affordance shown even before drag-over */}
-                {track.clips.length === 0 && dragOverTrackId !== track.id && (
-                  <div
-                    className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-[#3a3a3a] pointer-events-none select-none"
-                    style={{ left: `${Math.max(8, scrollLeft + 8)}px` }}
-                  >
-                    Drop a .mid file here  ·  or click <span className="text-daw-accent/60">+ MIDI</span> on the track
-                  </div>
+                {/* Inline lane CTAs — shown when track is incomplete, anchored
+                    at the visible left edge regardless of horizontal scroll. */}
+                {dragOverTrackId !== track.id && (
+                  <EmptyLaneCTA
+                    track={track}
+                    scrollLeft={scrollLeft}
+                    onPickInstrument={() => openInstrumentSelector(track.id)}
+                    onUploadMidi={(file) => handleFileUpload(file, track.id)}
+                  />
                 )}
 
                 {/* Clips */}
@@ -176,20 +179,88 @@ export function ArrangeView() {
         </div>
       </div>
 
-      {/* Empty state — first-run guide */}
+      {/* Empty workspace — single primary CTA so the user has one
+          unmistakable next step. Auto-creates and selects a track. */}
       {tracks.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="text-center">
-            <div className="text-[#666] text-xs mb-3">Get started in 4 steps</div>
-            <ol className="text-[11px] text-[#888] flex flex-col gap-1 items-start">
-              <li><span className="text-daw-accent">1.</span> Click <span className="text-[#ccc]">+ Add Track</span> on the left</li>
-              <li><span className="text-daw-accent">2.</span> Pick an instrument in the right panel (<span className="text-[#ccc]">Load</span>)</li>
-              <li><span className="text-daw-accent">3.</span> Drop a <span className="text-[#ccc]">.mid</span> file on the track lane</li>
-              <li><span className="text-daw-accent">4.</span> Hit <span className="text-[#ccc]">Space</span> or the play button</li>
-            </ol>
+          <div className="text-center pointer-events-auto">
+            <button
+              onClick={handleAddTrack}
+              className="px-6 py-3 bg-daw-accent hover:bg-daw-accent/80 text-white text-sm font-medium rounded-lg shadow-lg transition-colors"
+            >
+              + Create your first track
+            </button>
+            <div className="text-[11px] text-[#666] mt-3">
+              Then pick an instrument and drop a <span className="text-[#aaa]">.mid</span> file
+            </div>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+interface EmptyLaneCTAProps {
+  track: { id: number; instrumentPath: string | null; clips: { id: number }[] };
+  scrollLeft: number;
+  onPickInstrument: () => void;
+  onUploadMidi: (file: File) => void;
+}
+
+/**
+ * Inline call-to-action chips inside an incomplete track lane.
+ *
+ * Why inline: the user is already looking at the lane, so put the actions
+ * here rather than expecting them to discover the 220px right inspector or
+ * the 120px left header. Order doesn't matter — instrument and MIDI are
+ * independent; a track plays sound only once both exist, but either can
+ * be done first.
+ */
+function EmptyLaneCTA({ track, scrollLeft, onPickInstrument, onUploadMidi }: EmptyLaneCTAProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const hasInstrument = track.instrumentPath !== null;
+  const hasClip = track.clips.length > 0;
+  if (hasInstrument && hasClip) return null;
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) onUploadMidi(file);
+    e.target.value = '';
+  };
+
+  return (
+    <div
+      className="absolute top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-auto"
+      style={{ left: `${scrollLeft + 12}px` }}
+    >
+      {!hasInstrument && (
+        <button
+          type="button"
+          onClick={onPickInstrument}
+          className="px-2.5 py-1 text-[11px] rounded bg-daw-accent/20 hover:bg-daw-accent text-daw-accent hover:text-white border border-daw-accent/40 transition-colors font-medium"
+          title="Pick an SF2 / VST3 / CLAP instrument"
+        >
+          🎹 Pick instrument
+        </button>
+      )}
+      {!hasClip && (
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="px-2.5 py-1 text-[11px] rounded bg-[#2a2a2a] hover:bg-[#3a3a3a] text-[#ccc] border border-[#444] transition-colors font-medium"
+          title="Click to choose a .mid file, or drag one onto the lane"
+        >
+          📁 Upload MIDI
+        </button>
+      )}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".mid,.midi"
+        onChange={handleFileChange}
+        className="hidden"
+      />
     </div>
   );
 }
