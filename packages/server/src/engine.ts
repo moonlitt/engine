@@ -293,13 +293,21 @@ export class EngineManager {
       if (!this.session) {
         // First track -- create the session
         this.session = addon.Session.create(backend, this.sampleRate, this.bufferSize);
-        this.session.start();
+        try {
+          this.session.start();
+        } catch (startErr) {
+          console.error('[engine] Session.start() failed — audio device unavailable:', startErr);
+          this.session = null;
+          return null;
+        }
         this.session.setTempo(this.bpm);
         trackId = 0;
+        console.log(`[engine] session started (sr=${this.sampleRate}, buf=${this.bufferSize})`);
       } else {
         // Subsequent tracks
         trackId = this.session.addTrack(backend, 0xFFFF);
       }
+      console.log(`[engine] addTrack id=${trackId} instrument=${instrumentPath ?? '(silent placeholder)'}`);
 
       const meta: TrackMeta = {
         id: trackId,
@@ -348,9 +356,10 @@ export class EngineManager {
       const backend = addon.create(path, this.sampleRate, this.bufferSize);
       this.session.swapTrackBackend(trackId, backend);
       track.instrumentPath = path;
+      console.log(`[engine] loadInstrument track=${trackId} path=${path}`);
       return true;
     } catch (e) {
-      console.error('[engine] loadInstrument failed:', e);
+      console.error(`[engine] loadInstrument failed (track=${trackId}, path=${path}):`, e);
       return false;
     }
   }
@@ -391,11 +400,19 @@ export class EngineManager {
   // --- Transport ----------------------------------------------------------
 
   play(): void {
-    this.session?.play();
+    if (!this.session) {
+      console.warn('[engine] play() called but no session exists — add a track first');
+      return;
+    }
+    const trackCount = this.tracks.length;
+    const withInstrument = this.tracks.filter((t) => t.instrumentPath !== null).length;
+    console.log(`[engine] play (tracks=${trackCount}, with instrument=${withInstrument})`);
+    this.session.play();
     this.playing = true;
   }
 
   stop(): void {
+    console.log('[engine] stop');
     this.session?.stopPlayback();
     this.playing = false;
   }

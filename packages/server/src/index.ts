@@ -3,9 +3,36 @@ import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import multer from 'multer';
 import os from 'os';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { existsSync } from 'fs';
 import { EngineManager } from './engine.js';
 import { handleCommand } from './protocol.js';
 import type { Command, ServerEvent } from '@moonlitt/protocol';
+
+// ---------------------------------------------------------------------------
+// SF2 discovery — point the engine's scanner at the workspace test fixtures
+// so the dev user always sees the bundled SF2 files in the picker. Real
+// system locations (~/Library/Audio/Sounds/Banks, ~/Documents/Soundfonts)
+// are still scanned by the engine on top of this.
+// ---------------------------------------------------------------------------
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+let workspace = here;
+for (let i = 0; i < 10; i++) {
+  if (existsSync(path.join(workspace, 'Cargo.lock'))) break;
+  workspace = path.dirname(workspace);
+}
+if (existsSync(path.join(workspace, 'Cargo.lock'))) {
+  const sf2Dirs = [
+    path.join(workspace, 'tests'),
+    path.join(workspace, 'deps/oxisynth/testdata'),
+  ].filter(existsSync);
+  const existing = process.env.MOONLITT_SF2_DIR ?? '';
+  const merged = [existing, ...sf2Dirs].filter(Boolean).join(':');
+  process.env.MOONLITT_SF2_DIR = merged;
+  console.log(`[server] SF2 search dirs: ${merged}`);
+}
 
 // ---------------------------------------------------------------------------
 // Engine
