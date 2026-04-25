@@ -11,6 +11,7 @@ members = [
     "crates/moonlitt-cli",
     "crates/moonlitt-resampler",
     "crates/moonlitt-test-suite",
+    "crates/moonlitt-analyze",
     "crates/moonlitt-sampler",
     "crates/moonlitt-effects",
     "crates/moonlitt-mixer",

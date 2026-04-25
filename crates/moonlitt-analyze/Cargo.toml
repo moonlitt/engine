@@ -1,0 +1,14 @@
+[package]
+name = "moonlitt-analyze"
+description = "Objective audio measurement (peak, true peak, LUFS, anomalies) for regression testing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ebur128 = "0.1"
+hound = "3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
