@@ -22,10 +22,12 @@ mod module;
 mod processor;
 mod scanner;
 pub mod stream;
+pub mod view;
 
 pub use error::{Error, Result};
 pub use events::{MidiEvent, MidiEventKind};
 pub use scanner::PluginInfo;
+pub use view::{platform, Vst3PluginView};
 
 use component::LoadedPlugin;
 
