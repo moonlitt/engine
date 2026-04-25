@@ -525,12 +525,20 @@ export class EngineManager {
 
   play(): void {
     if (!this.session) {
-      console.warn('[engine] play() called but no session exists — add a track first');
+      console.warn('[engine] play() called but no session exists — upload a MIDI first');
       return;
     }
-    const trackCount = this.tracks.length;
-    const withInstrument = this.tracks.filter((t) => t.instrumentPath !== null).length;
-    console.log(`[engine] play (tracks=${trackCount}, with instrument=${withInstrument})`);
+    console.log(`[engine] play — track snapshot:`);
+    for (const t of this.tracks) {
+      const channels: number[] = [];
+      for (let i = 0; i < 16; i++) {
+        if (t.channelMask & (1 << i)) channels.push(i + 1);
+      }
+      const chSummary = channels.length === 16 ? 'ALL' : channels.join(',');
+      console.log(
+        `[engine]   track ${t.id} mask=0x${t.channelMask.toString(16)} ch=${chSummary} instrument=${t.instrumentPath ?? '(none — silent)'} clips=${t.clips.length}`,
+      );
+    }
     this.session.play();
     this.playing = true;
   }

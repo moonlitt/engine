@@ -1,9 +1,8 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { ParamMeta } from '@moonlitt/protocol';
 import { useMixerStore, type Insert, type Track } from '../stores/mixer';
 import { useSessionStore } from '../stores/session';
 import { useUiStore } from '../stores/ui';
-import { uploadMidiFile } from '../services/upload';
 
 const EFFECT_TYPES: readonly { label: string; value: string }[] = [
   { label: 'Dattorro Reverb', value: 'dattorro-reverb' },
@@ -108,8 +107,8 @@ export function TrackCard({ track }: { track: Track }) {
         </div>
       </div>
 
-      {/* MIDI drop zone */}
-      <MidiZone track={track} />
+      {/* Clip indicator (read-only — MIDI upload lives in the global bar above) */}
+      <ClipIndicator track={track} />
 
       {/* Effects */}
       <div className="border-t border-daw-border">
@@ -154,75 +153,19 @@ function ToggleBtn({
 
 // ---------------------------------------------------------------------------
 
-function MidiZone({ track }: { track: Track }) {
-  const [dragOver, setDragOver] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const upload = useCallback(
-    async (file: File) => {
-      if (!file.name.match(/\.midi?$/i)) {
-        setError(`Not a MIDI file: ${file.name}`);
-        return;
-      }
-      setError(null);
-      setBusy(true);
-      const ok = await uploadMidiFile(file, track.id);
-      setBusy(false);
-      if (!ok) setError('Upload failed (see server log)');
-    },
-    [track.id],
-  );
-
+function ClipIndicator({ track }: { track: Track }) {
   const clip = track.clips[0] ?? null;
-  const empty = clip === null;
-
-  return (
-    <div className="px-3 py-2">
-      <div
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={async (e) => {
-          e.preventDefault();
-          setDragOver(false);
-          const file = e.dataTransfer.files[0];
-          if (file) await upload(file);
-        }}
-        onClick={() => fileInputRef.current?.click()}
-        className={`cursor-pointer rounded border border-dashed px-3 py-2 transition-colors ${
-          dragOver
-            ? 'border-daw-accent bg-daw-accent/10'
-            : empty
-              ? 'border-daw-border hover:border-daw-accent/60 hover:bg-daw-control/30'
-              : 'border-daw-border bg-daw-control/20'
-        }`}
-      >
-        {clip !== null ? (
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-green-400">✓</span>
-            <span className="text-[#e0e0e0] flex-1 truncate">{clip.name}</span>
-            <span className="text-[10px] text-[#888]">click or drop to replace</span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 text-xs text-[#888]">
-            <span>📁</span>
-            <span>{busy ? 'Uploading…' : 'Drop a .mid file here, or click to choose'}</span>
-          </div>
-        )}
+  if (clip === null) {
+    return (
+      <div className="px-3 py-1.5 text-[10px] text-[#666]">
+        No notes routed to this track yet — upload a MIDI in the bar above.
       </div>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".mid,.midi"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) upload(file);
-          e.target.value = '';
-        }}
-        className="hidden"
-      />
-      {error !== null && <div className="mt-1 text-[10px] text-red-400">{error}</div>}
+    );
+  }
+  return (
+    <div className="px-3 py-1.5 flex items-center gap-2 text-[10px] text-[#888]">
+      <span className="text-green-400">▸</span>
+      <span className="truncate">Plays <span className="text-[#bbb]">{clip.name}</span></span>
     </div>
   );
 }
