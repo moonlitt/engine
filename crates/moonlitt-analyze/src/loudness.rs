@@ -43,8 +43,10 @@ pub fn measure(left: &[f32], right: &[f32], sample_rate: u32) -> Result<Loudness
     })
 }
 
-/// ebur128 returns `-inf` when there's no audible content. Surface that as
-/// `f64::NEG_INFINITY` consistently rather than a huge negative number.
+/// ebur128 returns `-inf` for silence. Floor at -200 LUFS so reports
+/// round-trip through JSON cleanly (matches the dBFS floor used in `peak`).
+const MIN_LUFS: f64 = -200.0;
+
 fn clean(v: f64) -> f64 {
-    if v.is_finite() { v } else { f64::NEG_INFINITY }
+    if v.is_finite() { v.max(MIN_LUFS) } else { MIN_LUFS }
 }

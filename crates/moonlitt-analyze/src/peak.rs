@@ -6,10 +6,13 @@
 //!   adds complexity not needed for regression testing.
 //! - **RMS** is the root mean square over the full buffer.
 //!
-//! All values reported in dBFS / dBTP. Silence returns `f64::NEG_INFINITY`.
+//! All values reported in dBFS / dBTP. Silence floors at `MIN_DBFS` rather than
+//! `-∞` so reports round-trip through JSON cleanly (snapshot regression).
 
 use crate::report::PeakStats;
 
+/// Functional silence floor. -200 dBFS is ~100 dB below the noise of any
+/// real audio chain, so anything quieter is treated as "silent".
 const MIN_DBFS: f64 = -200.0;
 
 /// Measure sample peak and true peak across a stereo buffer.
@@ -48,7 +51,7 @@ fn measure_channel(samples: &[f32]) -> (f32, f32) {
 /// RMS in dBFS for a single channel.
 pub fn rms_dbfs(samples: &[f32]) -> f64 {
     if samples.is_empty() {
-        return f64::NEG_INFINITY;
+        return MIN_DBFS;
     }
     let mut sum_sq: f64 = 0.0;
     for &s in samples {
@@ -61,14 +64,10 @@ pub fn rms_dbfs(samples: &[f32]) -> f64 {
 
 fn linear_to_dbfs(linear: f32) -> f64 {
     if linear <= 0.0 {
-        return f64::NEG_INFINITY;
+        return MIN_DBFS;
     }
     let db = 20.0 * (linear as f64).log10();
-    if db < MIN_DBFS {
-        f64::NEG_INFINITY
-    } else {
-        db
-    }
+    db.max(MIN_DBFS)
 }
 
 #[cfg(test)]
@@ -87,10 +86,10 @@ mod tests {
     }
 
     #[test]
-    fn silence_reports_neg_infinity() {
+    fn silence_reports_floor_dbfs() {
         let buf = vec![0.0f32; 1000];
         let stats = measure(&buf, &buf);
-        assert_eq!(stats.sample_peak_l_dbfs, f64::NEG_INFINITY);
-        assert_eq!(rms_dbfs(&buf), f64::NEG_INFINITY);
+        assert_eq!(stats.sample_peak_l_dbfs, MIN_DBFS);
+        assert_eq!(rms_dbfs(&buf), MIN_DBFS);
     }
 }
