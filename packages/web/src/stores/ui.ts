@@ -1,18 +1,26 @@
 import { create } from 'zustand';
 
+/**
+ * Target the instrument-picker modal applies to:
+ *   { kind: 'default' }              → set the project's default instrument
+ *   { kind: 'override', channel: N } → set / replace the channel-N override
+ */
+export type InstrumentTarget =
+  | { kind: 'default' }
+  | { kind: 'override'; channel: number };
+
 interface UiStore {
-  /** Track currently targeted by the instrument-selector modal, or null when closed. */
-  instrumentSelectorTrackId: number | null;
-  openInstrumentSelector(trackId: number): void;
-  closeInstrumentSelector(): void;
+  instrumentTarget: InstrumentTarget | null;
+  openInstrumentPicker(target: InstrumentTarget): void;
+  closeInstrumentPicker(): void;
 }
 
 export const useUiStore = create<UiStore>((set) => ({
-  instrumentSelectorTrackId: null,
-  openInstrumentSelector(trackId: number) {
-    set({ instrumentSelectorTrackId: trackId });
+  instrumentTarget: null,
+  openInstrumentPicker(target) {
+    set({ instrumentTarget: target });
   },
-  closeInstrumentSelector() {
-    set({ instrumentSelectorTrackId: null });
+  closeInstrumentPicker() {
+    set({ instrumentTarget: null });
   },
 }));

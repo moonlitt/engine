@@ -10,26 +10,30 @@ export function App() {
   useWebSocket();
   useTransportShortcuts();
 
-  const targetTrackId = useUiStore((s) => s.instrumentSelectorTrackId);
-  const closeSelector = useUiStore((s) => s.closeInstrumentSelector);
+  const target = useUiStore((s) => s.instrumentTarget);
+  const close = useUiStore((s) => s.closeInstrumentPicker);
   const send = useSessionStore((s) => s.send);
 
   const handleLoad = useCallback(
     (path: string) => {
-      if (targetTrackId === null) return;
-      send({ type: 'track.load_instrument', trackId: targetTrackId, path });
-      closeSelector();
+      if (target === null) return;
+      if (target.kind === 'default') {
+        send({ type: 'default.set_instrument', path });
+      } else {
+        send({ type: 'channel.set_override', channel: target.channel, path });
+      }
+      close();
     },
-    [targetTrackId, send, closeSelector],
+    [target, send, close],
   );
 
   return (
     <>
       <PlayerView />
       <InstrumentSelector
-        open={targetTrackId !== null}
+        open={target !== null}
         onLoad={handleLoad}
-        onClose={closeSelector}
+        onClose={close}
       />
     </>
   );

@@ -3,59 +3,89 @@ export type Command =
   | { type: 'transport.play' }
   | { type: 'transport.stop' }
   | { type: 'transport.set_bpm'; bpm: number }
-  | { type: 'track.add'; instrumentPath?: string }
-  | { type: 'track.remove'; trackId: number }
-  | { type: 'track.set_volume'; trackId: number; db: number }
-  | { type: 'track.set_pan'; trackId: number; pan: number }
-  | { type: 'track.set_mute'; trackId: number; muted: boolean }
-  | { type: 'track.set_solo'; trackId: number; solo: boolean }
-  | { type: 'track.load_instrument'; trackId: number; path: string }
   | { type: 'master.set_volume'; db: number }
-  | { type: 'midi.note_on'; channel: number; note: number; velocity: number }
-  | { type: 'midi.note_off'; channel: number; note: number }
-  | { type: 'midi.load_file'; trackId: number; path: string }
-  | { type: 'insert.add'; trackId: number; effectType: string }
-  | { type: 'insert.remove'; trackId: number; insertId: number }
-  | { type: 'insert.set_param'; trackId: number; insertId: number; paramId: number; value: number }
-  | { type: 'plugins.scan'; force?: boolean };
+  | { type: 'plugins.scan'; force?: boolean }
+
+  // --- Default (master) instrument -----------------------------------------
+  // Sets the SF2/VST3/CLAP that plays every channel without an override.
+  | { type: 'default.set_instrument'; path: string }
+
+  // --- Per-channel override -----------------------------------------------
+  // Promote a MIDI channel to its own backend (or replace an existing one).
+  | { type: 'channel.set_override'; channel: number; path: string }
+  // Drop an override → channel reverts to the default instrument.
+  | { type: 'channel.remove_override'; channel: number }
+  // Override-track mixer controls (only meaningful when an override exists).
+  | { type: 'channel.set_volume'; channel: number; db: number }
+  | { type: 'channel.set_mute'; channel: number; muted: boolean }
+  | { type: 'channel.set_solo'; channel: number; solo: boolean }
+
+  // --- Inserts on the channel-override track -------------------------------
+  | { type: 'insert.add'; channel: number; effectType: string }
+  | { type: 'insert.remove'; channel: number; insertId: number }
+  | { type: 'insert.set_param'; channel: number; insertId: number; paramId: number; value: number };
 
 // Server -> Client events
 export type ServerEvent =
-  | { type: 'state.init'; tracks: TrackState[]; bpm: number; playing: boolean }
-  | { type: 'track.added'; trackId: number; name: string; color: string }
-  | { type: 'track.removed'; trackId: number }
-  | { type: 'track.instrument_changed'; trackId: number; instrumentPath: string | null }
+  | { type: 'state.init'; project: ProjectState }
   | { type: 'transport.state'; playing: boolean; position: number }
-  | { type: 'midi.clip_added'; trackId: number; clip: ClipState }
-  | { type: 'insert.added'; trackId: number; insert: InsertState }
-  | { type: 'insert.removed'; trackId: number; insertId: number }
+  | { type: 'transport.tempo_changed'; bpm: number }
+  | { type: 'midi.loaded'; midi: MidiState }
+  | { type: 'default.instrument_changed'; instrumentPath: string | null }
+  | { type: 'channel.override_added'; override: ChannelOverrideState }
+  | { type: 'channel.override_removed'; channel: number }
+  | { type: 'channel.updated'; channel: number; volume?: number; muted?: boolean; solo?: boolean }
+  | { type: 'insert.added'; channel: number; insert: InsertState }
+  | { type: 'insert.removed'; channel: number; insertId: number }
   | { type: 'plugins.list'; plugins: PluginInfo[] }
   | { type: 'error'; message: string };
+
+// --- State shapes -----------------------------------------------------------
+
+/** Whole project snapshot, sent on connect. */
+export interface ProjectState {
+  bpm: number;
+  playing: boolean;
+  defaultInstrumentPath: string | null;
+  midi: MidiState | null;
+  overrides: ChannelOverrideState[];
+}
+
+/** Information about the currently-loaded MIDI file. */
+export interface MidiState {
+  name: string;
+  tempoBpm: number | null;
+  timeSignature: [number, number] | null;
+  lengthBars: number;
+  channels: MidiChannelInfo[];
+}
+
+export interface MidiChannelInfo {
+  /** 0-based MIDI channel (wire). */
+  channel: number;
+  /** 1-based human number (1..16). */
+  displayNumber: number;
+  /** TrackName meta event from the MIDI track that owns this channel's notes. */
+  trackName?: string;
+  /** First Program Change observed on this channel (0..127), or absent. */
+  program?: number;
+}
+
+export interface ChannelOverrideState {
+  channel: number;
+  instrumentPath: string;
+  instrumentName: string;
+  volume: number;   // dB
+  muted: boolean;
+  solo: boolean;
+  inserts: InsertState[];
+}
 
 export interface PluginInfo {
   name: string;
   path: string;
   /// "Sf2" | "Vst3" | "Clap" (from Rust enum debug)
   format: string;
-}
-
-export interface ClipState {
-  id: number;
-  name: string;
-  startBar: number;
-  lengthBars: number;
-}
-
-export interface TrackState {
-  id: number;
-  name: string;
-  color: string;
-  volume: number;
-  pan: number;
-  muted: boolean;
-  solo: boolean;
-  instrumentPath: string | null;
-  inserts: InsertState[];
 }
 
 export interface InsertState {
@@ -78,9 +108,3 @@ export interface ParamMeta {
   /// Current value (mirrors what the audio thread holds).
   value: number;
 }
-
-// Track colors cycle
-export const TRACK_COLORS = [
-  '#4fc3f7', '#81c784', '#ffb74d', '#ef5350',
-  '#ab47bc', '#26c6da', '#ff7043', '#66bb6a',
-];

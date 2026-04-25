@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { ServerEvent } from '@moonlitt/protocol';
 import { useSessionStore } from '../stores/session';
 import { useTransportStore } from '../stores/transport';
-import { useMixerStore } from '../stores/mixer';
+import { useProjectStore } from '../stores/project';
 import { usePluginsStore } from '../stores/plugins';
 
 const WS_URL = 'ws://localhost:3001';
@@ -25,19 +25,17 @@ export function useWebSocket(): void {
 
       ws.addEventListener('message', (event) => {
         if (event.data instanceof ArrayBuffer) {
-          handleBinaryMessage(event.data);
-        } else {
-          handleJsonMessage(event.data as string);
+          // Binary frames are meter snapshots — not yet wired into the new
+          // project store; ignore for now.
+          return;
         }
+        handleJsonMessage(event.data as string);
       });
 
       ws.addEventListener('close', () => {
         useSessionStore.getState().setConnected(false);
         useSessionStore.getState().setWs(null);
-
-        if (!intentionalClose.current) {
-          scheduleReconnect();
-        }
+        if (!intentionalClose.current) scheduleReconnect();
       });
 
       ws.addEventListener('error', () => {
@@ -46,9 +44,7 @@ export function useWebSocket(): void {
     }
 
     function scheduleReconnect() {
-      if (reconnectTimer.current !== null) {
-        return;
-      }
+      if (reconnectTimer.current !== null) return;
       reconnectTimer.current = setTimeout(() => {
         reconnectTimer.current = null;
         connect();
@@ -64,9 +60,7 @@ export function useWebSocket(): void {
         reconnectTimer.current = null;
       }
       const ws = useSessionStore.getState().ws;
-      if (ws) {
-        ws.close();
-      }
+      if (ws) ws.close();
     };
   }, []);
 }
@@ -79,54 +73,63 @@ function handleJsonMessage(raw: string): void {
     return;
   }
 
+  const project = useProjectStore.getState();
+  const transport = useTransportStore.getState();
+
   switch (event.type) {
-    case 'state.init': {
-      useMixerStore.getState().initTracks(event.tracks);
-      useTransportStore.getState().setBpm(event.bpm);
-      useTransportStore.getState().setPlaying(event.playing);
+    case 'state.init':
+      project.setProject(event.project);
+      transport.setBpm(event.project.bpm);
+      transport.setPlaying(event.project.playing);
       break;
-    }
-    case 'track.added': {
-      useMixerStore.getState().addTrack(event.trackId, event.name, event.color);
+
+    case 'transport.state':
+      transport.setPlaying(event.playing);
+      transport.updatePosition(event.position);
       break;
-    }
-    case 'track.removed': {
-      useMixerStore.getState().removeTrack(event.trackId);
+
+    case 'transport.tempo_changed':
+      transport.setBpm(event.bpm);
       break;
-    }
-    case 'transport.state': {
-      useTransportStore.getState().setPlaying(event.playing);
-      useTransportStore.getState().updatePosition(event.position);
+
+    case 'midi.loaded':
+      project.setMidi(event.midi);
       break;
-    }
-    case 'midi.clip_added': {
-      useMixerStore.getState().addClip(event.trackId, event.clip);
+
+    case 'default.instrument_changed':
+      project.setDefaultInstrument(event.instrumentPath);
       break;
-    }
-    case 'track.instrument_changed': {
-      useMixerStore.getState().setTrackInstrument(event.trackId, event.instrumentPath);
+
+    case 'channel.override_added':
+      project.upsertOverride(event.override);
       break;
-    }
-    case 'insert.added': {
-      useMixerStore.getState().addInsert(event.trackId, event.insert);
+
+    case 'channel.override_removed':
+      project.removeOverride(event.channel);
       break;
-    }
-    case 'insert.removed': {
-      useMixerStore.getState().removeInsert(event.trackId, event.insertId);
+
+    case 'channel.updated':
+      project.updateChannel(event.channel, {
+        volume: event.volume,
+        muted: event.muted,
+        solo: event.solo,
+      });
       break;
-    }
-    case 'plugins.list': {
+
+    case 'insert.added':
+      project.addInsert(event.channel, event.insert);
+      break;
+
+    case 'insert.removed':
+      project.removeInsert(event.channel, event.insertId);
+      break;
+
+    case 'plugins.list':
       usePluginsStore.getState().setList(event.plugins);
       break;
-    }
-    case 'error': {
-      // Future: dispatch to a notification/toast store
-      break;
-    }
-  }
-}
 
-function handleBinaryMessage(buffer: ArrayBuffer): void {
-  const data = new Float32Array(buffer);
-  useMixerStore.getState().updateMeters(data);
+    case 'error':
+      console.error('[server error]', event.message);
+      break;
+  }
 }

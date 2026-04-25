@@ -1,20 +1,25 @@
 /**
  * Engine wrapper for moonlitt-node native addon.
  *
- * Provides a high-level API for the WebSocket server to drive the audio engine.
- * Gracefully degrades to no-op mock mode when the native addon is not built.
+ * Architecture: ONE master mixer track that holds the default instrument
+ * and listens to the union of channels NOT overridden. ZERO or more
+ * "override" tracks, each pinned to a single MIDI channel.
+ *
+ * Master mask = 0xFFFF & ~(union of overridden channel bits).
  */
-
-// TrackState and TrackMeta share the same shape; we define TrackMeta locally
-// to avoid coupling the engine internals to the protocol's exact type.
 
 // ---------------------------------------------------------------------------
 // Native addon import
 // ---------------------------------------------------------------------------
 
-interface NativeTrackLevels {
-  peakL: number;
-  peakR: number;
+interface NativeBackend {
+  sampleRate(): number;
+  paramCount(): number;
+  setParam(id: number, value: number): void;
+  getParam(id: number): number | null;
+  paramInfo(index: number): NativeParamInfo | null;
+  paramDisplay(id: number, value: number): string | null;
+  isConsumed(): boolean;
 }
 
 interface NativeParamInfo {
@@ -25,16 +30,6 @@ interface NativeParamInfo {
   max: number;
   default: number;
   stepCount: number;
-}
-
-interface NativeBackend {
-  sampleRate(): number;
-  paramCount(): number;
-  setParam(id: number, value: number): void;
-  getParam(id: number): number | null;
-  paramInfo(index: number): NativeParamInfo | null;
-  paramDisplay(id: number, value: number): string | null;
-  isConsumed(): boolean;
 }
 
 interface NativeSession {
@@ -75,8 +70,8 @@ interface NativeSession {
   setParamForTrack(trackId: number, paramId: number, value: number): void;
   setInsertParam(trackId: number, insertId: number, paramId: number, value: number): void;
   setSendBusParam(busId: number, paramId: number, value: number): void;
-  trackLevels(trackId: number): NativeTrackLevels;
-  masterLevels(): NativeTrackLevels;
+  trackLevels(trackId: number): { peakL: number; peakR: number };
+  masterLevels(): { peakL: number; peakR: number };
   trackCount(): number;
   droppedEvents(): number;
   shutdown(): void;
@@ -88,15 +83,24 @@ interface NativePluginInfo {
   format: string;
 }
 
+interface NativeChannelInfo {
+  channel: number;
+  displayNumber: number;
+  trackName?: string;
+  program?: number;
+}
+
 interface NativeMidiInfo {
-  channels: number[];
+  channels: NativeChannelInfo[];
   trackCount: number;
   lengthBars: number;
+  tempoBpm: number | null;
+  timeSignature: number[] | null;
 }
 
 interface NativeAddon {
   create(path: string, sampleRate: number, bufferSize: number): NativeBackend;
-  scanPlugins(sampleRate: number, bufferSize: number): Array<NativePluginInfo>;
+  scanPlugins(sampleRate: number, bufferSize: number): NativePluginInfo[];
   supportedFormats(): string[];
   analyzeMidi(path: string): NativeMidiInfo;
   createEq(sampleRate: number): NativeBackend;
@@ -118,18 +122,13 @@ interface NativeAddon {
   createPitchShifter(sampleRate: number): NativeBackend;
   createGain(sampleRate: number): NativeBackend;
   createStereoWidth(sampleRate: number): NativeBackend;
-  Session: {
-    create(backend: NativeBackend, sampleRate: number, bufferSize: number): NativeSession;
-  };
+  createConvolver(sampleRate: number): NativeBackend;
+  Session: { create(backend: NativeBackend, sampleRate: number, bufferSize: number): NativeSession };
 }
 
 let addon: NativeAddon | null = null;
 
 try {
-  // napi-rs build output -- platform-specific .node binary with JS wrapper.
-  // After `cd crates/moonlitt-node && npx napi build`, this produces index.js + .node file.
-  // index.js is CommonJS doing `module.exports = require('./moonlitt.node')`, so under ESM
-  // dynamic import the real addon lives on `.default` rather than on the top-level binding.
   const imported = await import('../../../crates/moonlitt-node/index.js');
   const candidate = (imported as { default?: unknown }).default ?? imported;
   addon = candidate as NativeAddon;
@@ -143,19 +142,10 @@ try {
 }
 
 // ---------------------------------------------------------------------------
-// Track color cycling
-// ---------------------------------------------------------------------------
-
-const COLORS = [
-  '#4fc3f7', '#81c784', '#ffb74d', '#ef5350',
-  '#ab47bc', '#26c6da', '#ff7043', '#66bb6a',
-];
-
-// ---------------------------------------------------------------------------
 // Effect factory lookup
 // ---------------------------------------------------------------------------
 
-const EFFECT_FACTORIES: Record<string, (addon: NativeAddon, sr: number) => NativeBackend> = {
+const EFFECT_FACTORIES: Record<string, (a: NativeAddon, sr: number) => NativeBackend> = {
   eq:                    (a, sr) => a.createEq(sr),
   compressor:            (a, sr) => a.createCompressor(sr),
   reverb:                (a, sr) => a.createReverb(sr),
@@ -164,6 +154,7 @@ const EFFECT_FACTORIES: Record<string, (addon: NativeAddon, sr: number) => Nativ
   gate:                  (a, sr) => a.createGate(sr),
   deesser:               (a, sr) => a.createDeesser(sr),
   'stereo-delay':        (a, sr) => a.createStereoDelay(sr),
+  delay:                 (a, sr) => a.createStereoDelay(sr),
   chorus:                (a, sr) => a.createChorus(sr),
   flanger:               (a, sr) => a.createFlanger(sr),
   phaser:                (a, sr) => a.createPhaser(sr),
@@ -178,15 +169,9 @@ const EFFECT_FACTORIES: Record<string, (addon: NativeAddon, sr: number) => Nativ
 };
 
 // ---------------------------------------------------------------------------
-// Track metadata (server-side, not in the native addon)
+// Server-side state shapes (kept separate from protocol so we can carry
+// internal-only fields like nativeTrackId).
 // ---------------------------------------------------------------------------
-
-interface ClipMeta {
-  id: number;
-  name: string;
-  startBar: number;
-  lengthBars: number;
-}
 
 interface ParamMeta {
   id: number;
@@ -206,25 +191,36 @@ interface InsertMeta {
   params: ParamMeta[];
 }
 
-interface TrackMeta {
-  id: number;
-  name: string;
-  color: string;
+interface OverrideTrack {
+  channel: number;             // 0-based MIDI channel
+  nativeTrackId: number;       // mixer track ID
+  instrumentPath: string;
+  instrumentName: string;
   volume: number;
-  pan: number;
   muted: boolean;
   solo: boolean;
-  instrumentPath: string | null;
-  /// 16-bit MIDI channel mask. Bit N set ⇒ track listens to MIDI channel N.
-  /// Default 0xFFFF (all channels). Multi-track MIDI import narrows this so
-  /// each DAW track only hears one channel.
-  channelMask: number;
   inserts: InsertMeta[];
-  clips: ClipMeta[];
 }
 
-/// Snapshot a backend's full parameter list (called before the backend is
-/// consumed by addInsert). Each entry carries its current value.
+interface MidiState {
+  name: string;
+  path: string;
+  tempoBpm: number | null;
+  timeSignature: [number, number] | null;
+  lengthBars: number;
+  channels: NativeChannelInfo[];
+}
+
+const EFFECT_FRIENDLY_NAMES: Record<string, string> = {
+  eq: 'EQ', compressor: 'Compressor', reverb: 'Reverb',
+  'dattorro-reverb': 'Dattorro Reverb', limiter: 'Limiter', gate: 'Gate',
+  deesser: 'De-esser', 'stereo-delay': 'Stereo Delay', delay: 'Delay',
+  chorus: 'Chorus', flanger: 'Flanger', phaser: 'Phaser', tremolo: 'Tremolo',
+  saturator: 'Saturator', bitcrusher: 'Bitcrusher',
+  'multiband-compressor': 'Multiband Compressor', 'auto-filter': 'Auto Filter',
+  'pitch-shifter': 'Pitch Shifter', gain: 'Gain', 'stereo-width': 'Stereo Width',
+};
+
 function snapshotParams(backend: NativeBackend): ParamMeta[] {
   const out: ParamMeta[] = [];
   const count = backend.paramCount();
@@ -233,14 +229,9 @@ function snapshotParams(backend: NativeBackend): ParamMeta[] {
     if (!info) continue;
     const value = backend.getParam(info.id);
     out.push({
-      id: info.id,
-      name: info.name,
-      group: info.group,
-      min: info.min,
-      max: info.max,
-      default: info.default,
-      stepCount: info.stepCount,
-      value: value ?? info.default,
+      id: info.id, name: info.name, group: info.group,
+      min: info.min, max: info.max, default: info.default,
+      stepCount: info.stepCount, value: value ?? info.default,
     });
   }
   return out;
@@ -254,12 +245,18 @@ export class EngineManager {
   private session: NativeSession | null = null;
   private readonly sampleRate: number;
   private readonly bufferSize: number;
-  private tracks: TrackMeta[] = [];
-  private nextTrackName = 1;
-  private nextClipId = 1;
+
+  // ONE master track. nativeTrackId is null until the first MIDI/instrument
+  // load creates the audio session.
+  private masterTrackId: number | null = null;
+  private defaultInstrumentPath: string | null = null;
+
+  private overrides: OverrideTrack[] = [];
+  private nextInsertId = 1;
+
+  private midi: MidiState | null = null;
   private bpm = 120;
   private playing = false;
-  /// Lazily populated by scanPlugins().
   private pluginCache: NativePluginInfo[] | null = null;
 
   constructor(sampleRate = 44100, bufferSize = 512) {
@@ -267,12 +264,8 @@ export class EngineManager {
     this.bufferSize = bufferSize;
   }
 
-  /** Whether the native addon is loaded. */
-  isAvailable(): boolean {
-    return addon !== null;
-  }
+  isAvailable(): boolean { return addon !== null; }
 
-  /** Scan system directories for VST3/CLAP plugins (cached after first call). */
   scanPlugins(force = false): NativePluginInfo[] {
     if (!addon) return [];
     if (this.pluginCache !== null && !force) return this.pluginCache;
@@ -285,173 +278,84 @@ export class EngineManager {
     return this.pluginCache;
   }
 
-  /** Whether a session has been created (at least one track added). */
-  isInitialized(): boolean {
-    return this.session !== null;
+  /** Snapshot of the project for the `state.init` event. */
+  snapshot(): {
+    bpm: number; playing: boolean;
+    defaultInstrumentPath: string | null;
+    midi: MidiState | null;
+    overrides: Array<Omit<OverrideTrack, 'nativeTrackId'>>;
+  } {
+    return {
+      bpm: this.bpm,
+      playing: this.playing,
+      defaultInstrumentPath: this.defaultInstrumentPath,
+      midi: this.midi,
+      overrides: this.overrides.map(({ nativeTrackId: _, ...rest }) => rest),
+    };
   }
 
-  // --- Track management ---------------------------------------------------
+  // --- Bootstrap: ensure session + master exist --------------------------
 
-  addTrack(instrumentPath?: string, channelMask = 0xFFFF, name?: string): TrackMeta | null {
-    if (!addon) return this.addMockTrack(instrumentPath ?? null, channelMask, name);
-
+  private ensureMaster(): boolean {
+    if (!addon) return false;
+    if (this.masterTrackId !== null) return true;
     try {
-      const backend = instrumentPath
-        ? addon.create(instrumentPath, this.sampleRate, this.bufferSize)
-        : addon.createGain(this.sampleRate); // silent placeholder
-
-      let trackId: number;
-
-      if (!this.session) {
-        // First track -- create the session
-        this.session = addon.Session.create(backend, this.sampleRate, this.bufferSize);
-        try {
-          this.session.start();
-        } catch (startErr) {
-          console.error('[engine] Session.start() failed — audio device unavailable:', startErr);
-          this.session = null;
-          return null;
-        }
-        this.session.setTempo(this.bpm);
-        trackId = 0;
-        console.log(`[engine] session started (sr=${this.sampleRate}, buf=${this.bufferSize})`);
-        // The Session was constructed with the default 0xFFFF mask. If the
-        // caller wanted something narrower, apply it now.
-        if (channelMask !== 0xFFFF) {
-          this.session.setTrackChannelMask(0, channelMask);
-        }
-      } else {
-        // Subsequent tracks
-        trackId = this.session.addTrack(backend, channelMask);
+      // Bootstrap with the chosen default instrument if set, else a silent
+      // gain placeholder. The first instrument load swaps it in.
+      const initialBackend = this.defaultInstrumentPath
+        ? addon.create(this.defaultInstrumentPath, this.sampleRate, this.bufferSize)
+        : addon.createGain(this.sampleRate);
+      this.session = addon.Session.create(initialBackend, this.sampleRate, this.bufferSize);
+      try {
+        this.session.start();
+      } catch (startErr) {
+        console.error('[engine] Session.start() failed — audio device unavailable:', startErr);
+        this.session = null;
+        return false;
       }
-      console.log(`[engine] addTrack id=${trackId} mask=0x${channelMask.toString(16)} instrument=${instrumentPath ?? '(silent placeholder)'}`);
-
-      const meta: TrackMeta = {
-        id: trackId,
-        name: name ?? `Track ${this.nextTrackName++}`,
-        color: COLORS[this.tracks.length % COLORS.length],
-        volume: 0,
-        pan: 0,
-        muted: false,
-        solo: false,
-        instrumentPath: instrumentPath ?? null,
-        channelMask,
-        inserts: [],
-        clips: [],
-      };
-      this.tracks.push(meta);
-      return meta;
-    } catch (e) {
-      console.error('[engine] addTrack failed:', e);
-      return null;
-    }
-  }
-
-  /** Update an existing track's MIDI channel mask without recreating it. */
-  setTrackChannelMask(trackId: number, channelMask: number): boolean {
-    if (!this.session) return false;
-    const track = this.tracks.find((t) => t.id === trackId);
-    if (!track) return false;
-    try {
-      this.session.setTrackChannelMask(trackId, channelMask);
-      track.channelMask = channelMask;
-      console.log(`[engine] setTrackChannelMask track=${trackId} mask=0x${channelMask.toString(16)}`);
+      this.session.setTempo(this.bpm);
+      this.masterTrackId = 0;
+      console.log(`[engine] session started (sr=${this.sampleRate}, buf=${this.bufferSize})`);
+      console.log(`[engine] master track=0 mask=0xFFFF instrument=${this.defaultInstrumentPath ?? '(silent placeholder)'}`);
       return true;
     } catch (e) {
-      console.error('[engine] setTrackChannelMask failed:', e);
+      console.error('[engine] ensureMaster failed:', e);
       return false;
     }
   }
 
-  removeTrack(trackId: number): boolean {
-    if (!this.session) return false;
-
-    try {
-      this.session.removeTrack(trackId);
-      this.tracks = this.tracks.filter((t) => t.id !== trackId);
-      return true;
-    } catch (e) {
-      console.error('[engine] removeTrack failed:', e);
-      return false;
+  /** Recompute master mask = 0xFFFF & ~(union of overridden channels). */
+  private syncMasterMask(): void {
+    if (!this.session || this.masterTrackId === null) return;
+    let masterMask = 0xFFFF;
+    for (const o of this.overrides) {
+      masterMask &= ~(1 << o.channel);
     }
+    this.session.setTrackChannelMask(this.masterTrackId, masterMask);
+    console.log(`[engine] master mask → 0x${masterMask.toString(16)}`);
   }
 
-  loadInstrument(trackId: number, path: string): boolean {
-    if (!addon || !this.session) {
-      console.warn('[engine] loadInstrument: no session');
-      return false;
-    }
-    const track = this.tracks.find((t) => t.id === trackId);
-    if (!track) {
-      console.error(`[engine] loadInstrument: track ${trackId} not found`);
-      return false;
-    }
+  // --- Default instrument -------------------------------------------------
+
+  setDefaultInstrument(path: string): boolean {
+    if (!addon) return false;
+    if (!this.ensureMaster() || this.session === null || this.masterTrackId === null) return false;
     try {
       const backend = addon.create(path, this.sampleRate, this.bufferSize);
-      this.session.swapTrackBackend(trackId, backend);
-      track.instrumentPath = path;
-      console.log(`[engine] loadInstrument track=${trackId} path=${path}`);
+      this.session.swapTrackBackend(this.masterTrackId, backend);
+      this.defaultInstrumentPath = path;
+      console.log(`[engine] default instrument → ${path}`);
       return true;
     } catch (e) {
-      console.error(`[engine] loadInstrument failed (track=${trackId}, path=${path}):`, e);
+      console.error('[engine] setDefaultInstrument failed:', e);
       return false;
     }
   }
 
-  /** Load a MIDI file onto a track as a clip and stage it on the audio thread. */
-  loadMidi(trackId: number, filePath: string, fileName: string): ClipMeta | null {
-    const track = this.tracks.find((t) => t.id === trackId);
-    if (!track) {
-      console.error(`[engine] loadMidi: track ${trackId} not found`);
-      return null;
-    }
+  // --- MIDI loading -------------------------------------------------------
 
-    // Stage the file on the audio thread sequencer. Transport state stays
-    // unchanged — the user presses Play to start playback.
-    if (this.session) {
-      try {
-        this.session.loadMidi(filePath);
-        console.log(`[engine] loadMidi: ${fileName} -> sequencer (track ${trackId})`);
-      } catch (e) {
-        console.error('[engine] loadMidi (native) failed:', e);
-        return null;
-      }
-    } else {
-      console.warn(`[engine] loadMidi: ${fileName} accepted but no session yet (add a track first)`);
-    }
-
-    const clip: ClipMeta = {
-      id: this.nextClipId++,
-      name: fileName.replace(/\.midi?$/i, ''),
-      startBar: 0,
-      lengthBars: 8, // duration parsing is a future polish item
-    };
-
-    track.clips = [...track.clips, clip];
-    return clip;
-  }
-
-  /**
-   * Multi-track MIDI import.
-   *
-   * Parses the file, finds which channels carry notes, and ensures there's
-   * one DAW track per channel with the correct channel mask. Auto-creates
-   * tracks as needed; reuses the implicit "first track" by narrowing its
-   * mask to the first MIDI channel. Then stages the sequencer.
-   *
-   * Returns the list of (track, clip) tuples touched, plus a flag for
-   * whether each track is brand-new — the caller broadcasts both
-   * `track.added` and `midi.clip_added` events accordingly.
-   */
-  loadMidiMultitrack(filePath: string, fileName: string): {
-    touched: Array<{ track: TrackMeta; clip: ClipMeta; isNew: boolean }>;
-    info: NativeMidiInfo;
-  } | null {
-    if (!addon) {
-      console.warn('[engine] loadMidiMultitrack: addon unavailable');
-      return null;
-    }
-
+  loadMidi(filePath: string, fileName: string): MidiState | null {
+    if (!addon) return null;
     let info: NativeMidiInfo;
     try {
       info = addon.analyzeMidi(filePath);
@@ -460,84 +364,189 @@ export class EngineManager {
       return null;
     }
 
-    // Fall back to channel 0 if the MIDI has no note events at all (still
-    // legal — meta-only files do exist). The user gets one track that just
-    // won't make sound, which is the right outcome.
-    const channels = info.channels.length > 0 ? info.channels : [0];
-    console.log(`[engine] loadMidiMultitrack: ${fileName} channels=[${channels.join(',')}] tracks=${info.trackCount} bars=${info.lengthBars.toFixed(1)}`);
+    if (!this.ensureMaster() || !this.session) return null;
 
-    const baseClipName = fileName.replace(/\.midi?$/i, '');
-    const lengthBars = Math.max(1, Math.round(info.lengthBars));
+    // Auto-apply tempo from the MIDI file (the user can still override
+    // afterwards via transport.set_bpm).
+    if (info.tempoBpm !== null && Number.isFinite(info.tempoBpm)) {
+      this.bpm = info.tempoBpm;
+      this.session.setTempo(this.bpm);
+    }
 
-    const touched: Array<{ track: TrackMeta; clip: ClipMeta; isNew: boolean }> = [];
+    try {
+      this.session.loadMidi(filePath);
+    } catch (e) {
+      console.error('[engine] session.loadMidi failed:', e);
+      return null;
+    }
 
-    for (let i = 0; i < channels.length; i++) {
-      const channel = channels[i];
+    const ts: [number, number] | null =
+      info.timeSignature && info.timeSignature.length === 2
+        ? [info.timeSignature[0], info.timeSignature[1]]
+        : null;
+
+    this.midi = {
+      name: fileName,
+      path: filePath,
+      tempoBpm: info.tempoBpm,
+      timeSignature: ts,
+      lengthBars: info.lengthBars,
+      channels: info.channels,
+    };
+    console.log(
+      `[engine] loadMidi: ${fileName} channels=[${info.channels.map(c => c.displayNumber).join(',')}] ` +
+      `bpm=${info.tempoBpm?.toFixed(1) ?? '?'} ts=${ts ? ts.join('/') : '?'} bars=${info.lengthBars.toFixed(1)}`,
+    );
+    return this.midi;
+  }
+
+  // --- Channel overrides --------------------------------------------------
+
+  setChannelOverride(channel: number, path: string): OverrideTrack | null {
+    if (!addon) return null;
+    if (!this.ensureMaster() || this.session === null) return null;
+    if (channel < 0 || channel > 15) return null;
+
+    try {
+      const backend = addon.create(path, this.sampleRate, this.bufferSize);
+      const instrumentName = path.split('/').pop() ?? path;
+
+      const existing = this.overrides.find((o) => o.channel === channel);
+      if (existing) {
+        // Replace backend on the existing override track.
+        this.session.swapTrackBackend(existing.nativeTrackId, backend);
+        existing.instrumentPath = path;
+        existing.instrumentName = instrumentName;
+        console.log(`[engine] override ch=${channel + 1} (existing) → ${path}`);
+        return existing;
+      }
+
       const mask = 1 << channel;
-      const clipName = channels.length > 1 ? `${baseClipName} (ch ${channel + 1})` : baseClipName;
-
-      // Find an existing track whose mask covers this channel uniquely
-      // (single-bit). Tracks with the wide 0xFFFF mask qualify too — they're
-      // the "implicit first track" left from auto-create on connect.
-      let track = this.tracks.find((t) =>
-        (t.channelMask === mask) ||
-        (t.channelMask === 0xFFFF && !this.tracks.some((other) => other !== t && other.channelMask === mask))
-      ) ?? null;
-
-      let isNew = false;
-      if (track === null) {
-        const created = this.addTrack(undefined, mask, `Track ${this.nextTrackName} · ch ${channel + 1}`);
-        if (!created) {
-          console.error(`[engine] loadMidiMultitrack: could not add track for channel ${channel}`);
-          continue;
-        }
-        track = created;
-        isNew = true;
-      } else if (track.channelMask !== mask) {
-        // Narrow the implicit track's wide mask down to just this channel.
-        this.setTrackChannelMask(track.id, mask);
-      }
-
-      const clip: ClipMeta = {
-        id: this.nextClipId++,
-        name: clipName,
-        startBar: 0,
-        lengthBars,
+      const nativeTrackId = this.session.addTrack(backend, mask);
+      const ov: OverrideTrack = {
+        channel, nativeTrackId,
+        instrumentPath: path,
+        instrumentName,
+        volume: 0, muted: false, solo: false,
+        inserts: [],
       };
-      track.clips = [...track.clips, clip];
-      touched.push({ track, clip, isNew });
+      this.overrides.push(ov);
+      this.syncMasterMask();
+      console.log(`[engine] override ch=${channel + 1} created → ${path}`);
+      return ov;
+    } catch (e) {
+      console.error('[engine] setChannelOverride failed:', e);
+      return null;
     }
+  }
 
-    // Stage the sequencer once — events route to the right tracks via masks.
-    if (this.session) {
-      try {
-        this.session.loadMidi(filePath);
-      } catch (e) {
-        console.error('[engine] loadMidi (native) failed during multitrack import:', e);
-        return null;
-      }
+  removeChannelOverride(channel: number): boolean {
+    if (!this.session) return false;
+    const idx = this.overrides.findIndex((o) => o.channel === channel);
+    if (idx < 0) return false;
+    const ov = this.overrides[idx];
+    try {
+      this.session.removeTrack(ov.nativeTrackId);
+      this.overrides.splice(idx, 1);
+      this.syncMasterMask();
+      console.log(`[engine] override ch=${channel + 1} removed`);
+      return true;
+    } catch (e) {
+      console.error('[engine] removeChannelOverride failed:', e);
+      return false;
     }
+  }
 
-    return { touched, info };
+  setChannelVolume(channel: number, db: number): boolean {
+    const ov = this.overrides.find((o) => o.channel === channel);
+    if (!ov || !this.session) return false;
+    this.session.setTrackVolume(ov.nativeTrackId, dbToLinear(db));
+    ov.volume = db;
+    return true;
+  }
+
+  setChannelMute(channel: number, muted: boolean): boolean {
+    const ov = this.overrides.find((o) => o.channel === channel);
+    if (!ov || !this.session) return false;
+    this.session.setTrackMute(ov.nativeTrackId, muted);
+    ov.muted = muted;
+    return true;
+  }
+
+  setChannelSolo(channel: number, solo: boolean): boolean {
+    const ov = this.overrides.find((o) => o.channel === channel);
+    if (!ov || !this.session) return false;
+    this.session.setTrackSolo(ov.nativeTrackId, solo);
+    ov.solo = solo;
+    return true;
+  }
+
+  // --- Inserts (on override tracks only) ----------------------------------
+
+  addInsert(channel: number, effectType: string): InsertMeta | null {
+    if (!addon || !this.session) return null;
+    const ov = this.overrides.find((o) => o.channel === channel);
+    if (!ov) {
+      console.warn(`[engine] addInsert: no override for channel ${channel + 1}`);
+      return null;
+    }
+    const factory = EFFECT_FACTORIES[effectType];
+    if (!factory) {
+      console.error(`[engine] unknown effect type: ${effectType}`);
+      return null;
+    }
+    try {
+      const backend = factory(addon, this.sampleRate);
+      const params = snapshotParams(backend);
+      const insertId = this.session.addInsert(ov.nativeTrackId, backend);
+      const meta: InsertMeta = {
+        id: insertId,
+        name: EFFECT_FRIENDLY_NAMES[effectType] ?? effectType,
+        bypassed: false,
+        params,
+      };
+      ov.inserts.push(meta);
+      this.nextInsertId = Math.max(this.nextInsertId, insertId + 1);
+      return meta;
+    } catch (e) {
+      console.error('[engine] addInsert failed:', e);
+      return null;
+    }
+  }
+
+  removeInsert(channel: number, insertId: number): boolean {
+    if (!this.session) return false;
+    const ov = this.overrides.find((o) => o.channel === channel);
+    if (!ov) return false;
+    this.session.removeInsert(ov.nativeTrackId, insertId);
+    ov.inserts = ov.inserts.filter((i) => i.id !== insertId);
+    return true;
+  }
+
+  setInsertParam(channel: number, insertId: number, paramId: number, value: number): boolean {
+    if (!this.session) return false;
+    const ov = this.overrides.find((o) => o.channel === channel);
+    if (!ov) return false;
+    this.session.setInsertParam(ov.nativeTrackId, insertId, paramId, value);
+    const insert = ov.inserts.find((i) => i.id === insertId);
+    if (insert) {
+      const param = insert.params.find((p) => p.id === paramId);
+      if (param) param.value = value;
+    }
+    return true;
   }
 
   // --- Transport ----------------------------------------------------------
 
   play(): void {
     if (!this.session) {
-      console.warn('[engine] play() called but no session exists — upload a MIDI first');
+      console.warn('[engine] play() called but no session yet — load a MIDI or pick a default instrument first');
       return;
     }
-    console.log(`[engine] play — track snapshot:`);
-    for (const t of this.tracks) {
-      const channels: number[] = [];
-      for (let i = 0; i < 16; i++) {
-        if (t.channelMask & (1 << i)) channels.push(i + 1);
-      }
-      const chSummary = channels.length === 16 ? 'ALL' : channels.join(',');
-      console.log(
-        `[engine]   track ${t.id} mask=0x${t.channelMask.toString(16)} ch=${chSummary} instrument=${t.instrumentPath ?? '(none — silent)'} clips=${t.clips.length}`,
-      );
+    console.log('[engine] play — snapshot:');
+    console.log(`[engine]   master track=${this.masterTrackId} mask=auto instrument=${this.defaultInstrumentPath ?? '(silent placeholder)'}`);
+    for (const o of this.overrides) {
+      console.log(`[engine]   override ch=${o.channel + 1} instrument=${o.instrumentPath} mute=${o.muted} solo=${o.solo} inserts=${o.inserts.length}`);
     }
     this.session.play();
     this.playing = true;
@@ -554,184 +563,45 @@ export class EngineManager {
     this.session?.setTempo(bpm);
   }
 
+  setMasterVolume(db: number): void {
+    if (!this.session) return;
+    this.session.setMasterVolume(dbToLinear(db));
+  }
+
   isPlaying(): boolean {
     if (this.session) {
-      try {
-        return this.session.isPlaying();
-      } catch {
-        return this.playing;
-      }
+      try { return this.session.isPlaying(); } catch { return this.playing; }
     }
     return this.playing;
   }
 
-  // --- MIDI ---------------------------------------------------------------
-
-  noteOn(channel: number, note: number, velocity: number): void {
-    this.session?.noteOn(channel, note, velocity);
-  }
-
-  noteOff(channel: number, note: number): void {
-    this.session?.noteOff(channel, note);
-  }
-
-  // --- Mixer controls -----------------------------------------------------
-
-  setTrackVolume(trackId: number, db: number): void {
-    // Convert dB to linear for the native API (0.0-1.0 linear scale).
-    // The mixer expects linear gain, not dB.
-    const linear = db <= -96 ? 0 : Math.pow(10, db / 20);
-    this.session?.setTrackVolume(trackId, linear);
-
-    const track = this.tracks.find((t) => t.id === trackId);
-    if (track) track.volume = db;
-  }
-
-  setTrackPan(trackId: number, pan: number): void {
-    this.session?.setTrackPan(trackId, pan);
-
-    const track = this.tracks.find((t) => t.id === trackId);
-    if (track) track.pan = pan;
-  }
-
-  setTrackMute(trackId: number, muted: boolean): void {
-    this.session?.setTrackMute(trackId, muted);
-
-    const track = this.tracks.find((t) => t.id === trackId);
-    if (track) track.muted = muted;
-  }
-
-  setTrackSolo(trackId: number, solo: boolean): void {
-    this.session?.setTrackSolo(trackId, solo);
-
-    const track = this.tracks.find((t) => t.id === trackId);
-    if (track) track.solo = solo;
-  }
-
-  setMasterVolume(db: number): void {
-    const linear = db <= -96 ? 0 : Math.pow(10, db / 20);
-    this.session?.setMasterVolume(linear);
-  }
-
-  // --- Inserts ------------------------------------------------------------
-
-  addInsert(trackId: number, effectType: string): InsertMeta | null {
-    if (!addon || !this.session) return null;
-
-    const factory = EFFECT_FACTORIES[effectType];
-    if (!factory) {
-      console.error(`[engine] Unknown effect type: ${effectType}`);
-      return null;
-    }
-
-    try {
-      const effect = factory(addon, this.sampleRate);
-      // Snapshot params BEFORE addInsert consumes the backend.
-      const params = snapshotParams(effect);
-      const insertId = this.session.addInsert(trackId, effect);
-
-      const insert: InsertMeta = {
-        id: insertId,
-        name: effectType,
-        bypassed: false,
-        params,
-      };
-      const track = this.tracks.find((t) => t.id === trackId);
-      if (track) {
-        track.inserts.push(insert);
-      }
-      return insert;
-    } catch (e) {
-      console.error('[engine] addInsert failed:', e);
-      return null;
-    }
-  }
-
-  removeInsert(trackId: number, insertId: number): void {
-    this.session?.removeInsert(trackId, insertId);
-
-    const track = this.tracks.find((t) => t.id === trackId);
-    if (track) {
-      track.inserts = track.inserts.filter((ins) => ins.id !== insertId);
-    }
-  }
-
-  setInsertParam(trackId: number, insertId: number, paramId: number, value: number): void {
-    this.session?.setInsertParam(trackId, insertId, paramId, value);
-    // Mirror locally so getState() returns up-to-date values for late joiners.
-    const track = this.tracks.find((t) => t.id === trackId);
-    const insert = track?.inserts.find((i) => i.id === insertId);
-    const param = insert?.params.find((p) => p.id === paramId);
-    if (param) param.value = value;
-  }
+  getBpm(): number { return this.bpm; }
+  getMidi(): MidiState | null { return this.midi; }
+  getOverrides(): OverrideTrack[] { return this.overrides; }
+  getDefaultInstrumentPath(): string | null { return this.defaultInstrumentPath; }
 
   // --- Metering -----------------------------------------------------------
 
-  getTrackLevels(trackId: number): { peakL: number; peakR: number } {
-    if (!this.session) return { peakL: 0, peakR: 0 };
-
-    try {
-      return this.session.trackLevels(trackId);
-    } catch {
-      return { peakL: 0, peakR: 0 };
-    }
-  }
-
-  getMasterLevels(): { peakL: number; peakR: number } {
-    if (!this.session) return { peakL: 0, peakR: 0 };
-
-    try {
-      return this.session.masterLevels();
-    } catch {
-      return { peakL: 0, peakR: 0 };
-    }
-  }
-
-  trackCount(): number {
-    return this.tracks.length;
-  }
-
-  // --- State snapshot for new clients -------------------------------------
-
-  getState(): { tracks: TrackMeta[]; bpm: number; playing: boolean } {
-    return {
-      tracks: this.tracks,
-      bpm: this.bpm,
-      playing: this.isPlaying(),
-    };
-  }
-
-  // --- Shutdown -----------------------------------------------------------
-
-  shutdown(): void {
-    if (this.session) {
+  /** Returns interleaved [masterL, masterR, overrideL_0, overrideR_0, …]. */
+  meterSnapshot(): Float32Array {
+    if (!this.session) return new Float32Array(2);
+    const buf = new Float32Array(2 + this.overrides.length * 2);
+    const m = this.session.masterLevels();
+    buf[0] = m.peakL; buf[1] = m.peakR;
+    for (let i = 0; i < this.overrides.length; i++) {
+      const ov = this.overrides[i];
       try {
-        this.session.shutdown();
-      } catch (e) {
-        console.error('[engine] shutdown error:', e);
-      }
-      this.session = null;
+        const lvl = this.session.trackLevels(ov.nativeTrackId);
+        buf[2 + i * 2] = lvl.peakL;
+        buf[2 + i * 2 + 1] = lvl.peakR;
+      } catch { /* track gone, ignore */ }
     }
-    this.tracks = [];
+    return buf;
   }
+}
 
-  // --- Mock mode (no addon) -----------------------------------------------
+// ---------------------------------------------------------------------------
 
-  private addMockTrack(instrumentPath: string | null, channelMask = 0xFFFF, name?: string): TrackMeta {
-    const meta: TrackMeta = {
-      id: this.tracks.length,
-      name: name ?? `Track ${this.nextTrackName++}`,
-      color: COLORS[this.tracks.length % COLORS.length],
-      volume: 0,
-      pan: 0,
-      muted: false,
-      solo: false,
-      instrumentPath,
-      channelMask,
-      inserts: [],
-      clips: [],
-    };
-    this.tracks.push(meta);
-    return meta;
-  }
+function dbToLinear(db: number): number {
+  return Math.pow(10, db / 20);
 }

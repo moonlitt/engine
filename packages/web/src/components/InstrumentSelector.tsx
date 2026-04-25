@@ -11,9 +11,9 @@ interface InstrumentSelectorProps {
 
 // Map raw Rust enum debug strings to display labels and badge colors.
 const FORMAT_META: Record<string, { label: string; badge: string }> = {
-  Sf2: { label: 'SF2 Soundfont', badge: 'bg-emerald-500/20 text-emerald-300' },
-  Vst3: { label: 'VST3', badge: 'bg-sky-500/20 text-sky-300' },
-  Clap: { label: 'CLAP', badge: 'bg-violet-500/20 text-violet-300' },
+  Sf2: { label: 'SF2 SoundFont (音色库)', badge: 'bg-emerald-500/20 text-emerald-300' },
+  Vst3: { label: 'VST3 插件', badge: 'bg-sky-500/20 text-sky-300' },
+  Clap: { label: 'CLAP 插件', badge: 'bg-violet-500/20 text-violet-300' },
 };
 
 const FORMAT_ORDER: readonly string[] = ['Sf2', 'Vst3', 'Clap'];
@@ -106,16 +106,16 @@ export function InstrumentSelector({ open, onLoad, onClose }: InstrumentSelector
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-daw-border">
-          <h3 className="text-sm font-medium text-[#e0e0e0]">Load Instrument</h3>
+          <h3 className="text-sm font-medium text-[#e0e0e0]">选择音色</h3>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handleRescan}
               disabled={scanning}
               className="text-[10px] px-2 py-1 rounded bg-daw-control hover:bg-daw-border text-[#aaa] transition-colors disabled:opacity-50"
-              title="Re-scan plugin folders"
+              title="重新扫描插件目录"
             >
-              {scanning ? 'Scanning…' : 'Rescan'}
+              {scanning ? '扫描中…' : '重新扫描'}
             </button>
             <button
               type="button"
@@ -134,7 +134,7 @@ export function InstrumentSelector({ open, onLoad, onClose }: InstrumentSelector
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search plugins…"
+            placeholder="搜索音色…"
             autoFocus
             className="w-full bg-daw-control border border-daw-border rounded px-3 py-2 text-xs text-[#e0e0e0] placeholder-[#555] outline-none focus:border-daw-accent"
           />
@@ -143,16 +143,16 @@ export function InstrumentSelector({ open, onLoad, onClose }: InstrumentSelector
         {/* List */}
         <div className="flex-1 overflow-y-auto px-2 py-2 min-h-[180px]">
           {scanning && plugins.length === 0 && (
-            <div className="text-xs text-[#666] text-center py-8">Scanning system plugin folders…</div>
+            <div className="text-xs text-[#666] text-center py-8">正在扫描插件目录…</div>
           )}
           {!scanning && plugins.length === 0 && (
             <div className="text-xs text-[#666] text-center py-8">
-              No plugins found. Use the path field below to load a file directly.
+              没有找到任何音色。可以在下方直接粘贴文件路径加载。
             </div>
           )}
           {grouped.length === 0 && plugins.length > 0 && (
             <div className="text-xs text-[#666] text-center py-8">
-              No plugins match “{query}”.
+              没有匹配 “{query}” 的音色。
             </div>
           )}
           {grouped.map((group) => {
@@ -189,7 +189,7 @@ export function InstrumentSelector({ open, onLoad, onClose }: InstrumentSelector
         {/* Path fallback */}
         <div className="border-t border-daw-border px-4 py-3">
           <div className="text-[9px] uppercase tracking-wider text-[#777] mb-1.5">
-            Or paste a path
+            或者直接粘贴路径
           </div>
           <div className="flex gap-2">
             <input
@@ -199,7 +199,7 @@ export function InstrumentSelector({ open, onLoad, onClose }: InstrumentSelector
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleLoadFromPath();
               }}
-              placeholder="/path/to/instrument.sf2  or  /Library/Audio/Plug-Ins/VST3/Foo.vst3"
+              placeholder="/path/to/instrument.sf2  或  /Library/Audio/Plug-Ins/VST3/Foo.vst3"
               className="flex-1 bg-daw-control border border-daw-border rounded px-3 py-1.5 text-xs text-[#e0e0e0] placeholder-[#555] outline-none focus:border-daw-accent"
             />
             <button
@@ -208,7 +208,7 @@ export function InstrumentSelector({ open, onLoad, onClose }: InstrumentSelector
               disabled={path.trim().length === 0}
               className="px-3 py-1.5 text-xs rounded bg-daw-accent hover:bg-daw-accent/80 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              Load
+              加载
             </button>
           </div>
         </div>

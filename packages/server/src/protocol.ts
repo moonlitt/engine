@@ -2,17 +2,15 @@
  * Command protocol handler.
  *
  * Maps incoming WebSocket command JSON (from @moonlitt/protocol) to
- * EngineManager method calls. Returns a ServerEvent to send back, or null.
+ * EngineManager method calls. Returns a ServerEvent to broadcast back, or
+ * null. The server's index.ts wraps this with broadcasting logic so a
+ * single command can fan out to multiple events when needed.
  */
 
 import type { Command, ServerEvent } from '@moonlitt/protocol';
 import type { EngineManager } from './engine.js';
 
-/**
- * Handle a single command from a WebSocket client.
- * Returns a ServerEvent to send back (or null for fire-and-forget commands).
- */
-export function handleCommand(engine: EngineManager, cmd: Command): ServerEvent | null {
+export function handleCommand(engine: EngineManager, cmd: Command): ServerEvent | ServerEvent[] | null {
   switch (cmd.type) {
     // --- Transport --------------------------------------------------------
 
@@ -26,56 +24,7 @@ export function handleCommand(engine: EngineManager, cmd: Command): ServerEvent 
 
     case 'transport.set_bpm':
       engine.setBpm(cmd.bpm);
-      return null;
-
-    // --- Tracks -----------------------------------------------------------
-
-    case 'track.add': {
-      const track = engine.addTrack(cmd.instrumentPath);
-      if (!track) {
-        return { type: 'error', message: 'Failed to add track' };
-      }
-      return {
-        type: 'track.added',
-        trackId: track.id,
-        name: track.name,
-        color: track.color,
-      };
-    }
-
-    case 'track.remove': {
-      const removed = engine.removeTrack(cmd.trackId);
-      if (!removed) {
-        return { type: 'error', message: `Failed to remove track ${cmd.trackId}` };
-      }
-      return { type: 'track.removed', trackId: cmd.trackId };
-    }
-
-    case 'track.load_instrument': {
-      const loaded = engine.loadInstrument(cmd.trackId, cmd.path);
-      if (!loaded) {
-        return { type: 'error', message: `Failed to load instrument on track ${cmd.trackId}` };
-      }
-      return { type: 'track.instrument_changed', trackId: cmd.trackId, instrumentPath: cmd.path };
-    }
-
-    // --- Track mixer controls ---------------------------------------------
-
-    case 'track.set_volume':
-      engine.setTrackVolume(cmd.trackId, cmd.db);
-      return null;
-
-    case 'track.set_pan':
-      engine.setTrackPan(cmd.trackId, cmd.pan);
-      return null;
-
-    case 'track.set_mute':
-      engine.setTrackMute(cmd.trackId, cmd.muted);
-      return null;
-
-    case 'track.set_solo':
-      engine.setTrackSolo(cmd.trackId, cmd.solo);
-      return null;
+      return { type: 'transport.tempo_changed', bpm: cmd.bpm };
 
     // --- Master -----------------------------------------------------------
 
@@ -83,39 +32,68 @@ export function handleCommand(engine: EngineManager, cmd: Command): ServerEvent 
       engine.setMasterVolume(cmd.db);
       return null;
 
-    // --- MIDI -------------------------------------------------------------
+    // --- Default instrument ----------------------------------------------
 
-    case 'midi.note_on':
-      engine.noteOn(cmd.channel, cmd.note, cmd.velocity);
-      return null;
+    case 'default.set_instrument': {
+      const ok = engine.setDefaultInstrument(cmd.path);
+      if (!ok) return { type: 'error', message: `Failed to load default instrument: ${cmd.path}` };
+      return { type: 'default.instrument_changed', instrumentPath: cmd.path };
+    }
 
-    case 'midi.note_off':
-      engine.noteOff(cmd.channel, cmd.note);
-      return null;
+    // --- Per-channel overrides -------------------------------------------
 
-    case 'midi.load_file':
-      // MIDI file loading not yet implemented in the engine wrapper.
-      return { type: 'error', message: 'MIDI file loading not yet implemented' };
+    case 'channel.set_override': {
+      const ov = engine.setChannelOverride(cmd.channel, cmd.path);
+      if (!ov) return { type: 'error', message: `Failed to set override on channel ${cmd.channel + 1}` };
+      return {
+        type: 'channel.override_added',
+        override: {
+          channel: ov.channel,
+          instrumentPath: ov.instrumentPath,
+          instrumentName: ov.instrumentName,
+          volume: ov.volume,
+          muted: ov.muted,
+          solo: ov.solo,
+          inserts: ov.inserts,
+        },
+      };
+    }
 
-    // --- Insert effects ---------------------------------------------------
+    case 'channel.remove_override': {
+      const ok = engine.removeChannelOverride(cmd.channel);
+      if (!ok) return { type: 'error', message: `No override on channel ${cmd.channel + 1}` };
+      return { type: 'channel.override_removed', channel: cmd.channel };
+    }
+
+    case 'channel.set_volume':
+      engine.setChannelVolume(cmd.channel, cmd.db);
+      return { type: 'channel.updated', channel: cmd.channel, volume: cmd.db };
+
+    case 'channel.set_mute':
+      engine.setChannelMute(cmd.channel, cmd.muted);
+      return { type: 'channel.updated', channel: cmd.channel, muted: cmd.muted };
+
+    case 'channel.set_solo':
+      engine.setChannelSolo(cmd.channel, cmd.solo);
+      return { type: 'channel.updated', channel: cmd.channel, solo: cmd.solo };
+
+    // --- Inserts (on override tracks) ------------------------------------
 
     case 'insert.add': {
-      const insert = engine.addInsert(cmd.trackId, cmd.effectType);
-      if (insert === null) {
-        return { type: 'error', message: `Failed to add ${cmd.effectType} insert` };
-      }
-      return { type: 'insert.added', trackId: cmd.trackId, insert };
+      const insert = engine.addInsert(cmd.channel, cmd.effectType);
+      if (!insert) return { type: 'error', message: `Failed to add ${cmd.effectType} on channel ${cmd.channel + 1}` };
+      return { type: 'insert.added', channel: cmd.channel, insert };
     }
 
     case 'insert.remove':
-      engine.removeInsert(cmd.trackId, cmd.insertId);
-      return { type: 'insert.removed', trackId: cmd.trackId, insertId: cmd.insertId };
+      engine.removeInsert(cmd.channel, cmd.insertId);
+      return { type: 'insert.removed', channel: cmd.channel, insertId: cmd.insertId };
 
     case 'insert.set_param':
-      engine.setInsertParam(cmd.trackId, cmd.insertId, cmd.paramId, cmd.value);
+      engine.setInsertParam(cmd.channel, cmd.insertId, cmd.paramId, cmd.value);
       return null;
 
-    // --- Plugin discovery -------------------------------------------------
+    // --- Plugin discovery ------------------------------------------------
 
     case 'plugins.scan': {
       const plugins = engine.scanPlugins(cmd.force ?? false);
@@ -124,7 +102,7 @@ export function handleCommand(engine: EngineManager, cmd: Command): ServerEvent 
 
     default: {
       const exhaustive: never = cmd;
-      return { type: 'error', message: `Unknown command: ${(exhaustive as any).type}` };
+      return { type: 'error', message: `Unknown command: ${(exhaustive as { type: string }).type}` };
     }
   }
 }

@@ -3,31 +3,10 @@ import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import multer from 'multer';
 import os from 'os';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { existsSync } from 'fs';
 import { EngineManager } from './engine.js';
 import { handleCommand } from './protocol.js';
 import type { Command, ServerEvent } from '@moonlitt/protocol';
 
-// ---------------------------------------------------------------------------
-// SF2 discovery — point the engine's scanner at the workspace test fixtures
-// so the dev user always sees the bundled SF2 files in the picker. Real
-// system locations (~/Library/Audio/Sounds/Banks, ~/Documents/Soundfonts)
-// are still scanned by the engine on top of this.
-// ---------------------------------------------------------------------------
-
-const here = path.dirname(fileURLToPath(import.meta.url));
-let workspace = here;
-for (let i = 0; i < 10; i++) {
-  if (existsSync(path.join(workspace, 'Cargo.lock'))) break;
-  workspace = path.dirname(workspace);
-}
-// Only forward MOONLITT_SF2_DIR if the user already set it explicitly.
-// We deliberately stopped pointing the engine at workspace test fixtures —
-// "sf_spec_test", "filter_NRPN_test" etc. are ABI conformance files, not
-// real soundfonts, and they polluted the picker. Real SF2s live in the
-// engine's standard scan dirs (~/Library/Audio/Sounds/Banks etc.).
 if (process.env.MOONLITT_SF2_DIR) {
   console.log(`[server] SF2 search dirs (from env): ${process.env.MOONLITT_SF2_DIR}`);
 }
@@ -51,15 +30,12 @@ if (engine.isAvailable()) {
 const app = express();
 const server = createServer(app);
 
-// CORS for the Vite dev server
 app.use((_req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
   next();
 });
-
-// --- MIDI file upload endpoint -------------------------------------------
 
 const upload = multer({ dest: os.tmpdir() });
 
@@ -69,28 +45,20 @@ app.post('/api/upload-midi', upload.single('file'), (req, res) => {
     return;
   }
 
-  // Multi-track import: parse the MIDI, ensure one DAW track per channel,
-  // broadcast `track.added` for any new tracks plus `midi.clip_added` per
-  // touched track. The legacy single-track loadMidi path is no longer used
-  // by the upload endpoint — the user always wants the parsed split.
-  const result = engine.loadMidiMultitrack(req.file.path, req.file.originalname);
-  if (!result) {
+  const midi = engine.loadMidi(req.file.path, req.file.originalname);
+  if (!midi) {
     res.status(400).json({ error: 'Failed to parse / stage MIDI' });
     return;
   }
 
-  for (const { track, clip, isNew } of result.touched) {
-    if (isNew) {
-      broadcast({ type: 'track.added', trackId: track.id, name: track.name, color: track.color });
-    }
-    broadcast({ type: 'midi.clip_added', trackId: track.id, clip });
+  // Broadcast: midi.loaded carries the per-channel info; transport tempo
+  // change goes out separately so the UI's BPM display updates.
+  broadcast({ type: 'midi.loaded', midi });
+  if (midi.tempoBpm !== null && Number.isFinite(midi.tempoBpm)) {
+    broadcast({ type: 'transport.tempo_changed', bpm: midi.tempoBpm });
   }
 
-  res.json({
-    ok: true,
-    channels: result.info.channels,
-    tracks: result.touched.map(({ track, isNew }) => ({ id: track.id, isNew })),
-  });
+  res.json({ ok: true, channels: midi.channels.map((c) => c.displayNumber) });
 });
 
 // ---------------------------------------------------------------------------
@@ -117,19 +85,20 @@ function broadcast(event: ServerEvent): void {
 wss.on('connection', (ws) => {
   console.log('[server] Client connected');
 
-  // Send current state snapshot
-  const state = engine.getState();
+  const snap = engine.snapshot();
   sendEvent(ws, {
     type: 'state.init',
-    tracks: state.tracks,
-    bpm: state.bpm,
-    playing: state.playing,
+    project: {
+      bpm: snap.bpm,
+      playing: snap.playing,
+      defaultInstrumentPath: snap.defaultInstrumentPath,
+      midi: snap.midi,
+      overrides: snap.overrides,
+    },
   });
 
   ws.on('message', (data) => {
-    // Binary frames are not expected from clients; ignore them.
     if (typeof data !== 'string' && !(data instanceof Buffer)) return;
-
     const raw = typeof data === 'string' ? data : data.toString('utf-8');
 
     let cmd: Command;
@@ -147,13 +116,13 @@ wss.on('connection', (ws) => {
 
     const response = handleCommand(engine, cmd);
 
-    if (response) {
-      // Events that affect shared state are broadcast to all clients.
-      // Error responses are sent only to the originating client.
-      if (response.type === 'error') {
-        sendEvent(ws, response);
+    if (response === null) return;
+    const events = Array.isArray(response) ? response : [response];
+    for (const e of events) {
+      if (e.type === 'error') {
+        sendEvent(ws, e);
       } else {
-        broadcast(response);
+        broadcast(e);
       }
     }
   });
@@ -164,43 +133,21 @@ wss.on('connection', (ws) => {
 });
 
 // ---------------------------------------------------------------------------
-// 60fps meter broadcast (binary Float32Array)
+// 60fps meter broadcast — binary Float32Array
+// Layout: [masterL, masterR, override0_L, override0_R, override1_L, ...]
 // ---------------------------------------------------------------------------
-// Layout: [trackCount, track0_peakL, track0_peakR, ..., master_peakL, master_peakR]
 
-const METER_INTERVAL_MS = 16; // ~60fps
+const METER_INTERVAL_MS = 16;
 
 const meterTimer = setInterval(() => {
-  if (!engine.isInitialized()) return;
-
-  // Only send if at least one client is connected
   let hasClient = false;
   for (const ws of wss.clients) {
-    if (ws.readyState === WebSocket.OPEN) {
-      hasClient = true;
-      break;
-    }
+    if (ws.readyState === WebSocket.OPEN) { hasClient = true; break; }
   }
   if (!hasClient) return;
 
-  const count = engine.trackCount();
-  // Float32Array: [count, L0, R0, L1, R1, ..., masterL, masterR]
-  const buffer = new Float32Array(1 + count * 2 + 2);
-  buffer[0] = count;
-
-  const state = engine.getState();
-  for (let i = 0; i < count; i++) {
-    const trackId = state.tracks[i]?.id ?? i;
-    const levels = engine.getTrackLevels(trackId);
-    buffer[1 + i * 2] = levels.peakL;
-    buffer[1 + i * 2 + 1] = levels.peakR;
-  }
-
-  const master = engine.getMasterLevels();
-  buffer[1 + count * 2] = master.peakL;
-  buffer[1 + count * 2 + 1] = master.peakR;
-
-  const bytes = Buffer.from(buffer.buffer);
+  const buf = engine.meterSnapshot();
+  const bytes = Buffer.from(buf.buffer, buf.byteOffset, buf.byteLength);
   for (const ws of wss.clients) {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(bytes);
@@ -215,17 +162,12 @@ const meterTimer = setInterval(() => {
 function shutdown(): void {
   console.log('[server] Shutting down...');
   clearInterval(meterTimer);
-  engine.shutdown();
   wss.close();
   server.close();
 }
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
-
-// ---------------------------------------------------------------------------
-// Start
-// ---------------------------------------------------------------------------
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {

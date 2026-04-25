@@ -151,10 +151,11 @@ export declare class Session {
 }
 
 /**
- * Parse a MIDI file and report which channels contain notes.
+ * Parse a MIDI file. Returns per-channel hints (TrackName, first Program
+ * Change), tempo, time signature, channel list, length in bars.
  *
- * The server uses this on upload to decide how many DAW tracks to spin up
- * (one per channel) and how to set their channel masks.
+ * The server uses this on upload to set up the master + override tracks
+ * and to auto-apply the file's tempo to the transport.
  */
 export declare function analyzeMidi(path: string): MidiInfo
 
@@ -230,26 +231,54 @@ export declare function createStereoWidth(sampleRate: number): Backend
 /** Create a tremolo with tempo sync and stereo auto-pan. */
 export declare function createTremolo(sampleRate: number): Backend
 
+/**
+ * Per-channel hint surfaced from the MIDI file — name (from a TrackName
+ * meta event on the same MIDI track) and the first GM Program Change
+ * observed on this channel. Either may be absent.
+ */
+export interface MidiChannelInfo {
+  channel: number
+  /** 1-based MIDI channel number (1..16) — what the user sees. */
+  displayNumber: number
+  /**
+   * First TrackName meta event in any MIDI track that emits notes on this
+   * channel, or `None` if no such name was found.
+   */
+  trackName?: string
+  /**
+   * First Program Change value (0..127) observed on this channel.
+   * For channel 10 (display 10), GM treats this as a drum kit selector.
+   */
+  program?: number
+}
+
 /** Available MIDI input device. */
 export interface MidiDevice {
   id: number
   name: string
 }
 
-/**
- * Summary of a MIDI file's contents — channels in use and rough duration.
- * Used by the multi-track import flow to spin up one DAW track per channel.
- */
+/** Summary of a MIDI file's contents. */
 export interface MidiInfo {
   /**
-   * Distinct MIDI channels (0..15) that contain at least one note-on event,
-   * sorted ascending. Channels with only meta events are not listed.
+   * Per-channel info for every channel that contains at least one
+   * note-on event, sorted by channel number.
    */
-  channels: Array<number>
+  channels: Array<MidiChannelInfo>
   /** Number of MIDI tracks (chunks) in the SMF file. */
   trackCount: number
-  /** Approximate duration in bars assuming 4/4 — best-effort estimate. */
+  /**
+   * Approximate duration in bars assuming the file's time signature
+   * (or 4/4 if none was set).
+   */
   lengthBars: number
+  /** First Tempo meta event, converted to BPM. None if no tempo set. */
+  tempoBpm?: number
+  /**
+   * First TimeSignature meta event as `[numerator, denominator]`.
+   * None if no time signature event found.
+   */
+  timeSignature?: Array<number>
 }
 
 /** Metadata for a single backend parameter. */
