@@ -16,6 +16,7 @@ moonlitt-engine = { path = "../moonlitt-engine", features = ["sf2", "sf2-sampler
 moonlitt-audio-io = { path = "../moonlitt-audio-io" }
 moonlitt-mixer = { path = "../moonlitt-mixer" }
 moonlitt-effects = { path = "../moonlitt-effects" }
+moonlitt-analyze = { path = "../moonlitt-analyze" }
 clap = { version = "4", features = ["derive"] }
 midly = "0.5"
 hound = "3"

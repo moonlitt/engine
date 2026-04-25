@@ -84,6 +84,15 @@ enum Commands {
     },
     /// List available MIDI input devices
     MidiDevices,
+    /// Measure objective audio quality of a WAV file
+    /// (peak, true peak, LUFS, RMS, anomalies)
+    Analyze {
+        /// Path to WAV file
+        path: String,
+        /// Emit JSON instead of human-readable report
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn main() {
@@ -114,10 +123,27 @@ fn main() {
             if live {
                 cmd_midi_live(&midi, &sound, sampler, &insert);
             } else {
-                cmd_midi_render(&midi, &sound, &output, sampler);
+                cmd_midi_render(&midi, &sound, &output, sampler, &insert);
             }
         }
         Commands::MidiDevices => cmd_midi_devices(),
+        Commands::Analyze { path, json } => cmd_analyze(&path, json),
+    }
+}
+
+fn cmd_analyze(path: &str, json: bool) {
+    match moonlitt_analyze::analyze_wav(path) {
+        Ok(report) => {
+            if json {
+                println!("{}", report.to_json());
+            } else {
+                print!("{report}");
+            }
+        }
+        Err(e) => {
+            eprintln!("Error analyzing {path}: {e}");
+            std::process::exit(1);
+        }
     }
 }
 
@@ -542,7 +568,9 @@ fn cmd_midi_live(midi_path: &str, sound_path: &str, use_sampler: bool, insert_sp
     rt.shutdown();
 }
 
-fn cmd_midi_render(midi_path: &str, sound_path: &str, output: &str, use_sampler: bool) {
+fn cmd_midi_render(midi_path: &str, sound_path: &str, output: &str, use_sampler: bool, insert_specs: &[String]) {
+    use moonlitt_mixer::Mixer;
+
     let (notes, program_changes) = match parse_midi_file(midi_path) {
         Ok(v) => v,
         Err(e) => { eprintln!("MIDI parse error: {e}"); std::process::exit(1); }
@@ -570,11 +598,29 @@ fn cmd_midi_render(midi_path: &str, sound_path: &str, output: &str, use_sampler:
         }
     };
 
-    // Send initial program changes
+    // Send initial program changes BEFORE handing the backend to the mixer.
     let mut sent = std::collections::HashSet::new();
     for &(_, ch, prog) in &program_changes {
         if sent.insert((ch, prog)) {
             backend.program_change(ch, prog);
+        }
+    }
+
+    // Same Mixer + insert chain as the live path, so offline render matches
+    // what speakers would produce. Without this, --insert would be silently
+    // dropped in render mode (caught by `moonlitt analyze`).
+    let mut mixer = Mixer::new(sample_rate, buffer_size as usize);
+    let track_id = mixer.add_track(backend, 0xFFFF);
+    for spec in insert_specs {
+        match build_insert(spec, sample_rate) {
+            Ok(eff) => {
+                mixer.add_insert(track_id, eff);
+                println!("Insert: {spec}");
+            }
+            Err(e) => {
+                eprintln!("Insert error in '{spec}': {e}");
+                std::process::exit(2);
+            }
         }
     }
 
@@ -596,7 +642,7 @@ fn cmd_midi_render(midi_path: &str, sound_path: &str, output: &str, use_sampler:
         // Note-offs
         pending_offs.retain(|&(off_time, ch, note)| {
             if off_time <= buf_end {
-                backend.note_off(ch, note);
+                mixer.note_off(ch, note);
                 false
             } else {
                 true
@@ -606,12 +652,12 @@ fn cmd_midi_render(midi_path: &str, sound_path: &str, output: &str, use_sampler:
         // Note-ons
         while note_idx < notes.len() && notes[note_idx].time_sec <= buf_end {
             let n = &notes[note_idx];
-            backend.note_on(n.channel, n.note, n.velocity);
+            mixer.note_on(n.channel, n.note, n.velocity);
             pending_offs.push((n.time_sec + n.duration_sec, n.channel, n.note));
             note_idx += 1;
         }
 
-        backend.render(&mut left, &mut right);
+        mixer.render(&mut left, &mut right);
         all_left.extend_from_slice(&left);
         all_right.extend_from_slice(&right);
     }
