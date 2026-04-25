@@ -69,6 +69,15 @@ enum Commands {
         /// Play live through speakers (default: render to WAV)
         #[arg(long)]
         live: bool,
+        /// Use moonlitt-sampler (pure Rust, Sinc 72) instead of OxiSynth (SF2 only)
+        #[arg(long)]
+        sampler: bool,
+        /// Insert effect. Repeat for chain. Format: "type[:k=v,k=v,...]"
+        /// Types: compressor, plate, freeverb. Examples:
+        ///   --insert "compressor:threshold=-18,ratio=4,makeup=6"
+        ///   --insert "plate:wet=0.2,decay=0.6"
+        #[arg(short = 'i', long, value_name = "SPEC")]
+        insert: Vec<String>,
         /// Output WAV file (when not --live)
         #[arg(short, long, default_value = "output.wav")]
         output: String,
@@ -101,11 +110,11 @@ fn main() {
         }
         Commands::Presets { path } => cmd_presets(&path),
         Commands::Live { path } => cmd_live(&path),
-        Commands::Midi { midi, sound, live, output } => {
+        Commands::Midi { midi, sound, live, sampler, insert, output } => {
             if live {
-                cmd_midi_live(&midi, &sound);
+                cmd_midi_live(&midi, &sound, sampler, &insert);
             } else {
-                cmd_midi_render(&midi, &sound, &output);
+                cmd_midi_render(&midi, &sound, &output, sampler);
             }
         }
         Commands::MidiDevices => cmd_midi_devices(),
@@ -429,10 +438,14 @@ fn parse_midi_file(path: &str) -> Result<(Vec<MidiNote>, Vec<(f64, u8, u8)>), St
     Ok((notes, program_changes))
 }
 
-fn cmd_midi_live(midi_path: &str, sound_path: &str) {
+fn cmd_midi_live(midi_path: &str, sound_path: &str, use_sampler: bool, insert_specs: &[String]) {
     use moonlitt_audio_io::Runtime;
+    use moonlitt_mixer::Mixer;
     use std::thread;
     use std::time::{Duration, Instant};
+
+    const SAMPLE_RATE: u32 = 44100;
+    const BUFFER_SIZE: u32 = 256;
 
     let (notes, program_changes) = match parse_midi_file(midi_path) {
         Ok(v) => v,
@@ -445,7 +458,12 @@ fn cmd_midi_live(midi_path: &str, sound_path: &str) {
 
     println!("MIDI: {} notes, {:.1}s", notes.len(), duration);
 
-    let mut backend = match moonlitt_engine::create(sound_path, 44100, 256) {
+    let backend_result = if use_sampler {
+        moonlitt_engine::create_with_sampler(sound_path, SAMPLE_RATE, BUFFER_SIZE)
+    } else {
+        moonlitt_engine::create(sound_path, SAMPLE_RATE, BUFFER_SIZE)
+    };
+    let mut backend = match backend_result {
         Ok(b) => b,
         Err(e) => {
             eprintln!("Error loading {sound_path}: {e}");
@@ -454,7 +472,7 @@ fn cmd_midi_live(midi_path: &str, sound_path: &str) {
     };
     println!("Sound: {}", backend.info().name);
 
-    // Send program changes
+    // Send program changes BEFORE handing the backend to the mixer.
     let mut sent_programs = std::collections::HashSet::new();
     for &(_, ch, prog) in &program_changes {
         if sent_programs.insert((ch, prog)) {
@@ -462,9 +480,26 @@ fn cmd_midi_live(midi_path: &str, sound_path: &str) {
         }
     }
 
-    let mut rt = match Runtime::new(backend, 44100, 256) {
+    // Build the mixer: synth track + parsed insert chain (in order).
+    let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE as usize);
+    let track_id = mixer.add_track(backend, 0xFFFF);
+
+    for spec in insert_specs {
+        match build_insert(spec, SAMPLE_RATE) {
+            Ok(eff) => {
+                mixer.add_insert(track_id, eff);
+                println!("Insert: {spec}");
+            }
+            Err(e) => {
+                eprintln!("Insert error in '{spec}': {e}");
+                std::process::exit(2);
+            }
+        }
+    }
+
+    let mut rt = match Runtime::with_mixer(mixer, BUFFER_SIZE) {
         Ok(r) => r,
-        Err((e, _)) => { eprintln!("Audio error: {e}"); std::process::exit(1); }
+        Err(e) => { eprintln!("Audio error: {e}"); std::process::exit(1); }
     };
     if let Err(e) = rt.start() {
         eprintln!("Failed to start audio output: {e}");
@@ -507,7 +542,7 @@ fn cmd_midi_live(midi_path: &str, sound_path: &str) {
     rt.shutdown();
 }
 
-fn cmd_midi_render(midi_path: &str, sound_path: &str, output: &str) {
+fn cmd_midi_render(midi_path: &str, sound_path: &str, output: &str, use_sampler: bool) {
     let (notes, program_changes) = match parse_midi_file(midi_path) {
         Ok(v) => v,
         Err(e) => { eprintln!("MIDI parse error: {e}"); std::process::exit(1); }
@@ -521,8 +556,13 @@ fn cmd_midi_render(midi_path: &str, sound_path: &str, output: &str) {
 
     let sample_rate = 44100u32;
     let buffer_size = 256u32;
-    // Offline rendering uses highest quality (Sinc72 for SF2)
-    let mut backend = match moonlitt_engine::create_high_quality(sound_path, sample_rate, buffer_size) {
+    let backend_result = if use_sampler {
+        moonlitt_engine::create_with_sampler(sound_path, sample_rate, buffer_size)
+    } else {
+        // Offline rendering uses highest quality (Sinc72 for SF2)
+        moonlitt_engine::create_high_quality(sound_path, sample_rate, buffer_size)
+    };
+    let mut backend = match backend_result {
         Ok(b) => b,
         Err(e) => {
             eprintln!("Error loading {sound_path}: {e}");
@@ -613,4 +653,96 @@ fn cmd_presets(path: &str) {
         println!("{:<6} {}", p.id, p.name);
     }
     println!("\nTotal: {} presets", presets.len());
+}
+
+// =============================================================================
+// Insert effect spec parser
+// =============================================================================
+// Spec format: "type[:k=v,k=v,...]"
+// Each effect type maps human-readable param names to numeric IDs to keep
+// the CLI ergonomic without exposing trait param IDs to users.
+
+fn build_insert(spec: &str, sample_rate: u32) -> Result<Box<dyn moonlitt_core::AudioBackend>, String> {
+    let (kind, params_str) = match spec.split_once(':') {
+        Some((k, p)) => (k.trim(), p.trim()),
+        None => (spec.trim(), ""),
+    };
+
+    let pairs: Vec<(String, f64)> = if params_str.is_empty() {
+        Vec::new()
+    } else {
+        params_str
+            .split(',')
+            .map(|kv| {
+                let (k, v) = kv.split_once('=').ok_or_else(|| format!("expected k=v in '{kv}'"))?;
+                let val: f64 = v.trim().parse().map_err(|e| format!("bad number '{v}': {e}"))?;
+                Ok::<_, String>((k.trim().to_string(), val))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    };
+
+    use moonlitt_core::AudioBackend;
+
+    match kind {
+        "compressor" | "comp" => {
+            let mut e = moonlitt_effects::Compressor::new(sample_rate);
+            for (k, v) in &pairs {
+                let id = match k.as_str() {
+                    "threshold" => 0,
+                    "ratio"     => 1,
+                    "attack"    => 2,
+                    "release"   => 3,
+                    "knee"      => 4,
+                    "makeup"    => 5,
+                    "sc_hpf"    => 6,
+                    "detect"    => 7,
+                    "bypass"    => 8,
+                    other => return Err(format!("compressor: unknown param '{other}'")),
+                };
+                e.set_param(id, *v);
+            }
+            Ok(Box::new(e))
+        }
+        "plate" | "dattorro" => {
+            let mut e = moonlitt_effects::DattorroReverb::new(sample_rate);
+            for (k, v) in &pairs {
+                let id = match k.as_str() {
+                    "predelay"  => 0,
+                    "decay"     => 1,
+                    "damping"   => 2,
+                    "diffusion" => 3,
+                    "wet_lp"    => 4,
+                    "wet_hp"    => 5,
+                    "width"     => 6,
+                    "wet" | "mix" | "dry_wet" => 7,
+                    "bypass"    => 8,
+                    other => return Err(format!("plate: unknown param '{other}'")),
+                };
+                e.set_param(id, *v);
+            }
+            Ok(Box::new(e))
+        }
+        "freeverb" | "reverb" => {
+            let mut e = moonlitt_effects::Reverb::new(sample_rate);
+            for (k, v) in &pairs {
+                let id = match k.as_str() {
+                    "predelay"  => 0,
+                    "room" | "room_size" => 1,
+                    "damping"   => 2,
+                    "diffusion" => 3,
+                    "wet_lp"    => 4,
+                    "wet_hp"    => 5,
+                    "width"     => 6,
+                    "wet" | "mix" | "dry_wet" => 7,
+                    "bypass"    => 8,
+                    other => return Err(format!("freeverb: unknown param '{other}'")),
+                };
+                e.set_param(id, *v);
+            }
+            Ok(Box::new(e))
+        }
+        other => Err(format!(
+            "unknown effect type '{other}' (try: compressor, plate, freeverb)"
+        )),
+    }
 }

@@ -12,8 +12,10 @@ path = "src/main.rs"
 
 [dependencies]
 moonlitt-core = { path = "../moonlitt-core" }
-moonlitt-engine = { path = "../moonlitt-engine", features = ["sf2", "vst3", "clap"] }
+moonlitt-engine = { path = "../moonlitt-engine", features = ["sf2", "sf2-sampler", "vst3", "clap"] }
 moonlitt-audio-io = { path = "../moonlitt-audio-io" }
+moonlitt-mixer = { path = "../moonlitt-mixer" }
+moonlitt-effects = { path = "../moonlitt-effects" }
 clap = { version = "4", features = ["derive"] }
 midly = "0.5"
 hound = "3"

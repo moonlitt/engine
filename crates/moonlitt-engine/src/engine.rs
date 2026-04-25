@@ -76,6 +76,24 @@ pub fn create_from_shared_sf2(font: oxisynth::SoundFont, sample_rate: u32) -> Re
     Ok(Box::new(backend))
 }
 
+/// Create an SF2 backend using moonlitt-sampler (pure Rust, Sinc 72 interpolation).
+///
+/// Drop-in replacement for `create()` when feature `sf2-sampler` is enabled.
+/// Only valid for `.sf2` files.
+#[cfg(feature = "sf2-sampler")]
+pub fn create_with_sampler(path: &str, sample_rate: u32, _buffer_size: u32) -> Result<Box<dyn AudioBackend>, EngineError> {
+    if !path.to_lowercase().ends_with(".sf2") {
+        return Err(EngineError::UnsupportedFormat(
+            "create_with_sampler only supports .sf2 files".into()
+        ));
+    }
+    let mut backend = crate::backends::sampler::SamplerBackend::new(sample_rate)
+        .map_err(|e| EngineError::BackendError(e.to_string()))?;
+    backend.load(path)
+        .map_err(|e| EngineError::BackendError(e.to_string()))?;
+    Ok(Box::new(backend))
+}
+
 /// Return the list of file extensions supported by the engine.
 #[allow(clippy::vec_init_then_push)]
 pub fn supported_formats() -> Vec<&'static str> {
