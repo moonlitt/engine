@@ -40,6 +40,35 @@ pub struct Vst3Host {
     host: vst3::ComWrapper<host::HostApp>,
 }
 
+/// Transport / playhead context the host advertises to the plugin per block.
+/// Plugins use this for tempo-synced effects (delay sync to BPM, looper),
+/// arpeggiators, and anything else that needs to know "where the music is".
+#[derive(Clone, Copy, Debug)]
+pub struct TransportContext {
+    /// Whether the host is currently playing.
+    pub playing: bool,
+    /// Sample-accurate position from project start (negative for pre-roll).
+    pub position_samples: i64,
+    /// Beats per minute. Set to 120.0 if unknown.
+    pub tempo: f64,
+    /// Time signature numerator (e.g. 4 for 4/4).
+    pub time_sig_num: i32,
+    /// Time signature denominator (e.g. 4 for 4/4).
+    pub time_sig_den: i32,
+}
+
+impl Default for TransportContext {
+    fn default() -> Self {
+        Self {
+            playing: false,
+            position_samples: 0,
+            tempo: 120.0,
+            time_sig_num: 4,
+            time_sig_den: 4,
+        }
+    }
+}
+
 /// A loaded and initialized VST3 plugin instance.
 pub struct Vst3Plugin {
     inner: LoadedPlugin,
@@ -48,10 +77,13 @@ pub struct Vst3Plugin {
     /// (~172 calls/sec at 44100 Hz / 256 buffer). A single buffer rarely
     /// accumulates more than a handful of events.
     pending_events: Vec<MidiEvent>,
-    #[allow(dead_code)]
     sample_rate: f64,
     #[allow(dead_code)]
     buffer_size: usize,
+    /// Transport state advertised to the plugin via ProcessContext on each
+    /// render. Defaults to "stopped at position 0, 120 BPM, 4/4" — safe
+    /// for non-tempo-synced plugins.
+    transport: TransportContext,
     /// Pre-allocated silent input buffer (left channel) to avoid hot-path allocation.
     silent_left: Vec<f32>,
     /// Pre-allocated silent input buffer (right channel) to avoid hot-path allocation.
@@ -109,6 +141,7 @@ impl Vst3Host {
             pending_events: Vec::new(),
             sample_rate: self.sample_rate,
             buffer_size: bs,
+            transport: TransportContext::default(),
             silent_left: vec![0.0f32; bs],
             silent_right: vec![0.0f32; bs],
         })
@@ -162,6 +195,22 @@ impl Vst3Plugin {
         });
     }
 
+    /// Update the transport context advertised to the plugin on the next
+    /// process() call. Only matters for plugins that read `processContext`
+    /// (tempo-synced delays, arpeggiators, loopers); pure synths ignore it.
+    pub fn set_transport(&mut self, transport: TransportContext) {
+        self.transport = transport;
+    }
+
+    /// Advance the position in samples — convenience for callers that step
+    /// the transport once per render.
+    pub fn advance_transport(&mut self, frames: i64) {
+        if self.transport.playing {
+            self.transport.position_samples =
+                self.transport.position_samples.saturating_add(frames);
+        }
+    }
+
     /// Send All Notes Off (CC#123) on all 16 channels.
     ///
     /// Uses the standard MIDI CC#123 (All Notes Off) message instead of
@@ -194,6 +243,8 @@ impl Vst3Plugin {
         let num_frames = left.len().min(right.len());
         self.silent_left[..num_frames].fill(0.0);
         self.silent_right[..num_frames].fill(0.0);
+
+        let mut output_params: Vec<component_handler::PendingParam> = Vec::new();
         processor::process_audio(
             &self.inner.processor,
             &self.inner.component,
@@ -201,9 +252,26 @@ impl Vst3Plugin {
             right,
             &events,
             &pending_params,
+            &mut output_params,
+            &self.transport,
+            self.sample_rate,
             &mut self.silent_left[..num_frames],
             &mut self.silent_right[..num_frames],
-        )
+        )?;
+
+        // Forward processor→controller feedback. Keeps the controller's
+        // parameter mirror in sync with values the plugin computed during
+        // process() (envelope outputs, internal modulation, etc.).
+        if !output_params.is_empty() {
+            if let Some(ref ctrl) = self.inner.controller {
+                use vst3::Steinberg::Vst::IEditControllerTrait;
+                for p in &output_params {
+                    unsafe { ctrl.setParamNormalized(p.id, p.value) };
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Process audio through the plugin as an effect (audio in → audio out).

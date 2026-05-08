@@ -4,17 +4,18 @@
 //! IEventList, then calls IAudioProcessor::process().
 
 use vst3::Steinberg::Vst::{
-    AudioBusBuffers, AudioBusBuffers__type0, BusDirections_::*, IAudioProcessor,
+    AudioBusBuffers, AudioBusBuffers__type0, BusDirections_::*, Chord, FrameRate, IAudioProcessor,
     IAudioProcessorTrait, IComponent, IComponentTrait, IEventList, IParameterChanges,
-    MediaTypes_::kAudio, ProcessData, ProcessModes_::kRealtime,
-    SymbolicSampleSizes_::kSample32,
+    MediaTypes_::kAudio, ProcessContext, ProcessContext_::StatesAndFlags_, ProcessData,
+    ProcessModes_::kRealtime, SymbolicSampleSizes_::kSample32,
 };
 use vst3::Steinberg::kResultOk;
 use vst3::ComPtr;
 
 use crate::component_handler::PendingParam;
 use crate::events::{create_event_list, MidiEvent};
-use crate::parameter_changes::build_input_changes;
+use crate::parameter_changes::{build_input_changes, drain_output, new_output_changes};
+use crate::TransportContext;
 use crate::{Error, Result};
 
 /// Process one block of audio through the plugin.
@@ -32,6 +33,9 @@ pub(crate) fn process_audio(
     right: &mut [f32],
     events: &[MidiEvent],
     pending_params: &[PendingParam],
+    output_params: &mut Vec<PendingParam>,
+    transport: &TransportContext,
+    sample_rate: f64,
     silent_left: &mut [f32],
     silent_right: &mut [f32],
 ) -> Result<()> {
@@ -102,13 +106,24 @@ pub(crate) fn process_audio(
         .ok_or(Error::Other("failed to create IEventList".into()))?;
 
     // --- Parameter changes (controller→processor) ---
-    // The wrapper must outlive the process() call; keep it bound here.
+    // Wrappers must outlive the process() call; keep them bound here.
     let input_param_changes = build_input_changes(pending_params);
     let input_param_changes_ptr = input_param_changes
         .as_ref()
         .and_then(|w| w.as_com_ref::<IParameterChanges>())
         .map(|r| r.as_ptr())
         .unwrap_or(std::ptr::null_mut());
+
+    // Output side: plugin writes parameter feedback (envelope follower,
+    // LFO outputs, internal automation) here for the host to read.
+    let output_param_changes = new_output_changes();
+    let output_param_changes_ptr = output_param_changes
+        .as_com_ref::<IParameterChanges>()
+        .map(|r| r.as_ptr())
+        .unwrap_or(std::ptr::null_mut());
+
+    // --- Process context (transport / playhead) ---
+    let mut process_context = build_process_context(transport, sample_rate);
 
     // --- Build ProcessData ---
     let mut data = ProcessData {
@@ -128,10 +143,10 @@ pub(crate) fn process_audio(
             output_buses.as_mut_ptr()
         },
         inputParameterChanges: input_param_changes_ptr,
-        outputParameterChanges: std::ptr::null_mut(),
+        outputParameterChanges: output_param_changes_ptr,
         inputEvents: input_events_ptr.as_ptr(),
         outputEvents: std::ptr::null_mut(),
-        processContext: std::ptr::null_mut(),
+        processContext: &mut process_context,
     };
 
     let result = unsafe { processor.process(&mut data) };
@@ -139,7 +154,57 @@ pub(crate) fn process_audio(
         return Err(Error::PluginError(result));
     }
 
+    // Drain any feedback the plugin wrote into outputParameterChanges.
+    *output_params = drain_output(&output_param_changes);
+
     Ok(())
+}
+
+/// Build a VST3 ProcessContext from our minimal TransportContext, with the
+/// state flags advertising which fields the plugin can trust.
+fn build_process_context(transport: &TransportContext, sample_rate: f64) -> ProcessContext {
+    let mut state: u32 = StatesAndFlags_::kTempoValid as u32
+        | StatesAndFlags_::kTimeSigValid as u32
+        | StatesAndFlags_::kProjectTimeMusicValid as u32;
+    if transport.playing {
+        state |= StatesAndFlags_::kPlaying as u32;
+    }
+
+    // Convert sample-position → quarter-note position. 60s × bpm / 60 quarters
+    // per minute means quarters = seconds × bpm / 60. Same algebra as the
+    // VST3 SDK's HostContext example.
+    let seconds = if sample_rate > 0.0 {
+        transport.position_samples as f64 / sample_rate
+    } else {
+        0.0
+    };
+    let project_time_music = seconds * transport.tempo / 60.0;
+
+    ProcessContext {
+        state,
+        sampleRate: sample_rate,
+        projectTimeSamples: transport.position_samples,
+        systemTime: 0,
+        continousTimeSamples: transport.position_samples,
+        projectTimeMusic: project_time_music,
+        barPositionMusic: 0.0,
+        cycleStartMusic: 0.0,
+        cycleEndMusic: 0.0,
+        tempo: transport.tempo,
+        timeSigNumerator: transport.time_sig_num,
+        timeSigDenominator: transport.time_sig_den,
+        chord: Chord {
+            keyNote: 0,
+            rootNote: 0,
+            chordMask: 0,
+        },
+        smpteOffsetSubframes: 0,
+        frameRate: FrameRate {
+            framesPerSecond: 0,
+            flags: 0,
+        },
+        samplesToNextClock: 0,
+    }
 }
 
 /// Process audio as an effect: feed real audio input, get processed output.

@@ -104,6 +104,12 @@ pub(crate) fn load_plugin(
     // 7. setupProcessing
     setup_processing(&processor, sample_rate, buffer_size)?;
 
+    // 7a. Negotiate bus arrangements. Host proposes stereo on every audio
+    // bus; plugins that need other layouts (mono synth, multi-out sampler)
+    // may renegotiate at this point. Failures are non-fatal — plugin keeps
+    // its default layout.
+    negotiate_bus_arrangements(&processor, &component);
+
     // 8. Activate buses
     activate_buses(&component)?;
 
@@ -372,6 +378,35 @@ fn sync_component_state(
 
     let mut read_stream = crate::stream::MemoryStream::from_data(data);
     let _ = unsafe { ctrl.setComponentState(read_stream.as_ibstream_ptr()) };
+}
+
+/// Propose a stereo SpeakerArrangement for every audio bus the plugin
+/// exposes. Plugin can renegotiate or accept silently. Result code is
+/// ignored — plugin's own default layout is the fallback.
+fn negotiate_bus_arrangements(
+    processor: &ComPtr<IAudioProcessor>,
+    component: &ComPtr<IComponent>,
+) {
+    use vst3::Steinberg::Vst::{SpeakerArr, SpeakerArrangement};
+
+    let num_in = unsafe { component.getBusCount(kAudio as i32, kInput as i32) };
+    let num_out = unsafe { component.getBusCount(kAudio as i32, kOutput as i32) };
+
+    let mut inputs: Vec<SpeakerArrangement> = vec![SpeakerArr::kStereo; num_in as usize];
+    let mut outputs: Vec<SpeakerArrangement> = vec![SpeakerArr::kStereo; num_out as usize];
+
+    let in_ptr = if inputs.is_empty() {
+        std::ptr::null_mut()
+    } else {
+        inputs.as_mut_ptr()
+    };
+    let out_ptr = if outputs.is_empty() {
+        std::ptr::null_mut()
+    } else {
+        outputs.as_mut_ptr()
+    };
+
+    let _ = unsafe { processor.setBusArrangements(in_ptr, num_in, out_ptr, num_out) };
 }
 
 /// Setup processing parameters on the audio processor.
