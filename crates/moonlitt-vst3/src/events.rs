@@ -205,3 +205,135 @@ pub(crate) fn create_event_list(events: &[MidiEvent]) -> ComWrapper<EventListImp
     ComWrapper::new(EventListImpl::from_midi_events(events))
 }
 
+// ---------------------------------------------------------------------------
+// Output IEventList (plugin writes, host drains)
+// ---------------------------------------------------------------------------
+
+use std::cell::UnsafeCell;
+
+/// IEventList backing for `ProcessData::outputEvents`. Plug-ins like
+/// arpeggiators or generative synths emit MIDI events back to the host
+/// through this — the host's job is to drain them after each process()
+/// and forward to whatever downstream consumer wants the MIDI stream.
+///
+/// UnsafeCell is sound here because plug-ins call into a single
+/// IEventList serially during process(), and we never call into it
+/// concurrently with the audio thread (drain happens after process()
+/// returns).
+pub(crate) struct OutputEventListImpl {
+    events: UnsafeCell<Vec<Event>>,
+}
+
+impl Class for OutputEventListImpl {
+    type Interfaces = (IEventList,);
+}
+
+impl IEventListTrait for OutputEventListImpl {
+    unsafe fn getEventCount(&self) -> int32 {
+        (*self.events.get()).len() as int32
+    }
+
+    unsafe fn getEvent(&self, index: int32, e: *mut Event) -> tresult {
+        let events: &Vec<Event> = &*self.events.get();
+        match events.get(index as usize) {
+            Some(event) => {
+                std::ptr::write(e, *event);
+                kResultOk
+            }
+            None => kResultFalse,
+        }
+    }
+
+    unsafe fn addEvent(&self, e: *mut Event) -> tresult {
+        if e.is_null() {
+            return kResultFalse;
+        }
+        (*self.events.get()).push(*e);
+        kResultOk
+    }
+}
+
+/// Allocate a fresh writable IEventList for the plug-in to fill.
+pub(crate) fn new_output_event_list() -> ComWrapper<OutputEventListImpl> {
+    ComWrapper::new(OutputEventListImpl {
+        events: UnsafeCell::new(Vec::new()),
+    })
+}
+
+/// Drain the events the plug-in wrote during the last process() call,
+/// converting them back into our public MidiEvent shape. Note events
+/// and the legacy MIDI CC subset are translated; other event types
+/// (note expression, chord, etc.) are dropped because we don't surface
+/// them on the public API yet.
+pub(crate) fn drain_output_events(out: &ComWrapper<OutputEventListImpl>) -> Vec<MidiEvent> {
+    let raw: Vec<Event> = unsafe { std::mem::take(&mut *out.events.get()) };
+    let mut result = Vec::with_capacity(raw.len());
+    for e in raw {
+        if let Some(me) = vst3_event_to_midi(&e) {
+            result.push(me);
+        }
+    }
+    result
+}
+
+fn vst3_event_to_midi(e: &Event) -> Option<MidiEvent> {
+    let sample_offset = e.sampleOffset;
+    match e.r#type as u32 {
+        t if t == Event_::EventTypes_::kNoteOnEvent as u32 => {
+            let n = unsafe { e.__field0.noteOn };
+            Some(MidiEvent {
+                kind: MidiEventKind::NoteOn {
+                    channel: n.channel as u8,
+                    note: n.pitch as u8,
+                    velocity: (n.velocity * 127.0).round().clamp(0.0, 127.0) as u8,
+                },
+                sample_offset,
+            })
+        }
+        t if t == Event_::EventTypes_::kNoteOffEvent as u32 => {
+            let n = unsafe { e.__field0.noteOff };
+            Some(MidiEvent {
+                kind: MidiEventKind::NoteOff {
+                    channel: n.channel as u8,
+                    note: n.pitch as u8,
+                },
+                sample_offset,
+            })
+        }
+        t if t == Event_::EventTypes_::kLegacyMIDICCOutEvent as u32 => {
+            let m = unsafe { e.__field0.midiCCOut };
+            match m.controlNumber {
+                129 => Some(MidiEvent {
+                    kind: MidiEventKind::PitchBend {
+                        channel: m.channel as u8,
+                        // Reconstruct signed 14-bit from LSB+MSB.
+                        value: {
+                            let lsb = (m.value as u8 & 0x7F) as i32;
+                            let msb = (m.value2 as u8 & 0x7F) as i32;
+                            ((msb << 7) | lsb) as i32 - 8192
+                        } as i16,
+                    },
+                    sample_offset,
+                }),
+                130 => Some(MidiEvent {
+                    kind: MidiEventKind::ProgramChange {
+                        channel: m.channel as u8,
+                        program: m.value as u8,
+                    },
+                    sample_offset,
+                }),
+                cc if cc < 128 => Some(MidiEvent {
+                    kind: MidiEventKind::CC {
+                        channel: m.channel as u8,
+                        cc,
+                        value: m.value as u8,
+                    },
+                    sample_offset,
+                }),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+

@@ -13,7 +13,9 @@ use vst3::Steinberg::kResultOk;
 use vst3::ComPtr;
 
 use crate::component_handler::PendingParam;
-use crate::events::{create_event_list, MidiEvent};
+use crate::events::{
+    create_event_list, drain_output_events, new_output_event_list, MidiEvent,
+};
 use crate::parameter_changes::{build_input_changes, drain_output, new_output_changes};
 use crate::TransportContext;
 use crate::{Error, Result};
@@ -47,6 +49,7 @@ pub(crate) fn process_audio(
     events: &[MidiEvent],
     pending_params: &[PendingParam],
     output_params: &mut Vec<PendingParam>,
+    output_events: &mut Vec<MidiEvent>,
     transport: &TransportContext,
     sample_rate: f64,
     silent_left: &mut [f32],
@@ -126,6 +129,13 @@ pub(crate) fn process_audio(
         .map(|r| r.as_ptr())
         .unwrap_or(std::ptr::null_mut());
 
+    // --- Output event list (plugin writes, host drains) ---
+    let output_event_list = new_output_event_list();
+    let output_events_ptr = output_event_list
+        .as_com_ref::<IEventList>()
+        .map(|r| r.as_ptr())
+        .unwrap_or(std::ptr::null_mut());
+
     // --- Process context (transport / playhead) ---
     let mut process_context = build_process_context(transport, sample_rate);
 
@@ -149,7 +159,7 @@ pub(crate) fn process_audio(
         inputParameterChanges: input_param_changes_ptr,
         outputParameterChanges: output_param_changes_ptr,
         inputEvents: input_events_ptr.as_ptr(),
-        outputEvents: std::ptr::null_mut(),
+        outputEvents: output_events_ptr,
         processContext: &mut process_context,
     };
 
@@ -168,6 +178,8 @@ pub(crate) fn process_audio(
 
     // Drain any feedback the plugin wrote into outputParameterChanges.
     *output_params = drain_output(&output_param_changes);
+    // Drain any MIDI the plugin emitted (arpeggiator notes, etc.).
+    *output_events = drain_output_events(&output_event_list);
 
     Ok(())
 }

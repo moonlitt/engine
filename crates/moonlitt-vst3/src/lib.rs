@@ -81,6 +81,11 @@ pub struct Vst3Plugin {
     /// (~172 calls/sec at 44100 Hz / 256 buffer). A single buffer rarely
     /// accumulates more than a handful of events.
     pending_events: Vec<MidiEvent>,
+    /// MIDI events the plug-in emitted on its outputEvents channel
+    /// during the most recent render. Consumers drain via
+    /// `take_output_events()` between render calls; if they don't, we
+    /// keep accumulating up to a soft cap to avoid unbounded growth.
+    output_events: Vec<MidiEvent>,
     sample_rate: f64,
     buffer_size: usize,
     /// Transport state advertised to the plugin via ProcessContext on each
@@ -195,6 +200,7 @@ impl Vst3Host {
         Ok(Vst3Plugin {
             inner: loaded,
             pending_events: Vec::new(),
+            output_events: Vec::new(),
             sample_rate: self.sample_rate,
             buffer_size: bs,
             transport: TransportContext::default(),
@@ -334,6 +340,7 @@ impl Vst3Plugin {
         self.silent_left[..num_frames].fill(0.0);
         self.silent_right[..num_frames].fill(0.0);
         let mut output_params: Vec<component_handler::PendingParam> = Vec::new();
+        let mut block_output_events: Vec<MidiEvent> = Vec::new();
 
         // Bus 0 → caller's buffers (zero copy), buses 1..N → scratch.
         let (head, tail) = self.bus_scratches.split_first_mut().expect("nb > 0");
@@ -358,6 +365,7 @@ impl Vst3Plugin {
             &events,
             &pending_params,
             &mut output_params,
+            &mut block_output_events,
             &self.transport,
             self.sample_rate,
             &mut self.silent_left[..num_frames],
@@ -365,6 +373,7 @@ impl Vst3Plugin {
         )?;
 
         forward_output_params(&self.inner.controller, &output_params);
+        self.output_events.append(&mut block_output_events);
         Ok(())
     }
 
@@ -397,6 +406,7 @@ impl Vst3Plugin {
         self.silent_left[..num_frames].fill(0.0);
         self.silent_right[..num_frames].fill(0.0);
         let mut output_params: Vec<component_handler::PendingParam> = Vec::new();
+        let mut block_output_events: Vec<MidiEvent> = Vec::new();
 
         let mut outputs: Vec<processor::OutputBus<'_>> =
             Vec::with_capacity(self.bus_scratches.len());
@@ -414,6 +424,7 @@ impl Vst3Plugin {
             &events,
             &pending_params,
             &mut output_params,
+            &mut block_output_events,
             &self.transport,
             self.sample_rate,
             &mut self.silent_left[..num_frames],
@@ -421,7 +432,20 @@ impl Vst3Plugin {
         )?;
 
         forward_output_params(&self.inner.controller, &output_params);
+        self.output_events.append(&mut block_output_events);
         Ok(())
+    }
+
+    /// Take all MIDI events the plug-in emitted on its outputEvents
+    /// channel since the last call to this method. Returns events in
+    /// chronological order across renders that have happened since the
+    /// last drain.
+    ///
+    /// Use this for arpeggiators, generative MIDI synths, and any
+    /// plug-in that produces MIDI as a side product. Call between
+    /// renders to keep the queue bounded.
+    pub fn take_output_events(&mut self) -> Vec<MidiEvent> {
+        std::mem::take(&mut self.output_events)
     }
 
     /// Returns the L/R audio rendered for output bus `index` during the
