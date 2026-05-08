@@ -81,6 +81,11 @@ enum Commands {
         /// Output WAV file (when not --live)
         #[arg(short, long, default_value = "output.wav")]
         output: String,
+        /// Preset id to load before rendering. Required for sampler-style
+        /// VST3 plugins (Keyscape, sfizz, Kontakt) whose default state is
+        /// empty. Use `moonlitt presets <plugin>` to list ids.
+        #[arg(long, value_name = "ID")]
+        preset: Option<i32>,
     },
     /// List available MIDI input devices
     MidiDevices,
@@ -119,11 +124,11 @@ fn main() {
         }
         Commands::Presets { path } => cmd_presets(&path),
         Commands::Live { path } => cmd_live(&path),
-        Commands::Midi { midi, sound, live, sampler, insert, output } => {
+        Commands::Midi { midi, sound, live, sampler, insert, output, preset } => {
             if live {
-                cmd_midi_live(&midi, &sound, sampler, &insert);
+                cmd_midi_live(&midi, &sound, sampler, &insert, preset);
             } else {
-                cmd_midi_render(&midi, &sound, &output, sampler, &insert);
+                cmd_midi_render(&midi, &sound, &output, sampler, &insert, preset);
             }
         }
         Commands::MidiDevices => cmd_midi_devices(),
@@ -464,7 +469,7 @@ fn parse_midi_file(path: &str) -> Result<(Vec<MidiNote>, Vec<(f64, u8, u8)>), St
     Ok((notes, program_changes))
 }
 
-fn cmd_midi_live(midi_path: &str, sound_path: &str, use_sampler: bool, insert_specs: &[String]) {
+fn cmd_midi_live(midi_path: &str, sound_path: &str, use_sampler: bool, insert_specs: &[String], preset: Option<i32>) {
     use moonlitt_audio_io::Runtime;
     use moonlitt_mixer::Mixer;
     use std::thread;
@@ -497,6 +502,14 @@ fn cmd_midi_live(midi_path: &str, sound_path: &str, use_sampler: bool, insert_sp
         }
     };
     println!("Sound: {}", backend.info().name);
+
+    if let Some(id) = preset {
+        if let Err(e) = backend.load_preset(id) {
+            eprintln!("Warning: load_preset({id}) failed: {e}");
+        } else {
+            println!("Loaded preset id={id}");
+        }
+    }
 
     // Send program changes BEFORE handing the backend to the mixer.
     let mut sent_programs = std::collections::HashSet::new();
@@ -568,7 +581,7 @@ fn cmd_midi_live(midi_path: &str, sound_path: &str, use_sampler: bool, insert_sp
     rt.shutdown();
 }
 
-fn cmd_midi_render(midi_path: &str, sound_path: &str, output: &str, use_sampler: bool, insert_specs: &[String]) {
+fn cmd_midi_render(midi_path: &str, sound_path: &str, output: &str, use_sampler: bool, insert_specs: &[String], preset: Option<i32>) {
     use moonlitt_mixer::Mixer;
 
     let (notes, program_changes) = match parse_midi_file(midi_path) {
@@ -597,6 +610,15 @@ fn cmd_midi_render(midi_path: &str, sound_path: &str, output: &str, use_sampler:
             std::process::exit(1);
         }
     };
+
+    // For sampler-style VST3 plugins (empty default state), load a preset first.
+    if let Some(id) = preset {
+        if let Err(e) = backend.load_preset(id) {
+            eprintln!("Warning: load_preset({id}) failed: {e}");
+        } else {
+            println!("Loaded preset id={id}");
+        }
+    }
 
     // Send initial program changes BEFORE handing the backend to the mixer.
     let mut sent = std::collections::HashSet::new();
