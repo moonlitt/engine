@@ -86,6 +86,13 @@ enum Commands {
         /// empty. Use `moonlitt presets <plugin>` to list ids.
         #[arg(long, value_name = "ID")]
         preset: Option<i32>,
+        /// Path to a saved VST3 plugin state (.vstpreset, or any binary
+        /// blob from a previous save_state). Loaded before rendering.
+        /// This is the canonical way to drive commercial samplers
+        /// (Keyscape, Omnisphere, Kontakt) headlessly: save a preset
+        /// from any DAW, then point this flag at the file.
+        #[arg(long, value_name = "PATH")]
+        state: Option<String>,
     },
     /// List available MIDI input devices
     MidiDevices,
@@ -124,11 +131,11 @@ fn main() {
         }
         Commands::Presets { path } => cmd_presets(&path),
         Commands::Live { path } => cmd_live(&path),
-        Commands::Midi { midi, sound, live, sampler, insert, output, preset } => {
+        Commands::Midi { midi, sound, live, sampler, insert, output, preset, state } => {
             if live {
-                cmd_midi_live(&midi, &sound, sampler, &insert, preset);
+                cmd_midi_live(&midi, &sound, sampler, &insert, preset, state.as_deref());
             } else {
-                cmd_midi_render(&midi, &sound, &output, sampler, &insert, preset);
+                cmd_midi_render(&midi, &sound, &output, sampler, &insert, preset, state.as_deref());
             }
         }
         Commands::MidiDevices => cmd_midi_devices(),
@@ -469,7 +476,7 @@ fn parse_midi_file(path: &str) -> Result<(Vec<MidiNote>, Vec<(f64, u8, u8)>), St
     Ok((notes, program_changes))
 }
 
-fn cmd_midi_live(midi_path: &str, sound_path: &str, use_sampler: bool, insert_specs: &[String], preset: Option<i32>) {
+fn cmd_midi_live(midi_path: &str, sound_path: &str, use_sampler: bool, insert_specs: &[String], preset: Option<i32>, state_path: Option<&str>) {
     use moonlitt_audio_io::Runtime;
     use moonlitt_mixer::Mixer;
     use std::thread;
@@ -502,6 +509,16 @@ fn cmd_midi_live(midi_path: &str, sound_path: &str, use_sampler: bool, insert_sp
         }
     };
     println!("Sound: {}", backend.info().name);
+
+    if let Some(path) = state_path {
+        match std::fs::read(path) {
+            Ok(bytes) => match backend.load_state(&bytes) {
+                Ok(()) => println!("Loaded state from {path} ({} bytes)", bytes.len()),
+                Err(e) => eprintln!("Warning: load_state from {path} failed: {e}"),
+            },
+            Err(e) => eprintln!("Warning: cannot read state file {path}: {e}"),
+        }
+    }
 
     if let Some(id) = preset {
         if let Err(e) = backend.load_preset(id) {
@@ -581,7 +598,7 @@ fn cmd_midi_live(midi_path: &str, sound_path: &str, use_sampler: bool, insert_sp
     rt.shutdown();
 }
 
-fn cmd_midi_render(midi_path: &str, sound_path: &str, output: &str, use_sampler: bool, insert_specs: &[String], preset: Option<i32>) {
+fn cmd_midi_render(midi_path: &str, sound_path: &str, output: &str, use_sampler: bool, insert_specs: &[String], preset: Option<i32>, state_path: Option<&str>) {
     use moonlitt_mixer::Mixer;
 
     let (notes, program_changes) = match parse_midi_file(midi_path) {
@@ -611,7 +628,22 @@ fn cmd_midi_render(midi_path: &str, sound_path: &str, output: &str, use_sampler:
         }
     };
 
-    // For sampler-style VST3 plugins (empty default state), load a preset first.
+    // Saved plugin state (e.g. .vstpreset) takes precedence — it carries the
+    // full patch/sample selection that private patch systems (Keyscape,
+    // Omnisphere) won't expose any other way.
+    if let Some(path) = state_path {
+        match std::fs::read(path) {
+            Ok(bytes) => match backend.load_state(&bytes) {
+                Ok(()) => println!("Loaded state from {path} ({} bytes)", bytes.len()),
+                Err(e) => eprintln!("Warning: load_state from {path} failed: {e}"),
+            },
+            Err(e) => eprintln!("Warning: cannot read state file {path}: {e}"),
+        }
+    }
+
+    // For sampler-style VST3 plugins (empty default state), load a preset.
+    // Applied after state load, so it can re-select within a loaded patch
+    // bank if the saved state exposes a program list.
     if let Some(id) = preset {
         if let Err(e) = backend.load_preset(id) {
             eprintln!("Warning: load_preset({id}) failed: {e}");
