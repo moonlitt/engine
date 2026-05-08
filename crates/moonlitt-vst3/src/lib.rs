@@ -15,10 +15,12 @@
 //! ```
 
 mod component;
+mod component_handler;
 mod error;
 mod events;
 mod host;
 mod module;
+mod parameter_changes;
 mod processor;
 mod scanner;
 pub mod stream;
@@ -172,6 +174,12 @@ impl Vst3Plugin {
     /// `left` and `right` must be the same length (the buffer size).
     pub fn render(&mut self, left: &mut [f32], right: &mut [f32]) -> Result<()> {
         let events: Vec<MidiEvent> = std::mem::take(&mut self.pending_events);
+        // Drain controller→processor parameter edits queued since the last
+        // render (e.g. from load_preset, or from the plugin's UI).
+        let pending_params = match &self.inner.param_queue {
+            Some(q) => component_handler::drain(q),
+            None => Vec::new(),
+        };
         // Re-zero silent buffers before each render (plugins may write into them)
         let num_frames = left.len().min(right.len());
         self.silent_left[..num_frames].fill(0.0);
@@ -182,6 +190,7 @@ impl Vst3Plugin {
             left,
             right,
             &events,
+            &pending_params,
             &mut self.silent_left[..num_frames],
             &mut self.silent_right[..num_frames],
         )
@@ -285,6 +294,18 @@ impl Vst3Plugin {
                     0.0
                 };
                 unsafe { ctrl.setParamNormalized(pinfo.id, normalized) };
+                // Host-initiated edits don't round-trip via performEdit
+                // (the controller doesn't notify the host of writes the host
+                // itself made). Forward directly so the processor sees it on
+                // the next render().
+                if let Some(ref queue) = self.inner.param_queue {
+                    if let Ok(mut q) = queue.lock() {
+                        q.push(component_handler::PendingParam {
+                            id: pinfo.id,
+                            value: normalized,
+                        });
+                    }
+                }
                 return Ok(());
             }
         }

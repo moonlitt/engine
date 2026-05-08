@@ -5,13 +5,16 @@
 
 use vst3::Steinberg::Vst::{
     AudioBusBuffers, AudioBusBuffers__type0, BusDirections_::*, IAudioProcessor,
-    IAudioProcessorTrait, IComponent, IComponentTrait, IEventList, MediaTypes_::kAudio,
-    ProcessData, ProcessModes_::kRealtime, SymbolicSampleSizes_::kSample32,
+    IAudioProcessorTrait, IComponent, IComponentTrait, IEventList, IParameterChanges,
+    MediaTypes_::kAudio, ProcessData, ProcessModes_::kRealtime,
+    SymbolicSampleSizes_::kSample32,
 };
 use vst3::Steinberg::kResultOk;
 use vst3::ComPtr;
 
+use crate::component_handler::PendingParam;
 use crate::events::{create_event_list, MidiEvent};
+use crate::parameter_changes::build_input_changes;
 use crate::{Error, Result};
 
 /// Process one block of audio through the plugin.
@@ -28,6 +31,7 @@ pub(crate) fn process_audio(
     left: &mut [f32],
     right: &mut [f32],
     events: &[MidiEvent],
+    pending_params: &[PendingParam],
     silent_left: &mut [f32],
     silent_right: &mut [f32],
 ) -> Result<()> {
@@ -97,6 +101,15 @@ pub(crate) fn process_audio(
         .to_com_ptr::<IEventList>()
         .ok_or(Error::Other("failed to create IEventList".into()))?;
 
+    // --- Parameter changes (controller→processor) ---
+    // The wrapper must outlive the process() call; keep it bound here.
+    let input_param_changes = build_input_changes(pending_params);
+    let input_param_changes_ptr = input_param_changes
+        .as_ref()
+        .and_then(|w| w.as_com_ref::<IParameterChanges>())
+        .map(|r| r.as_ptr())
+        .unwrap_or(std::ptr::null_mut());
+
     // --- Build ProcessData ---
     let mut data = ProcessData {
         processMode: kRealtime as i32,
@@ -114,7 +127,7 @@ pub(crate) fn process_audio(
         } else {
             output_buses.as_mut_ptr()
         },
-        inputParameterChanges: std::ptr::null_mut(),
+        inputParameterChanges: input_param_changes_ptr,
         outputParameterChanges: std::ptr::null_mut(),
         inputEvents: input_events_ptr.as_ptr(),
         outputEvents: std::ptr::null_mut(),

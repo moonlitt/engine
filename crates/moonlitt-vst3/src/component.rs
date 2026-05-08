@@ -20,6 +20,7 @@ use vst3::Steinberg::{
 };
 use vst3::{ComPtr, Interface};
 
+use crate::component_handler::{create_component_handler, ComponentHandler, ParamQueue};
 use crate::host::HostApp;
 use crate::module::{GetFactoryFn, Module};
 use crate::{Error, Result};
@@ -38,6 +39,14 @@ pub(crate) struct LoadedPlugin {
     pub processor: ComPtr<IAudioProcessor>,
     pub controller: Option<ComPtr<IEditController>>,
     pub class_info: ClassInfo,
+    /// Pending controller→processor parameter changes. Drained on each
+    /// render call and injected into ProcessData::inputParameterChanges.
+    /// `None` when the plugin has no separate controller.
+    pub param_queue: Option<ParamQueue>,
+    /// Keeps the IComponentHandler COM wrapper alive for the plugin's
+    /// lifetime — the controller stores a raw pointer to it via
+    /// setComponentHandler. `None` mirrors `param_queue`.
+    pub _component_handler: Option<vst3::ComWrapper<ComponentHandler>>,
     /// Keeps the shared library loaded for the plugin's lifetime.
     pub _module: Module,
 }
@@ -72,6 +81,26 @@ pub(crate) fn load_plugin(
     // 6. Try to get IEditController
     let controller = get_edit_controller(&component, &factory, host);
 
+    // 6a. Connect component ↔ controller via IConnectionPoint. Plugins with
+    // separate component/controller objects (Spectrasonics, NI, etc.) use
+    // IMessage to exchange patch paths, license info, sample library refs.
+    // Without this, internal messaging is silently dropped and patches fail
+    // to load.
+    connect_component_controller(&component, controller.as_ref());
+
+    // 6b. Sync component state → controller. Without this, controllers of
+    // sampler-style plugins (Keyscape, Kontakt, sfizz) start with a stale
+    // baseline and parameter writes go to the wrong slot.
+    sync_component_state(&component, controller.as_ref());
+
+    // 6c. Install our IComponentHandler so the controller can notify us about
+    // parameter edits. Without this, performEdit calls go nowhere — the
+    // processor never receives controller-side parameter changes.
+    let (component_handler, param_queue) = match controller.as_ref() {
+        Some(ctrl) => install_component_handler(ctrl),
+        None => (None, None),
+    };
+
     // 7. setupProcessing
     setup_processing(&processor, sample_rate, buffer_size)?;
 
@@ -96,8 +125,36 @@ pub(crate) fn load_plugin(
         processor,
         controller,
         class_info,
+        param_queue,
+        _component_handler: component_handler,
         _module: module,
     })
+}
+
+/// Hand the controller our IComponentHandler implementation. Returns the COM
+/// wrapper (caller must keep it alive while the plugin is loaded) and the
+/// shared queue used to read back pending parameter changes.
+fn install_component_handler(
+    controller: &ComPtr<IEditController>,
+) -> (
+    Option<vst3::ComWrapper<ComponentHandler>>,
+    Option<ParamQueue>,
+) {
+    use vst3::Steinberg::Vst::{IComponentHandler, IEditControllerTrait};
+
+    let (wrapper, queue) = create_component_handler();
+    let Some(handler_ptr) = wrapper.to_com_ptr::<IComponentHandler>() else {
+        return (None, None);
+    };
+
+    let result = unsafe { controller.setComponentHandler(handler_ptr.as_ptr()) };
+    if result != kResultOk {
+        // Plugin refused our handler — extremely rare. Drop both so we don't
+        // pretend to capture edits we'll never see.
+        return (None, None);
+    }
+
+    (Some(wrapper), Some(queue))
 }
 
 /// Get IPluginFactory from the factory function pointer.
@@ -261,6 +318,60 @@ fn get_edit_controller(
     } else {
         None
     }
+}
+
+/// Connect component and controller via their IConnectionPoint interfaces, so
+/// they can exchange IMessage notifications. Single-component plugins (where
+/// component and controller are the same object) skip silently — connect()
+/// would still succeed but is meaningless.
+fn connect_component_controller(
+    component: &ComPtr<IComponent>,
+    controller: Option<&ComPtr<IEditController>>,
+) {
+    use vst3::Steinberg::Vst::{IConnectionPoint, IConnectionPointTrait};
+
+    let Some(ctrl) = controller else { return };
+
+    let Some(cp_comp) = component.cast::<IConnectionPoint>() else { return };
+    let Some(cp_ctrl) = ctrl.cast::<IConnectionPoint>() else { return };
+
+    // If both casts produced the same underlying object, this is a
+    // single-component plugin — connection is unnecessary and could form a
+    // self-loop on aggressive impls.
+    if std::ptr::eq(cp_comp.as_ptr(), cp_ctrl.as_ptr()) {
+        return;
+    }
+
+    unsafe {
+        let _ = cp_comp.connect(cp_ctrl.as_ptr());
+        let _ = cp_ctrl.connect(cp_comp.as_ptr());
+    }
+}
+
+/// Sync the component's current state into the controller so the latter knows
+/// the audio engine's baseline. Standard VST3 host flow per the SDK examples.
+/// Non-fatal: many plugins return empty state or kNotImplemented.
+fn sync_component_state(
+    component: &ComPtr<IComponent>,
+    controller: Option<&ComPtr<IEditController>>,
+) {
+    use vst3::Steinberg::Vst::IEditControllerTrait;
+
+    let Some(ctrl) = controller else { return };
+
+    let mut write_stream = crate::stream::MemoryStream::new_writable();
+    let result = unsafe { component.getState(write_stream.as_ibstream_ptr()) };
+    if result != kResultOk {
+        return;
+    }
+
+    let data = write_stream.data().to_vec();
+    if data.is_empty() {
+        return;
+    }
+
+    let mut read_stream = crate::stream::MemoryStream::from_data(data);
+    let _ = unsafe { ctrl.setComponentState(read_stream.as_ibstream_ptr()) };
 }
 
 /// Setup processing parameters on the audio processor.
