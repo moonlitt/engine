@@ -154,10 +154,71 @@ pub(crate) fn process_audio(
         return Err(Error::PluginError(result));
     }
 
+    // Per-bus peak capture under trace. Useful for diagnosing multi-out
+    // plugins that route their primary signal to a non-zero bus, where
+    // the caller's L/R buffers stay silent even though the plugin is
+    // producing audio.
+    if crate::trace::enabled() {
+        log_per_bus_peaks(left, right, &extra_scratches);
+    }
+
     // Drain any feedback the plugin wrote into outputParameterChanges.
     *output_params = drain_output(&output_param_changes);
 
     Ok(())
+}
+
+/// Aggregate peak per output bus and emit a single trace line per render
+/// once the buffer carries non-trivial signal. We rate-limit by only
+/// logging when the running max changes meaningfully — avoids flooding
+/// the trace stream with zeros during silent regions.
+fn log_per_bus_peaks(
+    left: &[f32],
+    right: &[f32],
+    extras: &[(Vec<f32>, Vec<f32>)],
+) {
+    use std::sync::Mutex;
+    static LAST_PEAKS: Mutex<Vec<f32>> = Mutex::new(Vec::new());
+
+    let bus_count = 1 + extras.len();
+    let mut peaks = Vec::with_capacity(bus_count);
+
+    let p0 = peak_pair(left, right);
+    peaks.push(p0);
+    for (l, r) in extras {
+        peaks.push(peak_pair(l, r));
+    }
+
+    // Compare against last reported peaks; if any bus crossed a threshold
+    // boundary, log all of them. Threshold buckets capture order-of-magnitude
+    // changes (silence, faint, normal, loud).
+    let bucket = |x: f32| -> u8 {
+        if x < 1e-6 { 0 }
+        else if x < 1e-3 { 1 }
+        else if x < 0.1 { 2 }
+        else if x < 1.0 { 3 }
+        else { 4 }
+    };
+
+    let Ok(mut last) = LAST_PEAKS.lock() else { return };
+    let last_buckets: Vec<u8> = last.iter().map(|&p| bucket(p)).collect();
+    let curr_buckets: Vec<u8> = peaks.iter().map(|&p| bucket(p)).collect();
+
+    if last_buckets != curr_buckets {
+        let parts: Vec<String> = peaks
+            .iter()
+            .enumerate()
+            .map(|(i, p)| format!("bus{i}={:.4}", p))
+            .collect();
+        crate::trace::emit(&format!("process: peaks {}", parts.join(" ")));
+        *last = peaks;
+    }
+}
+
+fn peak_pair(l: &[f32], r: &[f32]) -> f32 {
+    let lp = l.iter().fold(0.0f32, |a, &x| a.max(x.abs()));
+    let rp = r.iter().fold(0.0f32, |a, &x| a.max(x.abs()));
+    lp.max(rp)
 }
 
 /// Build a VST3 ProcessContext from our minimal TransportContext, with the

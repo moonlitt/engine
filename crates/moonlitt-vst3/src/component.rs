@@ -139,6 +139,9 @@ pub(crate) fn load_plugin(
         crate::trace::emit(&format!(
             "load_plugin: buses audio_in={n_a_in} audio_out={n_a_out} event_in={n_e_in} event_out={n_e_out}"
         ));
+        log_bus_details(&component, kAudio as i32, kOutput as i32, n_a_out, "audio_out");
+        log_bus_details(&component, kAudio as i32, kInput as i32, n_a_in, "audio_in");
+        log_bus_details(&component, kEvent as i32, kInput as i32, n_e_in, "event_in");
     }
 
     // 9. setActive(true)
@@ -453,6 +456,47 @@ fn negotiate_bus_arrangements(
         "load_plugin: setBusArrangements(in={num_in}, out={num_out}, layout=stereo) -> 0x{:08X}",
         r as u32
     ));
+}
+
+/// Log details (name, type, channels, default-active flag) for each bus in
+/// a given direction. Used under MOONLITT_VST3_TRACE to understand plugin
+/// I/O topology — multi-out samplers expose many buses and the host needs
+/// to know which is "Main" vs "Aux".
+fn log_bus_details(
+    component: &ComPtr<IComponent>,
+    media_type: i32,
+    direction: i32,
+    count: i32,
+    label: &str,
+) {
+    use vst3::Steinberg::Vst::{BusInfo, BusInfo_::BusFlags_};
+
+    for i in 0..count {
+        let mut info = MaybeUninit::<BusInfo>::uninit();
+        let r = unsafe { component.getBusInfo(media_type, direction, i, info.as_mut_ptr()) };
+        if r != kResultOk {
+            crate::trace::emit(&format!(
+                "{label}[{i}] getBusInfo -> 0x{:08X}",
+                r as u32
+            ));
+            continue;
+        }
+        let info = unsafe { info.assume_init() };
+        let name = string128_to_string(&info.name);
+        let bus_type = if info.busType == 0 { "Main" } else { "Aux" };
+        let default_active = info.flags & BusFlags_::kDefaultActive != 0;
+        crate::trace::emit(&format!(
+            "{label}[{i}] name=\"{name}\" type={bus_type} channels={} default_active={default_active}",
+            info.channelCount
+        ));
+    }
+}
+
+/// Convert a UTF-16 String128 to a Rust String. Mirrors the helper in lib.rs;
+/// duplicated to avoid pub(crate) noise for a one-shot trace use.
+fn string128_to_string(s: &[u16; 128]) -> String {
+    let end = s.iter().position(|&c| c == 0).unwrap_or(128);
+    String::from_utf16_lossy(&s[..end])
 }
 
 /// Setup processing parameters on the audio processor.
