@@ -18,19 +18,32 @@ use crate::parameter_changes::{build_input_changes, drain_output, new_output_cha
 use crate::TransportContext;
 use crate::{Error, Result};
 
+/// One stereo output bus that the caller has provided buffers for. The
+/// caller is responsible for buffer lifetime; the slices must live for
+/// the duration of the `process_audio` call. Slices must be `num_frames`
+/// long.
+pub(crate) struct OutputBus<'a> {
+    pub left: &'a mut [f32],
+    pub right: &'a mut [f32],
+}
+
 /// Process one block of audio through the plugin.
 ///
 /// Builds ProcessData with:
 /// - Silent input bus(es) (for instruments that expect audio input)
-/// - Output buses (first bus maps to the caller's left/right buffers)
+/// - One stereo output bus per entry in `outputs` — the caller chooses
+///   what to back each bus with (e.g. their primary mix buffer for bus
+///   0, pre-allocated scratch for the rest)
 /// - Input events from the provided MIDI events
 ///
-/// This follows the same pattern as the C++ vst3_engine.cpp render().
+/// `outputs.len()` should match the plugin's audio-output bus count;
+/// extra entries beyond what the plugin exposes are ignored, missing
+/// entries are not surfaced (the plugin will write only as many buses
+/// as we declare in `numOutputs`).
 pub(crate) fn process_audio(
     processor: &ComPtr<IAudioProcessor>,
     component: &ComPtr<IComponent>,
-    left: &mut [f32],
-    right: &mut [f32],
+    outputs: &mut [OutputBus<'_>],
     events: &[MidiEvent],
     pending_params: &[PendingParam],
     output_params: &mut Vec<PendingParam>,
@@ -39,8 +52,12 @@ pub(crate) fn process_audio(
     silent_left: &mut [f32],
     silent_right: &mut [f32],
 ) -> Result<()> {
-    let num_frames = left.len().min(right.len());
-    if num_frames == 0 {
+    let num_frames = outputs
+        .iter()
+        .map(|b| b.left.len().min(b.right.len()))
+        .min()
+        .unwrap_or(0);
+    if num_frames == 0 || outputs.is_empty() {
         return Ok(());
     }
 
@@ -61,35 +78,22 @@ pub(crate) fn process_audio(
     };
 
     // --- Output buses ---
-    // First output bus writes to caller's L/R. Remaining buses get scratch buffers.
-    const MAX_OUT_BUSES: usize = 16;
-    let actual_out = (num_audio_out as usize).min(MAX_OUT_BUSES);
+    // Cap at min(plugin-declared count, caller-provided count).
+    let actual_out = (num_audio_out as usize).min(outputs.len());
 
-    let mut out_ptrs: [*mut f32; 2] = [left.as_mut_ptr(), right.as_mut_ptr()];
+    // Per-bus L/R pointer arrays that must live alongside `output_buses`
+    // — each AudioBusBuffers stores a pointer into the corresponding
+    // entry here. Pre-allocated to avoid resizing during fill.
+    let mut bus_ptrs: Vec<[*mut f32; 2]> = Vec::with_capacity(actual_out);
+    for bus in outputs.iter_mut().take(actual_out) {
+        bus.left[..num_frames].fill(0.0);
+        bus.right[..num_frames].fill(0.0);
+        bus_ptrs.push([bus.left.as_mut_ptr(), bus.right.as_mut_ptr()]);
+    }
 
-    // Create independent scratch buffers for each extra output bus.
-    // Each bus needs its own pair of L/R buffers to avoid aliasing.
-    let mut extra_scratches: Vec<(Vec<f32>, Vec<f32>)> = (1..actual_out)
-        .map(|_| (vec![0.0f32; num_frames], vec![0.0f32; num_frames]))
-        .collect();
-    // Build pointer arrays for each extra bus (must live alongside the Vecs)
-    let mut extra_ptrs: Vec<[*mut f32; 2]> = extra_scratches
-        .iter_mut()
-        .map(|(l, r)| [l.as_mut_ptr(), r.as_mut_ptr()])
-        .collect();
-
-    // Zero the output buffers
-    left.fill(0.0);
-    right.fill(0.0);
-
-    // Build output bus array
     let mut output_buses: Vec<AudioBusBuffers> = Vec::with_capacity(actual_out);
     for i in 0..actual_out {
-        let ptrs = if i == 0 {
-            &mut out_ptrs as *mut [*mut f32; 2] as *mut *mut f32
-        } else {
-            &mut extra_ptrs[i - 1] as *mut [*mut f32; 2] as *mut *mut f32
-        };
+        let ptrs = &mut bus_ptrs[i] as *mut [*mut f32; 2] as *mut *mut f32;
         output_buses.push(AudioBusBuffers {
             numChannels: 2,
             silenceFlags: 0,
@@ -159,7 +163,7 @@ pub(crate) fn process_audio(
     // the caller's L/R buffers stay silent even though the plugin is
     // producing audio.
     if crate::trace::enabled() {
-        log_per_bus_peaks(left, right, &extra_scratches);
+        log_per_bus_peaks(&outputs[..actual_out], num_frames);
     }
 
     // Drain any feedback the plugin wrote into outputParameterChanges.
@@ -172,26 +176,15 @@ pub(crate) fn process_audio(
 /// once the buffer carries non-trivial signal. We rate-limit by only
 /// logging when the running max changes meaningfully — avoids flooding
 /// the trace stream with zeros during silent regions.
-fn log_per_bus_peaks(
-    left: &[f32],
-    right: &[f32],
-    extras: &[(Vec<f32>, Vec<f32>)],
-) {
+fn log_per_bus_peaks(buses: &[OutputBus<'_>], num_frames: usize) {
     use std::sync::Mutex;
     static LAST_PEAKS: Mutex<Vec<f32>> = Mutex::new(Vec::new());
 
-    let bus_count = 1 + extras.len();
-    let mut peaks = Vec::with_capacity(bus_count);
-
-    let p0 = peak_pair(left, right);
-    peaks.push(p0);
-    for (l, r) in extras {
-        peaks.push(peak_pair(l, r));
+    let mut peaks = Vec::with_capacity(buses.len());
+    for bus in buses {
+        peaks.push(peak_pair(&bus.left[..num_frames], &bus.right[..num_frames]));
     }
 
-    // Compare against last reported peaks; if any bus crossed a threshold
-    // boundary, log all of them. Threshold buckets capture order-of-magnitude
-    // changes (silence, faint, normal, loud).
     let bucket = |x: f32| -> u8 {
         if x < 1e-6 { 0 }
         else if x < 1e-3 { 1 }

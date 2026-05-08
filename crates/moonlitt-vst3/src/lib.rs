@@ -80,7 +80,6 @@ pub struct Vst3Plugin {
     /// accumulates more than a handful of events.
     pending_events: Vec<MidiEvent>,
     sample_rate: f64,
-    #[allow(dead_code)]
     buffer_size: usize,
     /// Transport state advertised to the plugin via ProcessContext on each
     /// render. Defaults to "stopped at position 0, 120 BPM, 4/4" — safe
@@ -90,6 +89,37 @@ pub struct Vst3Plugin {
     silent_left: Vec<f32>,
     /// Pre-allocated silent input buffer (right channel) to avoid hot-path allocation.
     silent_right: Vec<f32>,
+    /// Per-output-bus scratch buffers, one stereo pair per audio output
+    /// bus the plugin exposes. Sized at load time to `buffer_size` and
+    /// reused on every render — eliminates hot-path allocation regardless
+    /// of how many output buses the plugin has.
+    bus_scratches: Vec<(Vec<f32>, Vec<f32>)>,
+    /// Cached topology of audio output buses (name, channel count,
+    /// main/aux, default-active). Probed once at load time so consumers
+    /// can introspect without going through raw COM.
+    audio_output_buses: Vec<AudioBusInfo>,
+}
+
+/// Public-facing topology for a single audio bus. Used by consumers to
+/// understand a plugin's I/O layout — multi-out instruments expose one
+/// of these per output bus, and consumers route accordingly.
+#[derive(Debug, Clone)]
+pub struct AudioBusInfo {
+    /// Plugin-supplied display name (e.g. "Output", "Aux 1", "Drum Bus").
+    pub name: String,
+    /// Number of channels declared by the plugin. Currently we always
+    /// negotiate stereo so this is informational; if it differs from 2
+    /// the bus may not be fully usable until we extend the negotiation.
+    pub channel_count: u32,
+    /// True if the plugin tagged this bus as `kMain`. Multi-out plugins
+    /// may have several mains (Keyscape: A..H all main); single-bus
+    /// plugins always have exactly one main.
+    pub is_main: bool,
+    /// Whether the plugin recommended this bus be active on load.
+    /// Hosts that respect this flag would only route traffic to buses
+    /// with `default_active = true`. We still activate everything (some
+    /// plugins fail otherwise) but expose the hint for consumers.
+    pub default_active: bool,
 }
 
 /// Information about a factory preset.
@@ -138,6 +168,28 @@ impl Vst3Host {
         )?;
 
         let bs = self.buffer_size;
+
+        // Probe and cache audio output bus topology. One scratch L/R pair
+        // per bus, sized to buffer_size — used both as the back-store for
+        // render_all() and as the destination for buses the caller of
+        // render(L, R) does not provide buffers for.
+        let topo = component::probe_audio_buses(
+            &loaded.component,
+            vst3::Steinberg::Vst::BusDirections_::kOutput as i32,
+        );
+        let audio_output_buses: Vec<AudioBusInfo> = topo
+            .iter()
+            .map(|t| AudioBusInfo {
+                name: t.name.clone(),
+                channel_count: t.channel_count,
+                is_main: t.is_main,
+                default_active: t.default_active,
+            })
+            .collect();
+        let bus_scratches: Vec<(Vec<f32>, Vec<f32>)> = (0..audio_output_buses.len())
+            .map(|_| (vec![0.0f32; bs], vec![0.0f32; bs]))
+            .collect();
+
         Ok(Vst3Plugin {
             inner: loaded,
             pending_events: Vec::new(),
@@ -146,6 +198,8 @@ impl Vst3Host {
             transport: TransportContext::default(),
             silent_left: vec![0.0f32; bs],
             silent_right: vec![0.0f32; bs],
+            bus_scratches,
+            audio_output_buses,
         })
     }
 }
@@ -230,28 +284,68 @@ impl Vst3Plugin {
         }
     }
 
+    /// Number of audio output buses the plugin exposes.
+    pub fn audio_output_bus_count(&self) -> usize {
+        self.audio_output_buses.len()
+    }
+
+    /// Topology of one audio output bus, or `None` if `index` is out of
+    /// range. Stable for the lifetime of the plugin instance.
+    pub fn audio_output_bus_info(&self, index: usize) -> Option<&AudioBusInfo> {
+        self.audio_output_buses.get(index)
+    }
+
+    /// All audio output bus topologies, in plugin-declared order.
+    pub fn audio_output_buses(&self) -> &[AudioBusInfo] {
+        &self.audio_output_buses
+    }
+
     /// Render one buffer of audio (instrument mode). Drains all pending MIDI events.
+    ///
+    /// Convenience wrapper for the single-bus case: writes bus 0's output
+    /// into `left` / `right`, and renders the remaining buses into the
+    /// internal scratch (silently discarded — use [`render_all`] +
+    /// [`bus_output`] when you need access to non-primary buses).
     ///
     /// `left` and `right` must be the same length (the buffer size).
     pub fn render(&mut self, left: &mut [f32], right: &mut [f32]) -> Result<()> {
+        let num_frames = left.len().min(right.len()).min(self.buffer_size);
+        if num_frames == 0 || self.audio_output_buses.is_empty() {
+            return Ok(());
+        }
+
+        // Drain plugin-side state up front so the audio path only touches
+        // the borrows it needs. Split borrows on `self` are otherwise
+        // blocked once `run_process` is called via `self.method(...)`.
         let events: Vec<MidiEvent> = std::mem::take(&mut self.pending_events);
-        // Drain controller→processor parameter edits queued since the last
-        // render (e.g. from load_preset, or from the plugin's UI).
         let pending_params = match &self.inner.param_queue {
             Some(q) => component_handler::drain(q),
             None => Vec::new(),
         };
-        // Re-zero silent buffers before each render (plugins may write into them)
-        let num_frames = left.len().min(right.len());
         self.silent_left[..num_frames].fill(0.0);
         self.silent_right[..num_frames].fill(0.0);
-
         let mut output_params: Vec<component_handler::PendingParam> = Vec::new();
+
+        // Bus 0 → caller's buffers (zero copy), buses 1..N → scratch.
+        let (head, tail) = self.bus_scratches.split_first_mut().expect("nb > 0");
+        let _ = head; // bus 0 scratch is unused this call.
+        let mut outputs: Vec<processor::OutputBus<'_>> =
+            Vec::with_capacity(1 + tail.len());
+        outputs.push(processor::OutputBus {
+            left: &mut left[..num_frames],
+            right: &mut right[..num_frames],
+        });
+        for (l, r) in tail.iter_mut() {
+            outputs.push(processor::OutputBus {
+                left: &mut l[..num_frames],
+                right: &mut r[..num_frames],
+            });
+        }
+
         processor::process_audio(
             &self.inner.processor,
             &self.inner.component,
-            left,
-            right,
+            &mut outputs,
             &events,
             &pending_params,
             &mut output_params,
@@ -261,19 +355,72 @@ impl Vst3Plugin {
             &mut self.silent_right[..num_frames],
         )?;
 
-        // Forward processor→controller feedback. Keeps the controller's
-        // parameter mirror in sync with values the plugin computed during
-        // process() (envelope outputs, internal modulation, etc.).
-        if !output_params.is_empty() {
-            if let Some(ref ctrl) = self.inner.controller {
-                use vst3::Steinberg::Vst::IEditControllerTrait;
-                for p in &output_params {
-                    unsafe { ctrl.setParamNormalized(p.id, p.value) };
-                }
-            }
+        forward_output_params(&self.inner.controller, &output_params);
+        Ok(())
+    }
+
+    /// Render one buffer of audio across all output buses, writing into
+    /// the internal per-bus scratches. After this call, [`bus_output`]
+    /// gives access to each bus's L/R audio for this block.
+    ///
+    /// Drains all pending MIDI events. Use this when you need the
+    /// auxiliary outputs of a multi-out plugin (drum machine kit pieces,
+    /// per-voice channels in a multi-timbral sampler, sidechain returns,
+    /// etc.) rather than just the primary stereo mix.
+    pub fn render_all(&mut self) -> Result<()> {
+        let num_frames = self.buffer_size;
+        if num_frames == 0 || self.audio_output_buses.is_empty() {
+            return Ok(());
         }
 
+        let events: Vec<MidiEvent> = std::mem::take(&mut self.pending_events);
+        let pending_params = match &self.inner.param_queue {
+            Some(q) => component_handler::drain(q),
+            None => Vec::new(),
+        };
+        self.silent_left[..num_frames].fill(0.0);
+        self.silent_right[..num_frames].fill(0.0);
+        let mut output_params: Vec<component_handler::PendingParam> = Vec::new();
+
+        let mut outputs: Vec<processor::OutputBus<'_>> =
+            Vec::with_capacity(self.bus_scratches.len());
+        for (l, r) in self.bus_scratches.iter_mut() {
+            outputs.push(processor::OutputBus {
+                left: &mut l[..num_frames],
+                right: &mut r[..num_frames],
+            });
+        }
+
+        processor::process_audio(
+            &self.inner.processor,
+            &self.inner.component,
+            &mut outputs,
+            &events,
+            &pending_params,
+            &mut output_params,
+            &self.transport,
+            self.sample_rate,
+            &mut self.silent_left[..num_frames],
+            &mut self.silent_right[..num_frames],
+        )?;
+
+        forward_output_params(&self.inner.controller, &output_params);
         Ok(())
+    }
+
+    /// Returns the L/R audio rendered for output bus `index` during the
+    /// most recent [`render`] or [`render_all`] call. Returns `None` if
+    /// `index >= audio_output_bus_count()`.
+    ///
+    /// Note: after [`render`], bus 0's slice contains whatever was most
+    /// recently rendered into the **internal scratch** (which may be
+    /// stale, since render uses the caller's buffers for bus 0 by
+    /// design). Use this primarily after [`render_all`] for full bus
+    /// access.
+    pub fn bus_output(&self, index: usize) -> Option<(&[f32], &[f32])> {
+        self.bus_scratches
+            .get(index)
+            .map(|(l, r)| (l.as_slice(), r.as_slice()))
     }
 
     /// Process audio through the plugin as an effect (audio in → audio out).
@@ -547,4 +694,23 @@ impl Drop for Vst3Plugin {
 fn string128_to_string(s: &[u16; 128]) -> String {
     let end = s.iter().position(|&c| c == 0).unwrap_or(128);
     String::from_utf16_lossy(&s[..end])
+}
+
+/// Forward processor→controller parameter feedback. Plugins write into
+/// `outputParameterChanges` during process() (envelope follower outputs,
+/// internal modulation, etc.); the host's job is to mirror those values
+/// back onto the controller so the controller-side state stays consistent.
+fn forward_output_params(
+    controller: &Option<vst3::ComPtr<vst3::Steinberg::Vst::IEditController>>,
+    output_params: &[component_handler::PendingParam],
+) {
+    if output_params.is_empty() {
+        return;
+    }
+    if let Some(ref ctrl) = controller {
+        use vst3::Steinberg::Vst::IEditControllerTrait;
+        for p in output_params {
+            unsafe { ctrl.setParamNormalized(p.id, p.value) };
+        }
+    }
 }

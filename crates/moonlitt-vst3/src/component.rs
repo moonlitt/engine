@@ -34,6 +34,51 @@ pub(crate) struct ClassInfo {
     pub cid: [u8; 16],
 }
 
+/// Public-facing topology of one audio bus (input or output). Built once
+/// at load time so that consumers can ask the plugin "what do you
+/// expose?" without going through trace logs or raw COM calls.
+#[derive(Debug, Clone)]
+pub(crate) struct AudioBusTopology {
+    pub name: String,
+    pub channel_count: u32,
+    pub is_main: bool,
+    pub default_active: bool,
+}
+
+/// Read all audio buses on the given direction into a Vec.
+pub(crate) fn probe_audio_buses(
+    component: &ComPtr<IComponent>,
+    direction: i32,
+) -> Vec<AudioBusTopology> {
+    use vst3::Steinberg::Vst::{BusInfo, BusInfo_::BusFlags_};
+
+    let count = unsafe { component.getBusCount(kAudio as i32, direction) };
+    let mut buses = Vec::with_capacity(count.max(0) as usize);
+
+    for i in 0..count {
+        let mut info = MaybeUninit::<BusInfo>::uninit();
+        if unsafe { component.getBusInfo(kAudio as i32, direction, i, info.as_mut_ptr()) }
+            != kResultOk
+        {
+            continue;
+        }
+        let info = unsafe { info.assume_init() };
+        buses.push(AudioBusTopology {
+            name: bus_name_to_string(&info.name),
+            channel_count: info.channelCount as u32,
+            is_main: info.busType == 0,
+            default_active: info.flags & BusFlags_::kDefaultActive != 0,
+        });
+    }
+
+    buses
+}
+
+fn bus_name_to_string(s: &[u16; 128]) -> String {
+    let end = s.iter().position(|&c| c == 0).unwrap_or(128);
+    String::from_utf16_lossy(&s[..end])
+}
+
 /// A fully loaded and activated VST3 plugin.
 pub(crate) struct LoadedPlugin {
     pub component: ComPtr<IComponent>,
@@ -482,7 +527,7 @@ fn log_bus_details(
             continue;
         }
         let info = unsafe { info.assume_init() };
-        let name = string128_to_string(&info.name);
+        let name = bus_name_to_string(&info.name);
         let bus_type = if info.busType == 0 { "Main" } else { "Aux" };
         let default_active = info.flags & BusFlags_::kDefaultActive != 0;
         crate::trace::emit(&format!(
@@ -490,13 +535,6 @@ fn log_bus_details(
             info.channelCount
         ));
     }
-}
-
-/// Convert a UTF-16 String128 to a Rust String. Mirrors the helper in lib.rs;
-/// duplicated to avoid pub(crate) noise for a one-shot trace use.
-fn string128_to_string(s: &[u16; 128]) -> String {
-    let end = s.iter().position(|&c| c == 0).unwrap_or(128);
-    String::from_utf16_lossy(&s[..end])
 }
 
 /// Setup processing parameters on the audio processor.
