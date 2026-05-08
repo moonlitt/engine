@@ -20,6 +20,7 @@ mod connection_bridge;
 mod error;
 mod events;
 mod host;
+mod host_message;
 mod module;
 mod parameter_changes;
 mod processor;
