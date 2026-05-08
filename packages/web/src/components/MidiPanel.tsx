@@ -20,9 +20,14 @@ export function MidiPanel({ midi }: MidiPanelProps) {
     }
     setError(null);
     setBusy(true);
-    const ok = await transport.loadMidiFile(file);
-    setBusy(false);
-    if (!ok) setError('加载失败（请查看控制台日志）');
+    try {
+      const ok = await transport.loadMidiFile(file);
+      if (!ok) setError('加载失败（请查看控制台日志）');
+    } catch (e) {
+      setError(`加载异常: ${(e as Error)?.message ?? String(e)}`);
+    } finally {
+      setBusy(false);
+    }
   }, [transport]);
 
   const openPicker = useCallback(async () => {
@@ -32,9 +37,14 @@ export function MidiPanel({ midi }: MidiPanelProps) {
     }
     setError(null);
     setBusy(true);
-    const ok = await transport.pickAndLoadMidi();
-    setBusy(false);
-    if (!ok) setError('未选择文件，或加载失败。');
+    try {
+      const ok = await transport.pickAndLoadMidi();
+      if (!ok) setError('未选择文件，或加载失败。');
+    } catch (e) {
+      setError(`选择 / 加载失败: ${(e as Error)?.message ?? String(e)}`);
+    } finally {
+      setBusy(false);
+    }
   }, [transport]);
 
   const supportsDrop = transport.supportsFileDrop;

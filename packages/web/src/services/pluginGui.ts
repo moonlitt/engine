@@ -4,20 +4,14 @@
  * Returns a user-friendly error message if the active transport doesn't
  * support GUI hosting (currently the WebSocket / browser build).
  */
-import { getTransport } from './transport';
+import { getTransport, isTauriRuntime } from './transport';
 
 export type PluginGuiTarget =
   | { kind: 'default' }
   | { kind: 'override'; channel: number };
 
-declare global {
-  interface Window {
-    __TAURI_INTERNALS__?: unknown;
-  }
-}
-
 export function isGuiSupported(): boolean {
-  return typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__;
+  return isTauriRuntime();
 }
 
 export async function openPluginGui(target: PluginGuiTarget): Promise<string | null> {

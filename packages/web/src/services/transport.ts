@@ -6,11 +6,12 @@
  *   - **WebSocket**: legacy Node server at ws://localhost:3001 (Web DAW)
  *   - **Tauri**: in-process Rust engine via `invoke()` / `event.listen()`
  *
- * Detection is by the presence of `window.__TAURI_INTERNALS__`, the
- * marker Tauri 2 injects into the webview before the app boots.
+ * Detection uses Tauri 2's official `window.isTauri` marker (same check
+ * as `@tauri-apps/api/core`'s `isTauri()`).
  */
 
 import type { Command, ServerEvent } from '@moonlitt/protocol';
+import { isTauri } from '@tauri-apps/api/core';
 import { useProjectStore } from '../stores/project';
 import { useTransportStore } from '../stores/transport';
 import { usePluginsStore } from '../stores/plugins';
@@ -39,18 +40,18 @@ export interface Transport {
   stop(): void;
 }
 
-declare global {
-  interface Window {
-    __TAURI_INTERNALS__?: unknown;
-  }
-}
-
 let cached: Transport | null = null;
+
+export function isTauriRuntime(): boolean {
+  return isTauri();
+}
 
 export function getTransport(): Transport {
   if (cached) return cached;
-  const isTauri = typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__;
-  cached = isTauri ? createTauriTransport() : createWebSocketTransport();
+  const tauri = isTauriRuntime();
+  // eslint-disable-next-line no-console
+  console.log(`[transport] using ${tauri ? 'Tauri IPC' : 'WebSocket'}`);
+  cached = tauri ? createTauriTransport() : createWebSocketTransport();
   return cached;
 }
 
@@ -349,25 +350,25 @@ function createTauriTransport(): Transport {
       const e = await evt();
       // Wire each Tauri event to a synthetic ServerEvent shape.
       type Wrap<T> = { payload: T };
-      const onTransportState = await e.listen('transport.state', (m: Wrap<{ playing: boolean; position: number }>) => {
+      const onTransportState = await e.listen('transport:state', (m: Wrap<{ playing: boolean; position: number }>) => {
         dispatchEvent({ type: 'transport.state', playing: m.payload.playing, position: m.payload.position });
       });
-      const onTempo = await e.listen('transport.tempo_changed', (m: Wrap<{ bpm: number }>) => {
+      const onTempo = await e.listen('transport:tempo_changed', (m: Wrap<{ bpm: number }>) => {
         dispatchEvent({ type: 'transport.tempo_changed', bpm: m.payload.bpm });
       });
-      const onMidi = await e.listen('midi.loaded', (m: Wrap<{ midi: import('@moonlitt/protocol').MidiState }>) => {
+      const onMidi = await e.listen('midi:loaded', (m: Wrap<{ midi: import('@moonlitt/protocol').MidiState }>) => {
         dispatchEvent({ type: 'midi.loaded', midi: m.payload.midi });
       });
-      const onDefault = await e.listen('default.instrument_changed', (m: Wrap<{ instrumentPath: string | null }>) => {
+      const onDefault = await e.listen('default:instrument_changed', (m: Wrap<{ instrumentPath: string | null }>) => {
         dispatchEvent({ type: 'default.instrument_changed', instrumentPath: m.payload.instrumentPath });
       });
-      const onAdd = await e.listen('channel.override_added', (m: Wrap<{ override: import('@moonlitt/protocol').ChannelOverrideState }>) => {
+      const onAdd = await e.listen('channel:override_added', (m: Wrap<{ override: import('@moonlitt/protocol').ChannelOverrideState }>) => {
         dispatchEvent({ type: 'channel.override_added', override: m.payload.override });
       });
-      const onRm = await e.listen('channel.override_removed', (m: Wrap<{ channel: number }>) => {
+      const onRm = await e.listen('channel:override_removed', (m: Wrap<{ channel: number }>) => {
         dispatchEvent({ type: 'channel.override_removed', channel: m.payload.channel });
       });
-      const onUpd = await e.listen('channel.updated', (m: Wrap<{ channel: number; volume?: number; muted?: boolean; solo?: boolean; userProgram?: number | null }>) => {
+      const onUpd = await e.listen('channel:updated', (m: Wrap<{ channel: number; volume?: number; muted?: boolean; solo?: boolean; userProgram?: number | null }>) => {
         dispatchEvent({
           type: 'channel.updated',
           channel: m.payload.channel,
@@ -377,13 +378,13 @@ function createTauriTransport(): Transport {
           userProgram: m.payload.userProgram,
         });
       });
-      const onIns = await e.listen('insert.added', (m: Wrap<{ channel: number; insert: import('@moonlitt/protocol').InsertState }>) => {
+      const onIns = await e.listen('insert:added', (m: Wrap<{ channel: number; insert: import('@moonlitt/protocol').InsertState }>) => {
         dispatchEvent({ type: 'insert.added', channel: m.payload.channel, insert: m.payload.insert });
       });
-      const onInsRm = await e.listen('insert.removed', (m: Wrap<{ channel: number; insertId: number }>) => {
+      const onInsRm = await e.listen('insert:removed', (m: Wrap<{ channel: number; insertId: number }>) => {
         dispatchEvent({ type: 'insert.removed', channel: m.payload.channel, insertId: m.payload.insertId });
       });
-      const onPlugins = await e.listen('plugins.list', (m: Wrap<{ plugins: import('@moonlitt/protocol').PluginInfo[] }>) => {
+      const onPlugins = await e.listen('plugins:list', (m: Wrap<{ plugins: import('@moonlitt/protocol').PluginInfo[] }>) => {
         dispatchEvent({ type: 'plugins.list', plugins: m.payload.plugins });
       });
       unsubs.push(

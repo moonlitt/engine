@@ -5,9 +5,9 @@
   "windows": ["main", "plugin_gui_*"],
   "permissions": [
     "core:default",
-    "core:event:allow-listen",
-    "core:event:allow-unlisten",
+    "core:event:default",
     "core:webview:allow-create-webview-window",
-    "dialog:allow-open"
+    "core:window:default",
+    "dialog:default"
   ]
 }

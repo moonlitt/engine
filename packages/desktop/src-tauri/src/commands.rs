@@ -97,7 +97,7 @@ pub fn cmd_snapshot(state: State<AppState>) -> ProjectState {
 pub fn cmd_transport_play(state: State<AppState>, app: AppHandle) -> Result<(), String> {
     state.engine.play()?;
     let _ = app.emit(
-        "transport.state",
+        "transport:state",
         TransportState {
             playing: true,
             position: 0,
@@ -110,7 +110,7 @@ pub fn cmd_transport_play(state: State<AppState>, app: AppHandle) -> Result<(), 
 pub fn cmd_transport_stop(state: State<AppState>, app: AppHandle) -> Result<(), String> {
     state.engine.stop();
     let _ = app.emit(
-        "transport.state",
+        "transport:state",
         TransportState {
             playing: false,
             position: 0,
@@ -126,7 +126,7 @@ pub fn cmd_transport_set_bpm(
     bpm: f64,
 ) -> Result<(), String> {
     state.engine.set_bpm(bpm);
-    let _ = app.emit("transport.tempo_changed", TempoChanged { bpm });
+    let _ = app.emit("transport:tempo_changed", TempoChanged { bpm });
     Ok(())
 }
 
@@ -148,7 +148,7 @@ pub fn cmd_default_set_instrument(
 ) -> Result<(), String> {
     state.engine.set_default_instrument(&path)?;
     let _ = app.emit(
-        "default.instrument_changed",
+        "default:instrument_changed",
         DefaultInstrumentChanged {
             instrument_path: Some(path),
         },
@@ -166,7 +166,7 @@ pub fn cmd_channel_set_override(
     path: String,
 ) -> Result<(), String> {
     let ov = state.engine.set_channel_override(channel, &path)?;
-    let _ = app.emit("channel.override_added", ChannelOverrideAdded { o: ov });
+    let _ = app.emit("channel:override_added", ChannelOverrideAdded { o: ov });
     Ok(())
 }
 
@@ -177,7 +177,7 @@ pub fn cmd_channel_remove_override(
     channel: u8,
 ) -> Result<(), String> {
     state.engine.remove_channel_override(channel)?;
-    let _ = app.emit("channel.override_removed", ChannelOverrideRemoved { channel });
+    let _ = app.emit("channel:override_removed", ChannelOverrideRemoved { channel });
     Ok(())
 }
 
@@ -190,7 +190,7 @@ pub fn cmd_channel_set_volume(
 ) -> Result<(), String> {
     state.engine.set_channel_volume(channel, db)?;
     let _ = app.emit(
-        "channel.updated",
+        "channel:updated",
         ChannelUpdated {
             channel,
             volume: Some(db),
@@ -211,7 +211,7 @@ pub fn cmd_channel_set_mute(
 ) -> Result<(), String> {
     state.engine.set_channel_mute(channel, muted)?;
     let _ = app.emit(
-        "channel.updated",
+        "channel:updated",
         ChannelUpdated {
             channel,
             volume: None,
@@ -232,7 +232,7 @@ pub fn cmd_channel_set_solo(
 ) -> Result<(), String> {
     state.engine.set_channel_solo(channel, solo)?;
     let _ = app.emit(
-        "channel.updated",
+        "channel:updated",
         ChannelUpdated {
             channel,
             volume: None,
@@ -253,7 +253,7 @@ pub fn cmd_channel_set_program(
 ) -> Result<(), String> {
     state.engine.set_channel_program(channel, program)?;
     let _ = app.emit(
-        "channel.updated",
+        "channel:updated",
         ChannelUpdated {
             channel,
             volume: None,
@@ -276,7 +276,7 @@ pub fn cmd_insert_add(
 ) -> Result<InsertState, String> {
     let insert = state.engine.add_insert(channel, &effect_type)?;
     let _ = app.emit(
-        "insert.added",
+        "insert:added",
         InsertAdded {
             channel,
             insert: insert.clone(),
@@ -294,7 +294,7 @@ pub fn cmd_insert_remove(
 ) -> Result<(), String> {
     state.engine.remove_insert(channel, insert_id)?;
     let _ = app.emit(
-        "insert.removed",
+        "insert:removed",
         InsertRemoved {
             channel,
             insert_id,
@@ -326,7 +326,7 @@ pub fn cmd_plugins_scan(
 ) -> Vec<PluginInfoView> {
     let list = state.engine.scan_plugins(force.unwrap_or(false));
     let _ = app.emit(
-        "plugins.list",
+        "plugins:list",
         PluginsList {
             plugins: list.clone(),
         },
@@ -349,13 +349,13 @@ pub fn cmd_load_midi(
         .to_string();
     let midi = state.engine.load_midi(&path, &name)?;
     let _ = app.emit(
-        "midi.loaded",
+        "midi:loaded",
         MidiLoaded {
             midi: midi.clone(),
         },
     );
     if let Some(bpm) = midi.tempo_bpm.filter(|b| b.is_finite()) {
-        let _ = app.emit("transport.tempo_changed", TempoChanged { bpm });
+        let _ = app.emit("transport:tempo_changed", TempoChanged { bpm });
     }
     Ok(midi)
 }
