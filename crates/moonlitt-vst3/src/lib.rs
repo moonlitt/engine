@@ -21,6 +21,7 @@ mod error;
 mod events;
 mod host;
 mod host_message;
+mod midi_mapping;
 mod module;
 mod parameter_changes;
 mod processor;
@@ -318,11 +319,18 @@ impl Vst3Plugin {
         // Drain plugin-side state up front so the audio path only touches
         // the borrows it needs. Split borrows on `self` are otherwise
         // blocked once `run_process` is called via `self.method(...)`.
-        let events: Vec<MidiEvent> = std::mem::take(&mut self.pending_events);
-        let pending_params = match &self.inner.param_queue {
+        let raw_events: Vec<MidiEvent> = std::mem::take(&mut self.pending_events);
+        let mapped = midi_mapping::split_for_param_routing(
+            self.inner.midi_mapping.as_ref(),
+            0, // single event input bus
+            raw_events,
+        );
+        let events = mapped.events;
+        let mut pending_params = match &self.inner.param_queue {
             Some(q) => component_handler::drain(q),
             None => Vec::new(),
         };
+        pending_params.extend(mapped.params);
         self.silent_left[..num_frames].fill(0.0);
         self.silent_right[..num_frames].fill(0.0);
         let mut output_params: Vec<component_handler::PendingParam> = Vec::new();
@@ -374,11 +382,18 @@ impl Vst3Plugin {
             return Ok(());
         }
 
-        let events: Vec<MidiEvent> = std::mem::take(&mut self.pending_events);
-        let pending_params = match &self.inner.param_queue {
+        let raw_events: Vec<MidiEvent> = std::mem::take(&mut self.pending_events);
+        let mapped = midi_mapping::split_for_param_routing(
+            self.inner.midi_mapping.as_ref(),
+            0,
+            raw_events,
+        );
+        let events = mapped.events;
+        let mut pending_params = match &self.inner.param_queue {
             Some(q) => component_handler::drain(q),
             None => Vec::new(),
         };
+        pending_params.extend(mapped.params);
         self.silent_left[..num_frames].fill(0.0);
         self.silent_right[..num_frames].fill(0.0);
         let mut output_params: Vec<component_handler::PendingParam> = Vec::new();

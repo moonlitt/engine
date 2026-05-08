@@ -11,7 +11,7 @@ use std::mem::MaybeUninit;
 
 use vst3::Steinberg::Vst::{
     BusDirections_::*, IAudioProcessor, IAudioProcessorTrait, IComponent, IComponentTrait,
-    IEditController, MediaTypes_::*, ProcessModes_::kRealtime, ProcessSetup,
+    IEditController, IMidiMapping, MediaTypes_::*, ProcessModes_::kRealtime, ProcessSetup,
     SymbolicSampleSizes_::kSample32,
 };
 use vst3::Steinberg::{
@@ -96,6 +96,10 @@ pub(crate) struct LoadedPlugin {
     /// Keeps the IConnectionPoint trace bridge alive when tracing is on.
     /// `None` for direct (non-traced) connections.
     pub _connection_bridge: Option<BridgePair>,
+    /// Plug-in's IMidiMapping if it implements one. Used to translate
+    /// incoming MIDI controller events into ParamID-keyed parameter
+    /// changes, per VST3 spec.
+    pub midi_mapping: Option<ComPtr<IMidiMapping>>,
     /// Keeps the shared library loaded for the plugin's lifetime.
     pub _module: Module,
 }
@@ -162,6 +166,16 @@ pub(crate) fn load_plugin(
         None => (None, None),
     };
 
+    // 6d. QI the controller for IMidiMapping so we can translate incoming
+    // MIDI controller events into parameter changes per the VST3 spec.
+    // Plug-ins that don't expose IMidiMapping continue to receive raw
+    // CC events through the event stream.
+    let midi_mapping = controller.as_ref().and_then(|c| c.cast::<IMidiMapping>());
+    crate::trace::emit(&format!(
+        "load_plugin: IMidiMapping={}",
+        if midi_mapping.is_some() { "available" } else { "absent" }
+    ));
+
     // 7. setupProcessing
     setup_processing(&processor, sample_rate, buffer_size)?;
     crate::trace::emit(&format!(
@@ -215,6 +229,7 @@ pub(crate) fn load_plugin(
         param_queue,
         _component_handler: component_handler,
         _connection_bridge: connection_bridge,
+        midi_mapping,
         _module: module,
     })
 }
