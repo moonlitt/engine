@@ -20,7 +20,9 @@ use vst3::Steinberg::{
 };
 use vst3::{ComPtr, Interface};
 
-use crate::component_handler::{create_component_handler, ComponentHandler, ParamQueue};
+use crate::component_handler::{
+    create_component_handler, ComponentHandler, ParamQueue, RestartFlags,
+};
 use crate::connection_bridge::BridgePair;
 use crate::host::HostApp;
 use crate::module::{GetFactoryFn, Module};
@@ -89,6 +91,9 @@ pub(crate) struct LoadedPlugin {
     /// render call and injected into ProcessData::inputParameterChanges.
     /// `None` when the plugin has no separate controller.
     pub param_queue: Option<ParamQueue>,
+    /// OR-accumulator for restartComponent flags requested by the
+    /// controller. Read-and-cleared at the start of each render.
+    pub restart_flags: Option<RestartFlags>,
     /// Keeps the IComponentHandler COM wrapper alive for the plugin's
     /// lifetime — the controller stores a raw pointer to it via
     /// setComponentHandler. `None` mirrors `param_queue`.
@@ -161,9 +166,9 @@ pub(crate) fn load_plugin(
     // 6c. Install our IComponentHandler so the controller can notify us about
     // parameter edits. Without this, performEdit calls go nowhere — the
     // processor never receives controller-side parameter changes.
-    let (component_handler, param_queue) = match controller.as_ref() {
+    let (component_handler, param_queue, restart_flags) = match controller.as_ref() {
         Some(ctrl) => install_component_handler(ctrl),
-        None => (None, None),
+        None => (None, None, None),
     };
 
     // 6d. QI the controller for IMidiMapping so we can translate incoming
@@ -227,6 +232,7 @@ pub(crate) fn load_plugin(
         controller,
         class_info,
         param_queue,
+        restart_flags,
         _component_handler: component_handler,
         _connection_bridge: connection_bridge,
         midi_mapping,
@@ -235,29 +241,32 @@ pub(crate) fn load_plugin(
 }
 
 /// Hand the controller our IComponentHandler implementation. Returns the COM
-/// wrapper (caller must keep it alive while the plugin is loaded) and the
-/// shared queue used to read back pending parameter changes.
+/// wrapper (caller must keep it alive while the plugin is loaded), the
+/// shared queue used to read back pending parameter changes, and the
+/// restart-flags accumulator the controller writes when it asks for a
+/// component reload / latency change / param refresh.
 fn install_component_handler(
     controller: &ComPtr<IEditController>,
 ) -> (
     Option<vst3::ComWrapper<ComponentHandler>>,
     Option<ParamQueue>,
+    Option<RestartFlags>,
 ) {
     use vst3::Steinberg::Vst::{IComponentHandler, IEditControllerTrait};
 
-    let (wrapper, queue) = create_component_handler();
+    let (wrapper, queue, restart_flags) = create_component_handler();
     let Some(handler_ptr) = wrapper.to_com_ptr::<IComponentHandler>() else {
-        return (None, None);
+        return (None, None, None);
     };
 
     let result = unsafe { controller.setComponentHandler(handler_ptr.as_ptr()) };
     if result != kResultOk {
-        // Plugin refused our handler — extremely rare. Drop both so we don't
-        // pretend to capture edits we'll never see.
-        return (None, None);
+        // Plugin refused our handler — extremely rare. Drop all three so we
+        // don't pretend to capture edits or restart requests we'll never see.
+        return (None, None, None);
     }
 
-    (Some(wrapper), Some(queue))
+    (Some(wrapper), Some(queue), Some(restart_flags))
 }
 
 /// Get IPluginFactory from the factory function pointer.

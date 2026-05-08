@@ -322,6 +322,11 @@ impl Vst3Plugin {
             return Ok(());
         }
 
+        if let Some(rf) = &self.inner.restart_flags {
+            let flags = component_handler::drain_restart_flags(rf);
+            dispatch_restart_flags(flags, &self.inner.controller, &self.inner.param_queue);
+        }
+
         // Drain plugin-side state up front so the audio path only touches
         // the borrows it needs. Split borrows on `self` are otherwise
         // blocked once `run_process` is called via `self.method(...)`.
@@ -389,6 +394,11 @@ impl Vst3Plugin {
         let num_frames = self.buffer_size;
         if num_frames == 0 || self.audio_output_buses.is_empty() {
             return Ok(());
+        }
+
+        if let Some(rf) = &self.inner.restart_flags {
+            let flags = component_handler::drain_restart_flags(rf);
+            dispatch_restart_flags(flags, &self.inner.controller, &self.inner.param_queue);
         }
 
         let raw_events: Vec<MidiEvent> = std::mem::take(&mut self.pending_events);
@@ -734,6 +744,82 @@ impl Drop for Vst3Plugin {
 fn string128_to_string(s: &[u16; 128]) -> String {
     let end = s.iter().position(|&c| c == 0).unwrap_or(128);
     String::from_utf16_lossy(&s[..end])
+}
+
+/// Dispatch flags accumulated by `IComponentHandler::restartComponent`.
+/// The hot path-relevant flag is `kParamValuesChanged`: the controller
+/// has new normalized values for some or all parameters and the host is
+/// expected to re-pull them and forward to the processor. We do that
+/// the simplest way that's still correct -- walk every parameter and
+/// queue its current normalized value -- because the spec doesn't tell
+/// us *which* parameter values changed.
+///
+/// Other flags (kIoChanged, kLatencyChanged, kMidiCCAssignmentChanged,
+/// etc.) only get a trace line; correctly handling them means tearing
+/// down and re-initializing parts of the pipeline, which we defer until
+/// a plug-in actually needs it.
+fn dispatch_restart_flags(
+    flags: i32,
+    controller: &Option<vst3::ComPtr<vst3::Steinberg::Vst::IEditController>>,
+    queue: &Option<component_handler::ParamQueue>,
+) {
+    if flags == 0 {
+        return;
+    }
+    use vst3::Steinberg::Vst::RestartFlags_::*;
+
+    if flags & kParamValuesChanged != 0 {
+        if let (Some(ctrl), Some(q)) = (controller.as_ref(), queue.as_ref()) {
+            use vst3::Steinberg::Vst::{
+                IEditControllerTrait, ParameterInfo,
+            };
+            use vst3::Steinberg::kResultOk;
+
+            let count = unsafe { ctrl.getParameterCount() };
+            let mut pulled = 0;
+            for i in 0..count {
+                let mut pinfo = std::mem::MaybeUninit::<ParameterInfo>::uninit();
+                if unsafe { ctrl.getParameterInfo(i, pinfo.as_mut_ptr()) } != kResultOk {
+                    continue;
+                }
+                let pinfo = unsafe { pinfo.assume_init() };
+                let value = unsafe { ctrl.getParamNormalized(pinfo.id) };
+                if let Ok(mut g) = q.lock() {
+                    g.push(component_handler::PendingParam {
+                        id: pinfo.id,
+                        value,
+                    });
+                }
+                pulled += 1;
+            }
+            crate::trace::emit(&format!(
+                "restartComponent: kParamValuesChanged -- pulled {pulled} param(s) from controller"
+            ));
+        }
+    }
+
+    // Visibility for everything else — these are real plug-in signals
+    // that future versions of this host should respond to.
+    let labels = [
+        (kReloadComponent, "kReloadComponent"),
+        (kIoChanged, "kIoChanged"),
+        (kLatencyChanged, "kLatencyChanged"),
+        (kParamTitlesChanged, "kParamTitlesChanged"),
+        (kMidiCCAssignmentChanged, "kMidiCCAssignmentChanged"),
+        (kNoteExpressionChanged, "kNoteExpressionChanged"),
+        (kIoTitlesChanged, "kIoTitlesChanged"),
+        (kPrefetchableSupportChanged, "kPrefetchableSupportChanged"),
+        (kRoutingInfoChanged, "kRoutingInfoChanged"),
+        (kKeyswitchChanged, "kKeyswitchChanged"),
+        (kParamIDMappingChanged, "kParamIDMappingChanged"),
+    ];
+    for (bit, name) in labels {
+        if flags & bit != 0 {
+            crate::trace::emit(&format!(
+                "restartComponent: {name} (flag 0x{bit:X}) acknowledged but not yet acted upon"
+            ));
+        }
+    }
 }
 
 /// Forward processor→controller parameter feedback. Plugins write into
