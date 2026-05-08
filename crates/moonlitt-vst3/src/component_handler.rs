@@ -39,22 +39,30 @@ impl Class for ComponentHandler {
 }
 
 impl IComponentHandlerTrait for ComponentHandler {
-    unsafe fn beginEdit(&self, _id: ParamID) -> tresult {
+    unsafe fn beginEdit(&self, id: ParamID) -> tresult {
+        crate::trace::emit(&format!("ComponentHandler::beginEdit id={id}"));
         kResultOk
     }
 
     unsafe fn performEdit(&self, id: ParamID, value_normalized: ParamValue) -> tresult {
+        crate::trace::emit(&format!(
+            "ComponentHandler::performEdit id={id} value={value_normalized}"
+        ));
         if let Ok(mut q) = self.queue.lock() {
             q.push(PendingParam { id, value: value_normalized });
         }
         kResultOk
     }
 
-    unsafe fn endEdit(&self, _id: ParamID) -> tresult {
+    unsafe fn endEdit(&self, id: ParamID) -> tresult {
+        crate::trace::emit(&format!("ComponentHandler::endEdit id={id}"));
         kResultOk
     }
 
-    unsafe fn restartComponent(&self, _flags: int32) -> tresult {
+    unsafe fn restartComponent(&self, flags: int32) -> tresult {
+        crate::trace::emit(&format!(
+            "ComponentHandler::restartComponent flags=0x{flags:08X}"
+        ));
         // Host accepts the request but does not act on it — full hot-restart
         // (sample rate / bus reconfiguration) is not yet supported.
         kResultOk

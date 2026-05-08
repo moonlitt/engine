@@ -20,6 +20,7 @@ impl Class for HostApp {
 
 impl IHostApplicationTrait for HostApp {
     unsafe fn getName(&self, name: *mut String128) -> tresult {
+        crate::trace::emit("HostApp::getName -> \"Moonlitt\"");
         // Write "Moonlitt" as UTF-16 into the String128 buffer
         let host_name: &[u16] = &[
             'M' as u16,
@@ -40,10 +41,33 @@ impl IHostApplicationTrait for HostApp {
 
     unsafe fn createInstance(
         &self,
-        _cid: *mut TUID,
-        _iid: *mut TUID,
+        cid: *mut TUID,
+        iid: *mut TUID,
         _obj: *mut *mut c_void,
     ) -> tresult {
+        if crate::trace::enabled() {
+            let cid_bytes = if cid.is_null() {
+                [0u8; 16]
+            } else {
+                let s = std::slice::from_raw_parts(cid as *const u8, 16);
+                let mut a = [0u8; 16];
+                a.copy_from_slice(s);
+                a
+            };
+            let iid_bytes = if iid.is_null() {
+                [0u8; 16]
+            } else {
+                let s = std::slice::from_raw_parts(iid as *const u8, 16);
+                let mut a = [0u8; 16];
+                a.copy_from_slice(s);
+                a
+            };
+            crate::trace::emit(&format!(
+                "HostApp::createInstance cid={} iid={} -> kNotImplemented",
+                crate::trace::iid_name(&cid_bytes),
+                crate::trace::iid_name(&iid_bytes)
+            ));
+        }
         kNotImplemented
     }
 }

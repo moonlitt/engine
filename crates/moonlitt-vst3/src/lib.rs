@@ -16,6 +16,7 @@
 
 mod component;
 mod component_handler;
+mod connection_bridge;
 mod error;
 mod events;
 mod host;
@@ -24,6 +25,7 @@ mod parameter_changes;
 mod processor;
 mod scanner;
 pub mod stream;
+mod trace;
 pub mod view;
 
 pub use error::{Error, Result};

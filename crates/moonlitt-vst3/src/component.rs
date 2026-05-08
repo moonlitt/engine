@@ -21,6 +21,7 @@ use vst3::Steinberg::{
 use vst3::{ComPtr, Interface};
 
 use crate::component_handler::{create_component_handler, ComponentHandler, ParamQueue};
+use crate::connection_bridge::BridgePair;
 use crate::host::HostApp;
 use crate::module::{GetFactoryFn, Module};
 use crate::{Error, Result};
@@ -47,6 +48,9 @@ pub(crate) struct LoadedPlugin {
     /// lifetime — the controller stores a raw pointer to it via
     /// setComponentHandler. `None` mirrors `param_queue`.
     pub _component_handler: Option<vst3::ComWrapper<ComponentHandler>>,
+    /// Keeps the IConnectionPoint trace bridge alive when tracing is on.
+    /// `None` for direct (non-traced) connections.
+    pub _connection_bridge: Option<BridgePair>,
     /// Keeps the shared library loaded for the plugin's lifetime.
     pub _module: Module,
 }
@@ -68,25 +72,37 @@ pub(crate) fn load_plugin(
 
     // 2. Find the class info for validation
     let class_info = find_class(&factory, class_id)?;
+    crate::trace::emit(&format!(
+        "load_plugin: class=\"{}\" category=\"{}\"",
+        class_info.name, class_info.category
+    ));
 
     // 3. createInstance with class_id for IComponent
     let component = create_component(&factory, class_id)?;
+    crate::trace::emit("load_plugin: createInstance(IComponent) ok");
 
     // 4. initialize(host as FUnknown)
     initialize_component(&component, host)?;
+    crate::trace::emit("load_plugin: component.initialize ok");
 
     // 5. QueryInterface for IAudioProcessor
     let processor = query_audio_processor(&component)?;
+    crate::trace::emit("load_plugin: QI<IAudioProcessor> ok");
 
     // 6. Try to get IEditController
     let controller = get_edit_controller(&component, &factory, host);
+    crate::trace::emit(&format!(
+        "load_plugin: controller={}",
+        if controller.is_some() { "ok" } else { "none" }
+    ));
 
     // 6a. Connect component ↔ controller via IConnectionPoint. Plugins with
     // separate component/controller objects (Spectrasonics, NI, etc.) use
     // IMessage to exchange patch paths, license info, sample library refs.
     // Without this, internal messaging is silently dropped and patches fail
-    // to load.
-    connect_component_controller(&component, controller.as_ref());
+    // to load. When tracing is enabled, a relay sits in between to log
+    // every message that crosses the wire.
+    let connection_bridge = connect_component_controller(&component, controller.as_ref());
 
     // 6b. Sync component state → controller. Without this, controllers of
     // sampler-style plugins (Keyscape, Kontakt, sfizz) start with a stale
@@ -103,6 +119,9 @@ pub(crate) fn load_plugin(
 
     // 7. setupProcessing
     setup_processing(&processor, sample_rate, buffer_size)?;
+    crate::trace::emit(&format!(
+        "load_plugin: setupProcessing(sr={sample_rate} block={buffer_size}) ok"
+    ));
 
     // 7a. Negotiate bus arrangements. Host proposes stereo on every audio
     // bus; plugins that need other layouts (mono synth, multi-out sampler)
@@ -112,12 +131,22 @@ pub(crate) fn load_plugin(
 
     // 8. Activate buses
     activate_buses(&component)?;
+    if crate::trace::enabled() {
+        let n_a_in = unsafe { component.getBusCount(kAudio as i32, kInput as i32) };
+        let n_a_out = unsafe { component.getBusCount(kAudio as i32, kOutput as i32) };
+        let n_e_in = unsafe { component.getBusCount(kEvent as i32, kInput as i32) };
+        let n_e_out = unsafe { component.getBusCount(kEvent as i32, kOutput as i32) };
+        crate::trace::emit(&format!(
+            "load_plugin: buses audio_in={n_a_in} audio_out={n_a_out} event_in={n_e_in} event_out={n_e_out}"
+        ));
+    }
 
     // 9. setActive(true)
     let result = unsafe { component.setActive(1) };
     if result != kResultOk {
         return Err(Error::PluginError(result));
     }
+    crate::trace::emit("load_plugin: setActive(1) ok");
 
     // 10. setProcessing(true)
     let result = unsafe { processor.setProcessing(1) };
@@ -125,6 +154,10 @@ pub(crate) fn load_plugin(
     if result != kResultOk && result != kNotImplemented {
         return Err(Error::PluginError(result));
     }
+    crate::trace::emit(&format!(
+        "load_plugin: setProcessing(1) -> {}",
+        if result == kResultOk { "ok" } else { "kNotImplemented" }
+    ));
 
     Ok(LoadedPlugin {
         component,
@@ -133,6 +166,7 @@ pub(crate) fn load_plugin(
         class_info,
         param_queue,
         _component_handler: component_handler,
+        _connection_bridge: connection_bridge,
         _module: module,
     })
 }
@@ -330,27 +364,35 @@ fn get_edit_controller(
 /// they can exchange IMessage notifications. Single-component plugins (where
 /// component and controller are the same object) skip silently — connect()
 /// would still succeed but is meaningless.
+///
+/// Returns Some(BridgePair) when tracing is enabled (caller must keep it
+/// alive — both sides hold raw pointers into the bridges).
 fn connect_component_controller(
     component: &ComPtr<IComponent>,
     controller: Option<&ComPtr<IEditController>>,
-) {
+) -> Option<BridgePair> {
     use vst3::Steinberg::Vst::{IConnectionPoint, IConnectionPointTrait};
 
-    let Some(ctrl) = controller else { return };
+    let ctrl = controller?;
 
-    let Some(cp_comp) = component.cast::<IConnectionPoint>() else { return };
-    let Some(cp_ctrl) = ctrl.cast::<IConnectionPoint>() else { return };
+    let cp_comp = component.cast::<IConnectionPoint>()?;
+    let cp_ctrl = ctrl.cast::<IConnectionPoint>()?;
 
     // If both casts produced the same underlying object, this is a
     // single-component plugin — connection is unnecessary and could form a
     // self-loop on aggressive impls.
     if std::ptr::eq(cp_comp.as_ptr(), cp_ctrl.as_ptr()) {
-        return;
+        return None;
     }
 
-    unsafe {
-        let _ = cp_comp.connect(cp_ctrl.as_ptr());
-        let _ = cp_ctrl.connect(cp_comp.as_ptr());
+    if crate::trace::enabled() {
+        crate::connection_bridge::install(&cp_comp, &cp_ctrl)
+    } else {
+        unsafe {
+            let _ = cp_comp.connect(cp_ctrl.as_ptr());
+            let _ = cp_ctrl.connect(cp_comp.as_ptr());
+        }
+        None
     }
 }
 
@@ -406,7 +448,11 @@ fn negotiate_bus_arrangements(
         outputs.as_mut_ptr()
     };
 
-    let _ = unsafe { processor.setBusArrangements(in_ptr, num_in, out_ptr, num_out) };
+    let r = unsafe { processor.setBusArrangements(in_ptr, num_in, out_ptr, num_out) };
+    crate::trace::emit(&format!(
+        "load_plugin: setBusArrangements(in={num_in}, out={num_out}, layout=stereo) -> 0x{:08X}",
+        r as u32
+    ));
 }
 
 /// Setup processing parameters on the audio processor.
