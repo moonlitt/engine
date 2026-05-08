@@ -50,7 +50,7 @@ pub fn open_plugin_window(
     path: String,
     sr: u32,
     buf: u32,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let extension_ok = Path::new(&path)
         .extension()
         .and_then(|e| e.to_str())
@@ -111,12 +111,37 @@ pub fn open_plugin_window(
         }
     });
 
+    let label_for_caller = label.clone();
     registry().lock().push(OpenWindow {
         label,
         plugin,
         view,
     });
-    Ok(())
+    Ok(label_for_caller)
+}
+
+/// Capture the current plug-in state for the GUI window identified by
+/// `label` and write it to `path`. Returns the number of bytes written.
+///
+/// This is the "configure once, replay forever" pivot for sample-based
+/// plug-ins (Keyscape, Omnisphere) that pick patches via private GUI
+/// rather than via VST3 program change. After the user picks a patch in
+/// the plug-in's UI, calling this gives a binary blob that
+/// `Vst3Plugin::set_state` can rehydrate later from a headless context.
+pub fn save_state_for_label(label: &str, path: &Path) -> Result<usize, String> {
+    let bytes = {
+        let reg = registry().lock();
+        let entry = reg
+            .iter()
+            .find(|o| o.label == label)
+            .ok_or_else(|| format!("no open plug-in window with label \"{label}\""))?;
+        entry
+            .plugin
+            .get_state()
+            .map_err(|e| format!("get_state: {e}"))?
+    };
+    std::fs::write(path, &bytes).map_err(|e| format!("write {}: {e}", path.display()))?;
+    Ok(bytes.len())
 }
 
 fn cleanup_window(_app: &AppHandle, label: &str) {

@@ -386,7 +386,7 @@ pub fn cmd_open_plugin_gui(
     state: State<AppState>,
     app: AppHandle,
     target: CmdViewTarget,
-) -> Result<(), String> {
+) -> Result<String, String> {
     #[cfg(target_os = "macos")]
     {
         let target: ViewTarget = target.into();
@@ -398,5 +398,24 @@ pub fn cmd_open_plugin_gui(
     {
         let _ = (state, app, target);
         Err("plugin GUI window currently only implemented on macOS".to_string())
+    }
+}
+
+/// Capture the current plug-in state of an open GUI window. Used to
+/// "configure once" sample-based plug-ins (Keyscape, Omnisphere) that
+/// only pick patches through their private UI.
+///
+/// `label` comes from a prior `cmd_open_plugin_gui` call; `path` is
+/// where the binary state blob will be written.
+#[tauri::command]
+pub fn cmd_save_plugin_state(label: String, path: String) -> Result<usize, String> {
+    #[cfg(target_os = "macos")]
+    {
+        crate::plugin_window::save_state_for_label(&label, std::path::Path::new(&path))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (label, path);
+        Err("plug-in state capture is only implemented on macOS".to_string())
     }
 }

@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { useUiStore } from '../stores/ui';
-import { isGuiSupported, openPluginGui } from '../services/pluginGui';
+import {
+  isGuiSupported,
+  openPluginGui,
+  saveOpenPluginState,
+} from '../services/pluginGui';
 
 interface DefaultInstrumentBarProps {
   instrumentPath: string | null;
@@ -12,6 +16,14 @@ export function DefaultInstrumentBar({ instrumentPath }: DefaultInstrumentBarPro
   const isVst3 = instrumentPath?.toLowerCase().endsWith('.vst3') ?? false;
   const guiSupported = isGuiSupported();
   const [guiError, setGuiError] = useState<string | null>(null);
+  const [guiLabel, setGuiLabel] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+
+  const defaultStateName = (() => {
+    if (!name) return 'plugin-state.mlstate';
+    const stem = name.replace(/\.vst3$/i, '');
+    return `${stem}-state.mlstate`;
+  })();
 
   return (
     <section className="bg-daw-panel border border-daw-border rounded-lg p-4">
@@ -40,13 +52,38 @@ export function DefaultInstrumentBar({ instrumentPath }: DefaultInstrumentBarPro
             type="button"
             onClick={async () => {
               setGuiError(null);
-              const err = await openPluginGui({ kind: 'default' });
-              if (err) setGuiError(err);
+              setSaveStatus(null);
+              const result = await openPluginGui({ kind: 'default' });
+              if (result.ok) {
+                setGuiLabel(result.label);
+              } else {
+                setGuiError(result.error);
+                setGuiLabel(null);
+              }
             }}
             className="text-[11px] px-2.5 py-1 rounded bg-daw-control hover:bg-daw-border text-[#aaa] transition-colors"
             title="打开插件原生界面"
           >
             🎛 GUI
+          </button>
+        )}
+        {isVst3 && guiSupported && guiLabel !== null && (
+          <button
+            type="button"
+            onClick={async () => {
+              setGuiError(null);
+              setSaveStatus(null);
+              const result = await saveOpenPluginState(guiLabel, defaultStateName);
+              if (result.ok) {
+                setSaveStatus(`已保存 ${result.bytes} 字节 → ${result.path}`);
+              } else if (result.error !== '已取消') {
+                setGuiError(result.error);
+              }
+            }}
+            className="text-[11px] px-2.5 py-1 rounded bg-daw-control hover:bg-daw-border text-[#aaa] transition-colors"
+            title="把当前在插件 GUI 里选好的 patch 存成状态文件，之后用 moonlitt midi --state 头无重放"
+          >
+            💾 保存状态
           </button>
         )}
         {name && (
@@ -61,6 +98,9 @@ export function DefaultInstrumentBar({ instrumentPath }: DefaultInstrumentBarPro
       </div>
       {guiError !== null && (
         <div className="mt-2 text-[11px] text-red-400">{guiError}</div>
+      )}
+      {saveStatus !== null && (
+        <div className="mt-2 text-[11px] text-emerald-400">{saveStatus}</div>
       )}
     </section>
   );

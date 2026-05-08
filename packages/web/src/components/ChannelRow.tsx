@@ -294,8 +294,8 @@ function OverrideControls({ override }: { override: ChannelOverrideState }) {
         <button
           type="button"
           onClick={async () => {
-            const err = await openPluginGui({ kind: 'override', channel: override.channel });
-            if (err) console.error('[plugin-gui]', err);
+            const result = await openPluginGui({ kind: 'override', channel: override.channel });
+            if (!result.ok) console.error('[plugin-gui]', result.error);
           }}
           className="text-[11px] px-2 py-1 rounded bg-daw-control hover:bg-daw-border text-[#aaa] transition-colors"
           title="打开插件原生界面"
