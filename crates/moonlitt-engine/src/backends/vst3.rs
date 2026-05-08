@@ -73,9 +73,10 @@ impl AudioBackend for Vst3Backend {
         }
     }
 
-    fn program_change(&mut self, _channel: u8, _program: u8) {
-        // VST3 doesn't use MIDI program change directly;
-        // use presets via load_preset instead
+    fn program_change(&mut self, channel: u8, program: u8) {
+        if let Some(ref mut plugin) = self.plugin {
+            plugin.program_change(channel, program);
+        }
     }
 
     fn all_notes_off(&mut self) {
@@ -169,6 +170,24 @@ impl AudioBackend for Vst3Backend {
                 .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
         } else {
             Err("no plugin loaded".into())
+        }
+    }
+
+    fn save_state(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        match self.plugin.as_ref() {
+            Some(plugin) => plugin
+                .get_state()
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>),
+            None => Err("no plugin loaded".into()),
+        }
+    }
+
+    fn load_state(&mut self, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+        match self.plugin.as_mut() {
+            Some(plugin) => plugin
+                .set_state(data)
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>),
+            None => Err("no plugin loaded".into()),
         }
     }
 }

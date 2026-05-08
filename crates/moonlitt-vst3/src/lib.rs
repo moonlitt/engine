@@ -152,6 +152,16 @@ impl Vst3Plugin {
         });
     }
 
+    /// Queue a MIDI Program Change event. Translated to a VST3 legacy MIDI
+    /// CC out event (controlNumber=130), so plugins that respond to MIDI PC
+    /// (GM-compatible synths) switch programs on the next render.
+    pub fn program_change(&mut self, channel: u8, program: u8) {
+        self.pending_events.push(MidiEvent {
+            kind: MidiEventKind::ProgramChange { channel, program },
+            sample_offset: 0,
+        });
+    }
+
     /// Send All Notes Off (CC#123) on all 16 channels.
     ///
     /// Uses the standard MIDI CC#123 (All Notes Off) message instead of
