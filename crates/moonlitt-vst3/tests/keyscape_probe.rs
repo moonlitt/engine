@@ -134,6 +134,26 @@ fn keyscape_long_burn_in_is_silent() {
     println!("  H3 post-note peak: {peak:.6}");
 }
 
+/// Look for a Keyscape state fixture under tests/fixtures/. Accepts any of
+/// the extensions the desktop "Save State" dialog produces (`.mlstate`,
+/// `.bin`) plus the legacy `.vstpreset` name.
+fn find_keyscape_fixture() -> Option<PathBuf> {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures");
+    for name in &[
+        "keyscape-default.mlstate",
+        "keyscape-default.bin",
+        "keyscape-default.vstpreset",
+    ] {
+        let p = dir.join(name);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    None
+}
+
 #[test]
 fn keyscape_state_fixture_produces_audio() {
     let _g = keyscape_lock();
@@ -141,44 +161,47 @@ fn keyscape_state_fixture_produces_audio() {
         eprintln!("Keyscape not installed — skipping");
         return;
     };
-    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let fixture_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
-        .join("fixtures")
-        .join("keyscape-default.vstpreset");
-    if !fixture.exists() {
+        .join("fixtures");
+    let Some(fixture) = find_keyscape_fixture() else {
+        let target = fixture_dir.join("keyscape-default.mlstate");
         eprintln!(
-            "\n  Fixture missing: {}\n\
+            "\n  Fixture missing in {}\n\
              \n\
              To activate this test, capture a Keyscape state from a real GUI session:\n\
              \n\
                1. Start the Tauri desktop shell:\n\
-                    cd crates/moonlitt-node && npx napi build --release\n\
-                    cd packages && pnpm install && pnpm dev:server   # terminal 1\n\
-                    pnpm dev                                          # terminal 2\n\
-               2. Click 'Load plug-in' → pick Keyscape.\n\
-               3. Click 'Show GUI'. In Keyscape's browser, pick any patch (e.g.\n\
-                  'Bösendorfer Imperial'). Play a note in the GUI to verify it sounds.\n\
-               4. Click 'Save State' and save to:\n\
+                    cd packages/desktop && pnpm tauri dev\n\
+               2. In the moonlitt window: pick Keyscape as the default instrument.\n\
+               3. Click '🎛 GUI', pick a patch in Keyscape's browser.\n\
+               4. Click '💾 保存状态' and save to:\n\
                     {}\n\
                5. Re-run this test — it'll now assert that the rehydrated patch\n\
                   produces audio in headless mode.\n",
-            fixture.display(),
-            fixture.display()
+            fixture_dir.display(),
+            target.display()
         );
         return;
-    }
+    };
     let state = std::fs::read(&fixture).unwrap();
 
     let host = Vst3Host::new(44100, 256).unwrap();
     let mut plugin = host.load(&info).unwrap();
     plugin.set_state(&state).expect("set_state should accept captured blob");
+
+    // Sample-streamer patches load asynchronously after set_state. The
+    // plug-in needs many process cycles before it can produce audio for
+    // the restored patch. See `Vst3Plugin::warm_up` for the rationale.
+    plugin.warm_up(8192).expect("warm_up must not error");
+
     plugin.note_on(0, 60, 100);
     plugin.note_on(0, 64, 100);
     plugin.note_on(0, 67, 100);
-    let peak = run_blocks(&mut plugin, 256, "H4");
+    let peak = run_blocks(&mut plugin, 512, "H4");
     assert!(
         peak > 1e-3,
-        "captured Keyscape state should produce audio, got peak={peak}"
+        "captured Keyscape state should produce audio after warm-up, got peak={peak}"
     );
     println!("✅ Keyscape replays captured state → peak={peak:.4}");
 }

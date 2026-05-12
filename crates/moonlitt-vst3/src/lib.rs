@@ -27,6 +27,7 @@ mod parameter_changes;
 mod processor;
 mod scan_cache;
 mod scanner;
+mod state_format;
 pub mod stream;
 mod trace;
 pub mod view;
@@ -36,6 +37,7 @@ pub use error::{Error, Result};
 pub use events::{MidiEvent, MidiEventKind};
 pub use scan_cache::PluginScanCache;
 pub use scanner::{PluginInfo, PluginKind};
+pub use state_format::ChunkedState;
 pub use view::{platform, Vst3PluginView};
 
 use component::LoadedPlugin;
@@ -462,6 +464,42 @@ impl Vst3Plugin {
         error::catch_plugin_panic("Vst3Plugin::render_all", || self.render_all_inner())
     }
 
+    /// Run `num_blocks` silent process cycles to let the plug-in finish any
+    /// asynchronous internal work — most importantly the sample-streaming
+    /// fade-in that Spectrasonics-style instruments (Keyscape, Omnisphere)
+    /// kick off after `set_state` restores a patch.
+    ///
+    /// What happens: each cycle drains the audio output through
+    /// `IAudioProcessor::process` with no MIDI input. Sample streamers use
+    /// this scheduling pump to pull data from their content library
+    /// (Spectrasonics' STEAM, NI's KSP, etc.) into RAM. Without it, notes
+    /// fired immediately after `set_state` reach the plug-in before the
+    /// patch is playable and get silently dropped.
+    ///
+    /// Recommended usage:
+    /// ```no_run
+    /// # use moonlitt_vst3::Vst3Host;
+    /// # let host = Vst3Host::new(44100, 256).unwrap();
+    /// # let info = host.scan().unwrap().into_iter().next().unwrap();
+    /// # let mut plugin = host.load(&info).unwrap();
+    /// # let state = vec![];
+    /// plugin.set_state(&state).unwrap();
+    /// plugin.warm_up(8192).unwrap();  // ~47s of logical streaming time
+    /// plugin.note_on(0, 60, 100);
+    /// ```
+    ///
+    /// For non-streaming plug-ins (Surge, Pianoteq, native synths) this is
+    /// a no-op besides the wasted DSP cycles, so it's safe to always call.
+    /// Cost is `num_blocks × buffer_size × sample_rate⁻¹` of logical audio,
+    /// but on modern hardware silent processing runs many times faster than
+    /// real time.
+    pub fn warm_up(&mut self, num_blocks: usize) -> Result<()> {
+        for _ in 0..num_blocks {
+            self.render_all()?;
+        }
+        Ok(())
+    }
+
     fn render_all_inner(&mut self) -> Result<()> {
         let num_frames = self.buffer_size;
         if num_frames == 0 || self.audio_output_buses.is_empty() {
@@ -702,27 +740,44 @@ impl Vst3Plugin {
         use vst3::Steinberg::Vst::{IAudioProcessorTrait, IComponentTrait};
         use vst3::Steinberg::kResultOk;
 
-        // 1. Stop processing
+        // Stop → deactivate. Required before setState per VST3 spec.
         unsafe { let _ = self.inner.processor.setProcessing(0); }
-        // 2. Deactivate
         unsafe { let _ = self.inner.component.setActive(0); }
 
-        // 3. Set state on component
-        let mut stream = stream::MemoryStream::from_data(data.to_vec());
-        let ptr = stream.as_ibstream_ptr();
-        let comp_result = unsafe { self.inner.component.setState(ptr) };
+        // Decide layout: new chunked container (MLST...) vs legacy
+        // single-blob fixture (entire payload is component state). Older
+        // saves predate split-state support — keep them loadable so users
+        // don't have to re-capture trivial roundtrip tests.
+        let (component_bytes, controller_bytes) = match state_format::ChunkedState::parse(data) {
+            Some(chunked) => (chunked.component, Some(chunked.controller)),
+            None => (data.to_vec(), None),
+        };
 
-        // 4. Sync controller state
+        // Restore component (processor-side) state.
+        let mut comp_stream = stream::MemoryStream::from_data(component_bytes.clone());
+        let comp_result = unsafe { self.inner.component.setState(comp_stream.as_ibstream_ptr()) };
+
+        // Sync controller and restore its own state. The VST3 spec sequence:
+        //   1. IEditController::setComponentState — controller mirrors the
+        //      component's parameters (so the UI reflects DSP truth).
+        //   2. IEditController::setState         — controller restores its
+        //      OWN state (browser selection, patch IDs — the crucial step
+        //      for Spectrasonics-style sample streamers).
         if let Some(ref ctrl) = self.inner.controller {
             use vst3::Steinberg::Vst::IEditControllerTrait;
-            let mut stream2 = stream::MemoryStream::from_data(data.to_vec());
-            let ptr2 = stream2.as_ibstream_ptr();
-            let _ = unsafe { ctrl.setComponentState(ptr2) };
+            let mut sync_stream = stream::MemoryStream::from_data(component_bytes);
+            let _ = unsafe { ctrl.setComponentState(sync_stream.as_ibstream_ptr()) };
+
+            if let Some(ctrl_bytes) = controller_bytes {
+                if !ctrl_bytes.is_empty() {
+                    let mut ctrl_stream = stream::MemoryStream::from_data(ctrl_bytes);
+                    let _ = unsafe { ctrl.setState(ctrl_stream.as_ibstream_ptr()) };
+                }
+            }
         }
 
-        // 5. Reactivate
+        // Reactivate → resume processing.
         unsafe { let _ = self.inner.component.setActive(1); }
-        // 6. Restart processing
         unsafe { let _ = self.inner.processor.setProcessing(1); }
 
         if comp_result != kResultOk {
@@ -741,13 +796,32 @@ impl Vst3Plugin {
         use vst3::Steinberg::Vst::IComponentTrait;
         use vst3::Steinberg::kResultOk;
 
-        let mut stream = stream::MemoryStream::new_writable();
-        let ptr = stream.as_ibstream_ptr();
-        let result = unsafe { self.inner.component.getState(ptr) };
-        if result != kResultOk {
-            return Err(Error::Other(format!("getState failed: {result}")));
+        // Component (processor) state — always required.
+        let mut comp_stream = stream::MemoryStream::new_writable();
+        let comp_result = unsafe { self.inner.component.getState(comp_stream.as_ibstream_ptr()) };
+        if comp_result != kResultOk {
+            return Err(Error::Other(format!("component.getState failed: {comp_result}")));
         }
-        Ok(stream.data().to_vec())
+        let component = comp_stream.data().to_vec();
+
+        // Controller state — optional. Some plug-ins return kNotImplemented
+        // (no controller-side state to save); we then store an empty
+        // chunk so the format stays self-describing.
+        let controller = match self.inner.controller.as_ref() {
+            Some(ctrl) => {
+                use vst3::Steinberg::Vst::IEditControllerTrait;
+                let mut ctrl_stream = stream::MemoryStream::new_writable();
+                let ctrl_result = unsafe { ctrl.getState(ctrl_stream.as_ibstream_ptr()) };
+                if ctrl_result == kResultOk {
+                    ctrl_stream.data().to_vec()
+                } else {
+                    Vec::new()
+                }
+            }
+            None => Vec::new(),
+        };
+
+        Ok(state_format::ChunkedState { component, controller }.to_bytes())
     }
 
     /// Load an SFZ file into sfizz by constructing and setting its state.
