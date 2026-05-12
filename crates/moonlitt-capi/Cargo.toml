@@ -14,5 +14,6 @@ moonlitt-core = { path = "../moonlitt-core" }
 moonlitt-engine = { path = "../moonlitt-engine", features = ["sf2", "vst3", "clap"] }
 moonlitt-audio-io = { path = "../moonlitt-audio-io" }
 moonlitt-effects = { path = "../moonlitt-effects" }
+moonlitt-session = { path = "../moonlitt-session" }
 hound = "3"
 oxisynth = { path = "../../deps/oxisynth/oxisynth" }

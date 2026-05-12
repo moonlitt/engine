@@ -64,6 +64,30 @@ pub trait AudioBackend: Send {
         Err("not supported".into())
     }
 
+    /// Run `num_blocks` silent process cycles. Sample-streaming back-ends
+    /// (Spectrasonics Keyscape/Omnisphere, Kontakt-class instruments)
+    /// load patches asynchronously after `load_state` — notes fired in
+    /// the loading window get silently dropped. Calling this between
+    /// `load_state` and the first `note_on` lets the streamer's
+    /// pipeline finish bringing the patch online.
+    ///
+    /// Default: no-op (synths, native back-ends don't need warm-up).
+    /// Callers may always invoke this safely — the wasted DSP for
+    /// non-streaming back-ends is sub-millisecond per session.
+    fn warm_up(&mut self, _num_blocks: usize) -> Result<(), Box<dyn std::error::Error>> {
+        Ok(())
+    }
+
+    /// Suggested `warm_up` block count for this back-end after
+    /// `load_state`. Session persistence captures this value alongside
+    /// the state blob so restore can run the right amount of warm-up
+    /// without the caller knowing plug-in internals.
+    ///
+    /// Back-ends override this when they ship asynchronously-loading
+    /// content (sample streamers identify themselves here by returning
+    /// a non-zero value). Default 0 means "no warm-up needed".
+    fn recommended_warm_up_blocks(&self) -> usize { 0 }
+
     // Sidechain — effects opt in by overriding these defaults
 
     /// Provide external sidechain audio for this effect.

@@ -729,6 +729,60 @@ impl Vst3Plugin {
         &self.inner.class_info.name
     }
 
+    /// Vendor string from PClassInfo2 (e.g. "Spectrasonics", "Steinberg").
+    /// `None` when the plug-in only exposes the older PClassInfo.
+    pub fn vendor(&self) -> Option<&str> {
+        self.inner.class_info.vendor.as_deref()
+    }
+
+    /// Subcategory descriptor from PClassInfo2 — pipe-separated tags like
+    /// "Instrument|Sampler" or "Fx|Reverb". `None` when unavailable.
+    pub fn subcategories(&self) -> Option<&str> {
+        self.inner.class_info.subcategories.as_deref()
+    }
+
+    /// Recommended `warm_up` block count after `set_state`. Detects
+    /// sample-streamer plug-ins so session-restore can do the right
+    /// thing without the caller knowing plug-in internals.
+    ///
+    /// Detection rules (in order; first match wins):
+    ///   1. Vendor == "Spectrasonics" → 8192.
+    ///   2. Subcategory contains "Sampler" → 8192. Catches plug-ins
+    ///      that correctly self-identify via PClassInfo2.
+    ///   3. Class name matches a hard-coded known-streamer list → 8192.
+    ///      This is the fallback for plug-ins that ship with empty
+    ///      vendor strings and mis-tagged subcategories. Keyscape, for
+    ///      example, reports vendor="" and subcategory="Instrument|Synth"
+    ///      even though it streams content asynchronously.
+    ///   4. Otherwise → 0.
+    pub fn recommended_warm_up_blocks(&self) -> usize {
+        const STREAMER_WARMUP: usize = 8192;
+
+        if self.vendor() == Some("Spectrasonics") {
+            return STREAMER_WARMUP;
+        }
+        if let Some(sub) = self.subcategories() {
+            if sub.contains("Sampler") {
+                return STREAMER_WARMUP;
+            }
+        }
+
+        // Hard-coded fallback. Order: most common to least. Keep alphabetical
+        // within a family. Add new entries here when you discover a plug-in
+        // that needs warm-up but neither vendor nor subcategory matches.
+        const KNOWN_STREAMERS: &[&str] = &[
+            // Spectrasonics — Keyscape ships with empty vendor metadata.
+            "Keyscape",
+            "Stylus RMX",
+            "Trilian",
+        ];
+        if KNOWN_STREAMERS.contains(&self.name()) {
+            return STREAMER_WARMUP;
+        }
+
+        0
+    }
+
     /// Set plugin state from a binary blob.
     /// Handles the full stop → deactivate → setState → activate → start cycle.
     /// Panic-isolated.

@@ -59,8 +59,20 @@ impl Runtime {
             .map_err(|e| (e, Box::new(moonlitt_core::NullBackend::new(sample_rate)) as Box<dyn AudioBackend>))
     }
 
-    /// Create a runtime with a pre-configured Mixer.
+    /// Create a runtime with a pre-configured Mixer and a fresh Transport.
+    /// Convenience over `with_mixer_and_transport`.
     pub fn with_mixer(mixer: Mixer, buffer_size: u32) -> Result<Self, String> {
+        Self::with_mixer_and_transport(mixer, Transport::new(), buffer_size)
+    }
+
+    /// Create a runtime with a pre-configured Mixer AND a pre-configured
+    /// Transport. Used by session-restore to preserve captured tempo /
+    /// loop state across reload.
+    pub fn with_mixer_and_transport(
+        mixer: Mixer,
+        transport: Transport,
+        buffer_size: u32,
+    ) -> Result<Self, String> {
         let sample_rate = mixer.sample_rate();
         let next_track_id = mixer.next_track_id();
         let next_bus_id = mixer.next_bus_id();
@@ -80,7 +92,7 @@ impl Runtime {
         let (producer, consumer) = RingBuffer::new(1024);
         let (command_tx, command_rx) = mpsc::channel();
         let (sequencer_tx, sequencer_rx) = mpsc::channel();
-        let transport = Arc::new(Transport::new());
+        let transport = Arc::new(transport);
 
         let audio_thread = AudioThread::new(
             mixer,

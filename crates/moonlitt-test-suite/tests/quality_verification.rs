@@ -284,6 +284,7 @@ fn q05_pdc_multi_latency_alignment() {
 #[test]
 fn q06_session_restore_complete_state() {
     use moonlitt_audio_io::session::Session;
+    use moonlitt_audio_io::transport::Transport;
 
     // Build a mixer with specific parameters
     let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
@@ -297,40 +298,42 @@ fn q06_session_restore_complete_state() {
     mixer.set_master_volume(0.85);
     mixer.master_mut().limiter_threshold = 0.9;
 
-    // Session save
-    let session = Session::from_mixer(&mixer);
+    // Session save (with default transport, no sequencer source)
+    let transport = Transport::new();
+    let session = Session::from_state(&mixer, &transport, None);
     let json = session.to_json().unwrap();
     eprintln!("q06: Session JSON length = {} bytes", json.len());
 
     // Session restore
     let restored_session = Session::from_json(&json).unwrap();
     let restored = restored_session.restore(BUFFER_SIZE).unwrap();
+    let restored_mixer = &restored.mixer;
 
     // Verify parameters
     assert!(
-        (restored.master().volume - 0.85).abs() < 1e-6,
+        (restored_mixer.master().volume - 0.85).abs() < 1e-6,
         "Master volume should be 0.85, got {}",
-        restored.master().volume
+        restored_mixer.master().volume
     );
     assert!(
-        (restored.master().limiter_threshold - 0.9).abs() < 1e-6,
+        (restored_mixer.master().limiter_threshold - 0.9).abs() < 1e-6,
         "Limiter threshold should be 0.9, got {}",
-        restored.master().limiter_threshold
+        restored_mixer.master().limiter_threshold
     );
     assert!(
-        (restored.tracks()[0].volume - 0.7).abs() < 1e-6,
+        (restored_mixer.tracks()[0].volume - 0.7).abs() < 1e-6,
         "Track volume should be 0.7, got {}",
-        restored.tracks()[0].volume
+        restored_mixer.tracks()[0].volume
     );
     assert!(
-        (restored.tracks()[0].pan - (-0.3)).abs() < 1e-6,
+        (restored_mixer.tracks()[0].pan - (-0.3)).abs() < 1e-6,
         "Track pan should be -0.3, got {}",
-        restored.tracks()[0].pan
+        restored_mixer.tracks()[0].pan
     );
-    assert!(!restored.tracks()[0].mute, "Track should not be muted");
-    assert!(restored.tracks()[0].solo, "Track should be soloed");
-    assert_eq!(restored.tracks()[0].channel_mask, 0x0001);
-    assert_eq!(restored.sample_rate(), SAMPLE_RATE);
+    assert!(!restored_mixer.tracks()[0].mute, "Track should not be muted");
+    assert!(restored_mixer.tracks()[0].solo, "Track should be soloed");
+    assert_eq!(restored_mixer.tracks()[0].channel_mask, 0x0001);
+    assert_eq!(restored_mixer.sample_rate(), SAMPLE_RATE);
     eprintln!("q06: Session restore verified — all parameters match");
 }
 

@@ -190,4 +190,20 @@ impl AudioBackend for Vst3Backend {
             None => Err("no plugin loaded".into()),
         }
     }
+
+    fn warm_up(&mut self, num_blocks: usize) -> Result<(), Box<dyn std::error::Error>> {
+        match self.plugin.as_mut() {
+            Some(plugin) => plugin
+                .warm_up(num_blocks)
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>),
+            None => Err("no plugin loaded".into()),
+        }
+    }
+
+    fn recommended_warm_up_blocks(&self) -> usize {
+        self.plugin
+            .as_ref()
+            .map(|p| p.recommended_warm_up_blocks())
+            .unwrap_or(0)
+    }
 }
