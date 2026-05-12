@@ -61,6 +61,7 @@ pub(crate) fn split_for_param_routing(
                     channel as i16,
                     cc as i16,
                     value as f64 / 127.0,
+                    me.sample_offset,
                 ) {
                     params.push(p);
                 } else {
@@ -78,6 +79,7 @@ pub(crate) fn split_for_param_routing(
                     channel as i16,
                     kPitchBend as i16,
                     normalized,
+                    me.sample_offset,
                 ) {
                     params.push(p);
                 } else {
@@ -100,6 +102,7 @@ fn lookup_cc_param(
     channel: i16,
     midi_controller: i16,
     normalized_value: f64,
+    sample_offset: i32,
 ) -> Option<PendingParam> {
     let mut id: ParamID = 0;
     let r = unsafe {
@@ -109,6 +112,7 @@ fn lookup_cc_param(
         Some(PendingParam {
             id,
             value: normalized_value,
+            sample_offset,
         })
     } else {
         None

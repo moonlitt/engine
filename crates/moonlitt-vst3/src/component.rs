@@ -21,7 +21,8 @@ use vst3::Steinberg::{
 use vst3::{ComPtr, Interface};
 
 use crate::component_handler::{
-    create_component_handler, ComponentHandler, ParamQueue, RestartFlags,
+    create_component_handler_with_notifications, ComponentHandler, NotificationQueue, ParamQueue,
+    RestartFlags,
 };
 use crate::connection_bridge::BridgePair;
 use crate::host::HostApp;
@@ -34,6 +35,10 @@ pub(crate) struct ClassInfo {
     pub name: String,
     pub category: String,
     pub cid: [u8; 16],
+    /// Populated when the factory implements IPluginFactory2 (PClassInfo2).
+    pub subcategories: Option<String>,
+    pub vendor: Option<String>,
+    pub version: Option<String>,
 }
 
 /// Public-facing topology of one audio bus (input or output). Built once
@@ -94,6 +99,10 @@ pub(crate) struct LoadedPlugin {
     /// OR-accumulator for restartComponent flags requested by the
     /// controller. Read-and-cleared at the start of each render.
     pub restart_flags: Option<RestartFlags>,
+    /// Side-band host notifications (setDirty, requestOpenEditor, unit
+    /// selection, program-list changes) the plug-in pushes through
+    /// IComponentHandler2 / IUnitHandler / IUnitHandler2.
+    pub notifications: Option<NotificationQueue>,
     /// Keeps the IComponentHandler COM wrapper alive for the plugin's
     /// lifetime — the controller stores a raw pointer to it via
     /// setComponentHandler. `None` mirrors `param_queue`.
@@ -165,11 +174,15 @@ pub(crate) fn load_plugin(
 
     // 6c. Install our IComponentHandler so the controller can notify us about
     // parameter edits. Without this, performEdit calls go nowhere — the
-    // processor never receives controller-side parameter changes.
-    let (component_handler, param_queue, restart_flags) = match controller.as_ref() {
-        Some(ctrl) => install_component_handler(ctrl),
-        None => (None, None, None),
-    };
+    // processor never receives controller-side parameter changes. The
+    // handler also exposes IComponentHandler2, IUnitHandler, IUnitHandler2
+    // — plug-ins QI for these to surface setDirty / requestOpenEditor and
+    // unit/program list changes.
+    let (component_handler, param_queue, restart_flags, notifications) =
+        match controller.as_ref() {
+            Some(ctrl) => install_component_handler(ctrl),
+            None => (None, None, None, None),
+        };
 
     // 6d. QI the controller for IMidiMapping so we can translate incoming
     // MIDI controller events into parameter changes per the VST3 spec.
@@ -233,6 +246,7 @@ pub(crate) fn load_plugin(
         class_info,
         param_queue,
         restart_flags,
+        notifications,
         _component_handler: component_handler,
         _connection_bridge: connection_bridge,
         midi_mapping,
@@ -251,22 +265,24 @@ fn install_component_handler(
     Option<vst3::ComWrapper<ComponentHandler>>,
     Option<ParamQueue>,
     Option<RestartFlags>,
+    Option<NotificationQueue>,
 ) {
     use vst3::Steinberg::Vst::{IComponentHandler, IEditControllerTrait};
 
-    let (wrapper, queue, restart_flags) = create_component_handler();
+    let (wrapper, queue, restart_flags, notifications) =
+        create_component_handler_with_notifications();
     let Some(handler_ptr) = wrapper.to_com_ptr::<IComponentHandler>() else {
-        return (None, None, None);
+        return (None, None, None, None);
     };
 
     let result = unsafe { controller.setComponentHandler(handler_ptr.as_ptr()) };
     if result != kResultOk {
-        // Plugin refused our handler — extremely rare. Drop all three so we
+        // Plugin refused our handler — extremely rare. Drop all four so we
         // don't pretend to capture edits or restart requests we'll never see.
-        return (None, None, None);
+        return (None, None, None, None);
     }
 
-    (Some(wrapper), Some(queue), Some(restart_flags))
+    (Some(wrapper), Some(queue), Some(restart_flags), Some(notifications))
 }
 
 /// Get IPluginFactory from the factory function pointer.
@@ -282,6 +298,7 @@ fn get_factory(factory_fn: GetFactoryFn) -> Result<ComPtr<IPluginFactory>> {
 /// Enumerate classes in the factory, looking for a specific class ID.
 fn find_class(factory: &ComPtr<IPluginFactory>, class_id: &[u8; 16]) -> Result<ClassInfo> {
     let count = unsafe { factory.countClasses() };
+    let factory2 = factory.cast::<vst3::Steinberg::IPluginFactory2>();
 
     for i in 0..count {
         let mut info = MaybeUninit::<PClassInfo>::uninit();
@@ -292,10 +309,14 @@ fn find_class(factory: &ComPtr<IPluginFactory>, class_id: &[u8; 16]) -> Result<C
 
         let cid = cid_to_bytes(&info.cid);
         if cid == *class_id {
+            let (sub, vendor, version) = read_pclassinfo2(factory2.as_ref(), i);
             return Ok(ClassInfo {
                 name: cstr_from_fixed(&info.name),
                 category: cstr_from_fixed_i8(&info.category),
                 cid,
+                subcategories: sub,
+                vendor,
+                version,
             });
         }
     }
@@ -306,6 +327,7 @@ fn find_class(factory: &ComPtr<IPluginFactory>, class_id: &[u8; 16]) -> Result<C
 /// Enumerate all Audio Module Classes in a factory (used by scanner).
 pub(crate) fn enumerate_audio_classes(module: &Module) -> Result<Vec<ClassInfo>> {
     let factory = get_factory(module.factory_fn)?;
+    let factory2 = factory.cast::<vst3::Steinberg::IPluginFactory2>();
     let count = unsafe { factory.countClasses() };
     let mut classes = Vec::new();
 
@@ -318,15 +340,42 @@ pub(crate) fn enumerate_audio_classes(module: &Module) -> Result<Vec<ClassInfo>>
 
         let category = cstr_from_fixed_i8(&info.category);
         if category.contains("Audio") {
+            let (sub, vendor, version) = read_pclassinfo2(factory2.as_ref(), i);
             classes.push(ClassInfo {
                 name: cstr_from_fixed(&info.name),
                 category,
                 cid: cid_to_bytes(&info.cid),
+                subcategories: sub,
+                vendor,
+                version,
             });
         }
     }
 
     Ok(classes)
+}
+
+/// Read PClassInfo2 fields for class `index` if the factory implements
+/// IPluginFactory2. Returns (None, None, None) on legacy factories.
+fn read_pclassinfo2(
+    factory2: Option<&ComPtr<vst3::Steinberg::IPluginFactory2>>,
+    index: i32,
+) -> (Option<String>, Option<String>, Option<String>) {
+    use vst3::Steinberg::{IPluginFactory2Trait, PClassInfo2};
+
+    let Some(f2) = factory2 else {
+        return (None, None, None);
+    };
+    let mut info2 = MaybeUninit::<PClassInfo2>::uninit();
+    if unsafe { f2.getClassInfo2(index, info2.as_mut_ptr()) } != kResultOk {
+        return (None, None, None);
+    }
+    let info2 = unsafe { info2.assume_init() };
+    (
+        Some(cstr_from_fixed_i8(&info2.subCategories)),
+        Some(cstr_from_fixed_i8(&info2.vendor)),
+        Some(cstr_from_fixed_i8(&info2.version)),
+    )
 }
 
 /// Create an IComponent instance from the factory.

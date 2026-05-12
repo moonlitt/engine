@@ -25,17 +25,47 @@ mod midi_mapping;
 mod module;
 mod parameter_changes;
 mod processor;
+mod scan_cache;
 mod scanner;
 pub mod stream;
 mod trace;
 pub mod view;
 
+pub use component_handler::HostNotification;
 pub use error::{Error, Result};
 pub use events::{MidiEvent, MidiEventKind};
-pub use scanner::PluginInfo;
+pub use scan_cache::PluginScanCache;
+pub use scanner::{PluginInfo, PluginKind};
 pub use view::{platform, Vst3PluginView};
 
 use component::LoadedPlugin;
+
+/// Tail-ringing duration the plug-in reports after the last note_off.
+/// Host should keep calling render for this many additional samples so
+/// reverb/delay tails ring out instead of getting cut off.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TailSamples {
+    /// Plug-in has no tail — safe to stop processing as soon as the last
+    /// note ends. Maps to VST3's `kNoTail` (0).
+    None,
+    /// Plug-in has a finite tail of N samples after the last note_off.
+    Samples(u32),
+    /// Plug-in's tail is unbounded (feedback loops, freeze effects).
+    /// Maps to VST3's `kInfiniteTail` (`u32::MAX`). Host must rely on
+    /// audio-content detection, not the spec, to know when to stop.
+    Infinite,
+}
+
+impl TailSamples {
+    /// Decode the raw VST3 `getTailSamples` return value.
+    pub fn from_raw(raw: u32) -> Self {
+        match raw {
+            0 => TailSamples::None,
+            u32::MAX => TailSamples::Infinite,
+            n => TailSamples::Samples(n),
+        }
+    }
+}
 
 /// VST3 host — scans, loads, and manages VST3 plugins.
 pub struct Vst3Host {
@@ -150,6 +180,14 @@ impl Vst3Host {
     /// Scan default system paths for VST3 plugins.
     pub fn scan(&self) -> Result<Vec<PluginInfo>> {
         scanner::scan_default_paths()
+    }
+
+    /// Scan default system paths using `cache` to skip bundles whose
+    /// mtime is unchanged. Mutates `cache` with fresh entries and evicts
+    /// stale paths. Caller is responsible for persisting via
+    /// [`PluginScanCache::save`].
+    pub fn scan_cached(&self, cache: &mut PluginScanCache) -> Result<Vec<PluginInfo>> {
+        scanner::scan_default_paths_cached(cache)
     }
 
     /// Probe a specific .vst3 bundle path and load the first audio class.
@@ -297,6 +335,24 @@ impl Vst3Plugin {
         self.audio_output_buses.len()
     }
 
+    /// Reported plug-in latency in samples — host should delay other
+    /// signal paths by this amount to keep tracks aligned. Most
+    /// instrument plug-ins report 0; oversampled effects (linear-phase
+    /// EQ, look-ahead limiters) report a non-zero value.
+    pub fn latency_samples(&self) -> i32 {
+        use vst3::Steinberg::Vst::IAudioProcessorTrait;
+        unsafe { self.inner.processor.getLatencySamples() as i32 }
+    }
+
+    /// Reported tail duration after the last note_off — host should keep
+    /// calling render() for this long so reverb/delay tails ring out
+    /// rather than getting cut off. See [`TailSamples`] for the
+    /// VST3-spec-defined sentinel values.
+    pub fn tail_samples(&self) -> TailSamples {
+        use vst3::Steinberg::Vst::IAudioProcessorTrait;
+        TailSamples::from_raw(unsafe { self.inner.processor.getTailSamples() })
+    }
+
     /// Topology of one audio output bus, or `None` if `index` is out of
     /// range. Stable for the lifetime of the plugin instance.
     pub fn audio_output_bus_info(&self, index: usize) -> Option<&AudioBusInfo> {
@@ -316,7 +372,17 @@ impl Vst3Plugin {
     /// [`bus_output`] when you need access to non-primary buses).
     ///
     /// `left` and `right` must be the same length (the buffer size).
+    ///
+    /// Wrapped in [`catch_plugin_panic`](error::catch_plugin_panic) — a Rust
+    /// panic inside our wrapper code (lock poisoning, OOM in event drain,
+    /// etc.) returns [`Error::PluginPanicked`] instead of crashing the
+    /// audio thread. Does NOT catch C++ segfaults from the loaded
+    /// plug-in; for that, hosts need subprocess isolation.
     pub fn render(&mut self, left: &mut [f32], right: &mut [f32]) -> Result<()> {
+        error::catch_plugin_panic("Vst3Plugin::render", || self.render_inner(left, right))
+    }
+
+    fn render_inner(&mut self, left: &mut [f32], right: &mut [f32]) -> Result<()> {
         let num_frames = left.len().min(right.len()).min(self.buffer_size);
         if num_frames == 0 || self.audio_output_buses.is_empty() {
             return Ok(());
@@ -390,7 +456,13 @@ impl Vst3Plugin {
     /// auxiliary outputs of a multi-out plugin (drum machine kit pieces,
     /// per-voice channels in a multi-timbral sampler, sidechain returns,
     /// etc.) rather than just the primary stereo mix.
+    ///
+    /// Panic-isolated like [`render`].
     pub fn render_all(&mut self) -> Result<()> {
+        error::catch_plugin_panic("Vst3Plugin::render_all", || self.render_all_inner())
+    }
+
+    fn render_all_inner(&mut self) -> Result<()> {
         let num_frames = self.buffer_size;
         if num_frames == 0 || self.audio_output_buses.is_empty() {
             return Ok(());
@@ -458,6 +530,22 @@ impl Vst3Plugin {
         std::mem::take(&mut self.output_events)
     }
 
+    /// Drain side-band host notifications the plug-in has pushed since the
+    /// last call: setDirty, requestOpenEditor, group-edit boundaries, unit
+    /// selection, program-list changes. Returns an empty Vec when the
+    /// plug-in has no controller or hasn't called any of these.
+    ///
+    /// Poll this from the control thread (UI or session loop). The queue
+    /// has no upper bound — drain regularly to avoid unbounded growth on
+    /// plug-ins that emit notifications heavily (e.g. multi-timbral
+    /// samplers during preset browsing).
+    pub fn take_host_notifications(&mut self) -> Vec<HostNotification> {
+        match &self.inner.notifications {
+            Some(q) => component_handler::drain_notifications(q),
+            None => Vec::new(),
+        }
+    }
+
     /// Returns the L/R audio rendered for output bus `index` during the
     /// most recent [`render`] or [`render_all`] call. Returns `None` if
     /// `index >= audio_output_bus_count()`.
@@ -476,6 +564,7 @@ impl Vst3Plugin {
     /// Process audio through the plugin as an effect (audio in → audio out).
     ///
     /// Reads from `in_left`/`in_right`, writes processed audio to `out_left`/`out_right`.
+    /// Panic-isolated like [`render`].
     pub fn process_effect(
         &mut self,
         in_left: &[f32],
@@ -483,14 +572,16 @@ impl Vst3Plugin {
         out_left: &mut [f32],
         out_right: &mut [f32],
     ) -> Result<()> {
-        processor::process_effect(
-            &self.inner.processor,
-            &self.inner.component,
-            in_left,
-            in_right,
-            out_left,
-            out_right,
-        )
+        error::catch_plugin_panic("Vst3Plugin::process_effect", || {
+            processor::process_effect(
+                &self.inner.processor,
+                &self.inner.component,
+                in_left,
+                in_right,
+                out_left,
+                out_right,
+            )
+        })
     }
 
     /// List factory presets via IUnitInfo (if the plugin supports it).
@@ -542,8 +633,12 @@ impl Vst3Plugin {
         Ok(presets)
     }
 
-    /// Load a preset by list ID and program index.
+    /// Load a preset by list ID and program index. Panic-isolated.
     pub fn load_preset(&mut self, id: i32) -> Result<()> {
+        error::catch_plugin_panic("Vst3Plugin::load_preset", || self.load_preset_inner(id))
+    }
+
+    fn load_preset_inner(&mut self, id: i32) -> Result<()> {
         use vst3::Steinberg::Vst::{
             IEditControllerTrait, ParameterInfo, ParameterInfo_::ParameterFlags_,
         };
@@ -580,6 +675,7 @@ impl Vst3Plugin {
                         q.push(component_handler::PendingParam {
                             id: pinfo.id,
                             value: normalized,
+                            sample_offset: 0,
                         });
                     }
                 }
@@ -597,7 +693,12 @@ impl Vst3Plugin {
 
     /// Set plugin state from a binary blob.
     /// Handles the full stop → deactivate → setState → activate → start cycle.
+    /// Panic-isolated.
     pub fn set_state(&mut self, data: &[u8]) -> Result<()> {
+        error::catch_plugin_panic("Vst3Plugin::set_state", || self.set_state_inner(data))
+    }
+
+    fn set_state_inner(&mut self, data: &[u8]) -> Result<()> {
         use vst3::Steinberg::Vst::{IAudioProcessorTrait, IComponentTrait};
         use vst3::Steinberg::kResultOk;
 
@@ -630,9 +731,13 @@ impl Vst3Plugin {
         Ok(())
     }
 
-    /// Get current plugin state as raw bytes.
+    /// Get current plugin state as raw bytes. Panic-isolated.
     #[must_use = "discarding plugin state bytes is likely a bug"]
     pub fn get_state(&self) -> Result<Vec<u8>> {
+        error::catch_plugin_panic("Vst3Plugin::get_state", || self.get_state_inner())
+    }
+
+    fn get_state_inner(&self) -> Result<Vec<u8>> {
         use vst3::Steinberg::Vst::IComponentTrait;
         use vst3::Steinberg::kResultOk;
 
@@ -788,6 +893,7 @@ fn dispatch_restart_flags(
                     g.push(component_handler::PendingParam {
                         id: pinfo.id,
                         value,
+                        sample_offset: 0,
                     });
                 }
                 pulled += 1;

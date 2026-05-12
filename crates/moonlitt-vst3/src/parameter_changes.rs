@@ -105,7 +105,9 @@ impl IParameterChangesTrait for ParameterChangesImpl {
 
 /// Build a ParameterChanges COM wrapper from drained pending edits. Multiple
 /// edits to the same paramID coalesce into a single queue with all points
-/// preserved in arrival order.
+/// preserved in arrival order. Each point keeps the originator's sample
+/// offset so the plug-in can apply sample-accurate parameter automation
+/// within a block (e.g. snapping at a specific bar position).
 pub(crate) fn build_input_changes(
     pending: &[PendingParam],
 ) -> Option<ComWrapper<ParameterChangesImpl>> {
@@ -115,9 +117,7 @@ pub(crate) fn build_input_changes(
 
     let mut by_id: HashMap<ParamID, Vec<(int32, ParamValue)>> = HashMap::new();
     for p in pending {
-        // sampleOffset 0 means "apply at start of block" — close enough; we
-        // don't currently sub-sample-accurate edits.
-        by_id.entry(p.id).or_default().push((0, p.value));
+        by_id.entry(p.id).or_default().push((p.sample_offset, p.value));
     }
 
     let queues = by_id
@@ -126,6 +126,111 @@ pub(crate) fn build_input_changes(
         .collect();
 
     Some(ComWrapper::new(ParameterChangesImpl { queues }))
+}
+
+#[cfg(test)]
+mod sample_offset_tests {
+    use super::*;
+
+    fn read_point(q: &ComWrapper<ParamValueQueueImpl>, index: int32) -> (int32, ParamValue) {
+        let mut off: int32 = -1;
+        let mut val: ParamValue = -1.0;
+        unsafe {
+            let r = q.getPoint(index, &mut off as *mut _, &mut val as *mut _);
+            assert_eq!(r, kResultOk, "getPoint failed");
+        }
+        (off, val)
+    }
+
+    #[test]
+    fn build_input_changes_preserves_sample_offsets() {
+        let pending = vec![
+            PendingParam {
+                id: 42,
+                value: 0.25,
+                sample_offset: 0,
+            },
+            PendingParam {
+                id: 42,
+                value: 0.75,
+                sample_offset: 128,
+            },
+            PendingParam {
+                id: 42,
+                value: 1.0,
+                sample_offset: 255,
+            },
+        ];
+        let changes = build_input_changes(&pending).expect("non-empty pending");
+        unsafe {
+            assert_eq!(changes.getParameterCount(), 1);
+        }
+        // Extract the queue and read points in order.
+        let queue = unsafe {
+            let raw = changes.getParameterData(0);
+            assert!(!raw.is_null());
+            raw
+        };
+        unsafe {
+            assert_eq!((*queue).vtbl.is_null(), false);
+        }
+
+        // Read points via the COM interface to mirror what a plug-in sees.
+        unsafe {
+            let n = ((*(*queue).vtbl).getPointCount)(queue);
+            assert_eq!(n, 3, "all three points should survive");
+            let mut points = Vec::new();
+            for i in 0..n {
+                let mut off: int32 = -1;
+                let mut val: ParamValue = -1.0;
+                let r = ((*(*queue).vtbl).getPoint)(queue, i, &mut off, &mut val);
+                assert_eq!(r, kResultOk);
+                points.push((off, val));
+            }
+            assert_eq!(points, vec![(0, 0.25), (128, 0.75), (255, 1.0)]);
+        }
+    }
+
+    #[test]
+    fn build_input_changes_groups_by_param_id() {
+        let pending = vec![
+            PendingParam {
+                id: 1,
+                value: 0.5,
+                sample_offset: 0,
+            },
+            PendingParam {
+                id: 2,
+                value: 0.5,
+                sample_offset: 0,
+            },
+            PendingParam {
+                id: 1,
+                value: 0.6,
+                sample_offset: 64,
+            },
+        ];
+        let changes = build_input_changes(&pending).unwrap();
+        unsafe {
+            assert_eq!(changes.getParameterCount(), 2, "two distinct paramIDs");
+        }
+    }
+
+    #[test]
+    fn empty_pending_returns_none() {
+        assert!(build_input_changes(&[]).is_none());
+    }
+
+    /// Smoke test the helper that mirrors how we read points back.
+    #[test]
+    fn read_point_returns_offset_and_value() {
+        let q = ComWrapper::new(ParamValueQueueImpl {
+            id: 7,
+            points: vec![(64, 0.5)],
+        });
+        let (off, val) = read_point(&q, 0);
+        assert_eq!((off, val), (64, 0.5));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -266,8 +371,12 @@ pub(crate) fn drain_output(
     for q in queues {
         let id = q.id;
         let pts: Vec<(int32, ParamValue)> = unsafe { std::mem::take(&mut *q.points.get()) };
-        for (_off, value) in pts {
-            result.push(PendingParam { id, value });
+        for (off, value) in pts {
+            result.push(PendingParam {
+                id,
+                value,
+                sample_offset: off,
+            });
         }
     }
     result
