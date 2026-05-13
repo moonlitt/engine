@@ -47,6 +47,11 @@ pub struct ChannelOverrideState {
     pub channel: u8,
     pub instrument_path: String,
     pub instrument_name: String,
+    /// Patch name parsed from this plug-in's captured state, when one
+    /// has been captured AND the state blob embeds a recognisable name.
+    /// `None` for plug-ins whose state we can't introspect.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub patch_name: Option<String>,
     /// dB
     pub volume: f64,
     pub muted: bool,
@@ -71,6 +76,10 @@ pub struct ProjectState {
     pub bpm: f64,
     pub playing: bool,
     pub default_instrument_path: Option<String>,
+    /// Patch name parsed from the default instrument's captured state.
+    /// See [`ChannelOverrideState::patch_name`] for the same field on overrides.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_patch_name: Option<String>,
     pub midi: Option<MidiState>,
     pub overrides: Vec<ChannelOverrideState>,
 }
@@ -232,6 +241,10 @@ impl Engine {
             bpm: s.bpm,
             playing: s.playing,
             default_instrument_path: s.default_instrument_path.clone(),
+            default_patch_name: s
+                .default_instrument_path
+                .as_deref()
+                .and_then(patch_name_for_path),
             midi: s.midi.clone(),
             overrides: s
                 .overrides
@@ -240,6 +253,7 @@ impl Engine {
                     channel: o.channel,
                     instrument_path: o.instrument_path.clone(),
                     instrument_name: o.instrument_name.clone(),
+                    patch_name: patch_name_for_path(&o.instrument_path),
                     volume: o.volume,
                     muted: o.muted,
                     solo: o.solo,
@@ -873,6 +887,7 @@ fn state_of(o: &Override) -> ChannelOverrideState {
         channel: o.channel,
         instrument_path: o.instrument_path.clone(),
         instrument_name: o.instrument_name.clone(),
+        patch_name: patch_name_for_path(&o.instrument_path),
         volume: o.volume,
         muted: o.muted,
         solo: o.solo,
@@ -895,6 +910,21 @@ fn plugin_info_to_view(p: PluginInfo) -> PluginInfoView {
         name: p.name,
         path: p.path,
         format: format_format(p.format).to_string(),
+    }
+}
+
+/// Cross-platform helper that returns the parsed patch name for a
+/// plug-in path if one has been captured (macOS only; other platforms
+/// don't run the GUI window registry).
+fn patch_name_for_path(path: &str) -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        crate::plugin_window::patch_name_for(path)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = path;
+        None
     }
 }
 

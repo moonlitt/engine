@@ -13,6 +13,7 @@ import type {
  */
 interface ProjectStore {
   defaultInstrumentPath: string | null;
+  defaultPatchName: string | null;
   midi: MidiState | null;
   overrides: ChannelOverrideState[];
 
@@ -31,19 +32,21 @@ interface ProjectStore {
 
 export const useProjectStore = create<ProjectStore>((set) => ({
   defaultInstrumentPath: null,
+  defaultPatchName: null,
   midi: null,
   overrides: [],
 
   setProject(p) {
     set({
       defaultInstrumentPath: p.defaultInstrumentPath,
+      defaultPatchName: p.defaultPatchName ?? null,
       midi: p.midi,
       overrides: p.overrides,
     });
   },
 
   setDefaultInstrument(path) {
-    set({ defaultInstrumentPath: path });
+    set({ defaultInstrumentPath: path, defaultPatchName: null });
   },
 
   setMidi(midi) {

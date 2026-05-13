@@ -9,6 +9,7 @@ mod midi_analyze;
 #[cfg(target_os = "macos")]
 mod plugin_window;
 mod recent_files;
+mod state_metadata;
 
 use std::time::Duration;
 

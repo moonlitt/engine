@@ -387,9 +387,24 @@ function createTauriTransport(): Transport {
       const onPlugins = await e.listen('plugins:list', (m: Wrap<{ plugins: import('@moonlitt/protocol').PluginInfo[] }>) => {
         dispatchEvent({ type: 'plugins.list', plugins: m.payload.plugins });
       });
+      // When a plug-in GUI window closes, the backend captures its
+      // state into the stash and emits this event. Re-pull the snapshot
+      // so any newly-extracted patch name (Keyscape "LA Custom C7" etc.)
+      // shows up in the UI without polling.
+      const onPluginStateCaptured = await e.listen<{ path: string; patchName: string | null }>(
+        'plugin_state_captured',
+        async () => {
+          try {
+            const snap = await invoke<import('@moonlitt/protocol').ProjectState>('cmd_snapshot');
+            dispatchEvent({ type: 'state.init', project: snap });
+          } catch (err) {
+            console.error('[tauri] refresh-after-plugin-state-captured:', err);
+          }
+        },
+      );
       unsubs.push(
         onTransportState, onTempo, onMidi, onDefault,
-        onAdd, onRm, onUpd, onIns, onInsRm, onPlugins,
+        onAdd, onRm, onUpd, onIns, onInsRm, onPlugins, onPluginStateCaptured,
       );
 
       // Pull the initial snapshot.

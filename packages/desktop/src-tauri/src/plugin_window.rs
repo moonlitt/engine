@@ -45,19 +45,34 @@ unsafe impl Send for OpenWindow {}
 static OPEN_WINDOWS: OnceLock<Mutex<Vec<OpenWindow>>> = OnceLock::new();
 static LABEL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// Latest known-good state blob captured per plug-in path. Populated when
+/// Bytes + parsed patch name for one captured state. The name is
+/// extracted at stash time via `state_metadata::extract_patch_name` so
+/// lookups stay cheap.
+struct StashedState {
+    bytes: Vec<u8>,
+    patch_name: Option<String>,
+}
+
+/// Latest known-good state captured per plug-in path. Populated when
 /// a GUI window is opened (initial state) AND refreshed every time
 /// session save is triggered. Survives across window close so the user
 /// can pick a patch → close GUI → ⌘S and still get their patch in the
 /// saved session.
-static STATE_STASH: OnceLock<Mutex<HashMap<String, Vec<u8>>>> = OnceLock::new();
+static STATE_STASH: OnceLock<Mutex<HashMap<String, StashedState>>> = OnceLock::new();
 
 fn registry() -> &'static Mutex<Vec<OpenWindow>> {
     OPEN_WINDOWS.get_or_init(|| Mutex::new(Vec::new()))
 }
 
-fn state_stash() -> &'static Mutex<HashMap<String, Vec<u8>>> {
+fn state_stash() -> &'static Mutex<HashMap<String, StashedState>> {
     STATE_STASH.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn put_in_stash(path: String, bytes: Vec<u8>) {
+    let patch_name = crate::state_metadata::extract_patch_name(&bytes);
+    state_stash()
+        .lock()
+        .insert(path, StashedState { bytes, patch_name });
 }
 
 pub fn open_plugin_window(
@@ -138,31 +153,53 @@ pub fn open_plugin_window(
 
 /// Walk every currently-open GUI window, call `getState()` on its
 /// plug-in, and merge into the stash keyed by .vst3 path. Returns the
-/// full stash (open windows + previously-captured closed-window state)
-/// so callers get a single map keyed by plug-in path.
+/// full stash bytes-only (open windows + previously-captured
+/// closed-window state) so callers get a single map keyed by plug-in
+/// path.
 ///
 /// Used by session save: ⌘S calls this to refresh the stash from any
 /// patches the user has just been editing before serialising.
 pub fn snapshot_all_open_states() -> HashMap<String, Vec<u8>> {
     {
         let reg = registry().lock();
-        let mut stash = state_stash().lock();
-        for entry in reg.iter() {
-            if let Ok(bytes) = entry.plugin.get_state() {
-                stash.insert(entry.path.clone(), bytes);
-            }
+        let paths_and_bytes: Vec<(String, Vec<u8>)> = reg
+            .iter()
+            .filter_map(|entry| {
+                entry
+                    .plugin
+                    .get_state()
+                    .ok()
+                    .map(|b| (entry.path.clone(), b))
+            })
+            .collect();
+        drop(reg);
+        for (path, bytes) in paths_and_bytes {
+            put_in_stash(path, bytes);
         }
     }
-    state_stash().lock().clone()
+    state_stash()
+        .lock()
+        .iter()
+        .map(|(k, v)| (k.clone(), v.bytes.clone()))
+        .collect()
 }
 
 /// Manually inject a state blob into the stash. Used when the engine
 /// loads a session — the audio-thread back-end gets the state directly,
-/// but we also remember it here so a subsequent ⌘S doesn't lose it
-/// (e.g. if the user reloads a session and never opens the GUI before
-/// saving back).
+/// but we also remember it here so a subsequent ⌘S doesn't lose it.
 pub fn stash_state(path: String, state: Vec<u8>) {
-    state_stash().lock().insert(path, state);
+    put_in_stash(path, state);
+}
+
+/// Look up the parsed patch name for a plug-in path. Returns `None` if
+/// no state has been captured yet for this path, or if the plug-in's
+/// state blob doesn't embed a recognisable patch name (most non-
+/// Spectrasonics plug-ins).
+pub fn patch_name_for(path: &str) -> Option<String> {
+    state_stash()
+        .lock()
+        .get(path)
+        .and_then(|s| s.patch_name.clone())
 }
 
 /// Capture the current plug-in state for the GUI window identified by
@@ -189,21 +226,51 @@ pub fn save_state_for_label(label: &str, path: &Path) -> Result<usize, String> {
     Ok(bytes.len())
 }
 
-fn cleanup_window(_app: &AppHandle, label: &str) {
-    let mut reg = registry().lock();
-    if let Some(idx) = reg.iter().position(|o| o.label == label) {
-        let entry = reg.remove(idx);
-        // Stash the latest state so closing the window doesn't lose the
-        // patch the user picked. The plug-in is about to drop; any later
-        // session-save would otherwise see no state for this path.
-        if let Ok(bytes) = entry.plugin.get_state() {
-            state_stash().lock().insert(entry.path.clone(), bytes);
+fn cleanup_window(app: &AppHandle, label: &str) {
+    let captured_path_name: Option<(String, Option<String>)> = {
+        let mut reg = registry().lock();
+        if let Some(idx) = reg.iter().position(|o| o.label == label) {
+            let entry = reg.remove(idx);
+            // Stash the latest state so closing the window doesn't lose the
+            // patch the user picked. The plug-in is about to drop; any later
+            // session-save would otherwise see no state for this path.
+            let captured = entry.plugin.get_state().ok().map(|bytes| {
+                let parsed = crate::state_metadata::extract_patch_name(&bytes);
+                state_stash().lock().insert(
+                    entry.path.clone(),
+                    StashedState {
+                        bytes,
+                        patch_name: parsed.clone(),
+                    },
+                );
+                (entry.path.clone(), parsed)
+            });
+            // Detach the plugin's view from our NSView before dropping —
+            // otherwise the plugin's view holds a reference to a soon-dead
+            // parent and may crash on its own cleanup pass.
+            let _ = entry.view.detach();
+            drop(entry); // explicit; clarifies intent
+            captured
+        } else {
+            None
         }
-        // Detach the plugin's view from our NSView before dropping —
-        // otherwise the plugin's view holds a reference to a soon-dead
-        // parent and may crash on its own cleanup pass.
-        let _ = entry.view.detach();
-        drop(entry); // explicit; clarifies intent
+    };
+
+    // Tell the frontend a fresh patch name is available so the UI can
+    // refresh without polling. Non-fatal if emit fails.
+    if let Some((path, patch_name)) = captured_path_name {
+        use serde::Serialize;
+        #[derive(Serialize, Clone)]
+        #[serde(rename_all = "camelCase")]
+        struct PluginStateCaptured {
+            path: String,
+            patch_name: Option<String>,
+        }
+        use tauri::Emitter;
+        let _ = app.emit(
+            "plugin_state_captured",
+            PluginStateCaptured { path, patch_name },
+        );
     }
 }
 

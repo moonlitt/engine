@@ -16,6 +16,7 @@ export function PlayerView() {
   const midi = useProjectStore((s) => s.midi);
   const overrides = useProjectStore((s) => s.overrides);
   const defaultInstrumentPath = useProjectStore((s) => s.defaultInstrumentPath);
+  const defaultPatchName = useProjectStore((s) => s.defaultPatchName);
 
   return (
     <div className="h-screen overflow-y-auto bg-daw-bg text-[#e0e0e0] font-sans">
@@ -34,7 +35,10 @@ export function PlayerView() {
 
         {midi !== null && (
           <>
-            <DefaultInstrumentBar instrumentPath={defaultInstrumentPath} />
+            <DefaultInstrumentBar
+              instrumentPath={defaultInstrumentPath}
+              patchName={defaultPatchName}
+            />
 
             <section>
               <div className="text-[11px] uppercase tracking-widest text-[#888] font-semibold mb-2 px-1">

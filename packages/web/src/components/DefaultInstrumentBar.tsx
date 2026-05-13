@@ -8,9 +8,11 @@ import {
 
 interface DefaultInstrumentBarProps {
   instrumentPath: string | null;
+  /** Patch name parsed from the plug-in's state, when available. */
+  patchName?: string | null;
 }
 
-export function DefaultInstrumentBar({ instrumentPath }: DefaultInstrumentBarProps) {
+export function DefaultInstrumentBar({ instrumentPath, patchName }: DefaultInstrumentBarProps) {
   const open = useUiStore((s) => s.openInstrumentPicker);
   const name = instrumentPath ? (instrumentPath.split('/').pop() ?? instrumentPath) : null;
   const isVst3 = instrumentPath?.toLowerCase().endsWith('.vst3') ?? false;
@@ -34,13 +36,24 @@ export function DefaultInstrumentBar({ instrumentPath }: DefaultInstrumentBarPro
         <button
           type="button"
           onClick={() => open({ kind: 'default' })}
-          className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
+          className={`px-4 py-2 rounded text-sm font-medium transition-colors text-left ${
             name
               ? 'bg-daw-control hover:bg-daw-border text-[#e0e0e0]'
               : 'bg-daw-accent hover:bg-daw-accent/80 text-white'
           }`}
         >
-          {name ? <>🎹 {name}</> : <>🎹 选择默认音色…</>}
+          {name ? (
+            <span className="flex flex-col leading-tight">
+              <span>🎹 {name}</span>
+              {patchName && (
+                <span className="text-[10px] text-[#888] font-normal mt-0.5">
+                  {patchName}
+                </span>
+              )}
+            </span>
+          ) : (
+            <>🎹 选择默认音色…</>
+          )}
         </button>
         <div className="flex-1 min-w-[200px] text-[11px] text-[#888]">
           {name

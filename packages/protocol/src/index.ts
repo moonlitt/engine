@@ -51,6 +51,13 @@ export interface ProjectState {
   bpm: number;
   playing: boolean;
   defaultInstrumentPath: string | null;
+  /**
+   * Patch name parsed from the default instrument's captured state when
+   * available (Spectrasonics plug-ins embed it as plain XML; most other
+   * plug-ins don't expose it through any standard surface). Absent when
+   * unknown or when no state has been captured.
+   */
+  defaultPatchName?: string;
   midi: MidiState | null;
   overrides: ChannelOverrideState[];
 }
@@ -79,6 +86,8 @@ export interface ChannelOverrideState {
   channel: number;
   instrumentPath: string;
   instrumentName: string;
+  /** See [`ProjectState.defaultPatchName`]. */
+  patchName?: string;
   volume: number;   // dB
   muted: boolean;
   solo: boolean;
