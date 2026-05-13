@@ -22,6 +22,15 @@ use parking_lot::Mutex;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
 
+/// Which engine slot a GUI window is editing. Mirrors
+/// `commands::CmdViewTarget` shapes so we can route state pushes to the
+/// audio-thread back-end correctly when the user closes the window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindowTarget {
+    Default,
+    Channel(u8),
+}
+
 /// One open plugin GUI: keeps the plugin and its view alive for the
 /// lifetime of the window.
 struct OpenWindow {
@@ -30,6 +39,11 @@ struct OpenWindow {
     /// key the state stash so closing the window doesn't lose the patch
     /// the user picked.
     path: String,
+    /// Where this plug-in's state should be pushed when captured: the
+    /// engine's default-instrument slot or a specific MIDI-channel
+    /// override. Set at open time so close-time sync knows the
+    /// destination.
+    target: WindowTarget,
     /// Held only to keep the COM-loaded plugin alive while the GUI window
     /// is shown — view internals refer back into it via raw pointers.
     plugin: Vst3Plugin,
@@ -78,6 +92,7 @@ fn put_in_stash(path: String, bytes: Vec<u8>) {
 pub fn open_plugin_window(
     app: AppHandle,
     path: String,
+    target: WindowTarget,
     sr: u32,
     buf: u32,
 ) -> Result<String, String> {
@@ -145,6 +160,7 @@ pub fn open_plugin_window(
     registry().lock().push(OpenWindow {
         label,
         path: path.clone(),
+        target,
         plugin,
         view,
     });
@@ -227,51 +243,121 @@ pub fn save_state_for_label(label: &str, path: &Path) -> Result<usize, String> {
 }
 
 fn cleanup_window(app: &AppHandle, label: &str) {
-    let captured_path_name: Option<(String, Option<String>)> = {
+    let captured: Option<(String, WindowTarget, Vec<u8>, Option<String>)> = {
         let mut reg = registry().lock();
         if let Some(idx) = reg.iter().position(|o| o.label == label) {
             let entry = reg.remove(idx);
-            // Stash the latest state so closing the window doesn't lose the
-            // patch the user picked. The plug-in is about to drop; any later
-            // session-save would otherwise see no state for this path.
-            let captured = entry.plugin.get_state().ok().map(|bytes| {
+            let path = entry.path.clone();
+            let target = entry.target;
+            // Capture state BEFORE we drop the plug-in. The plug-in is
+            // about to drop; any later session-save would otherwise see
+            // no state for this path.
+            let result = entry.plugin.get_state().ok().map(|bytes| {
                 let parsed = crate::state_metadata::extract_patch_name(&bytes);
                 state_stash().lock().insert(
-                    entry.path.clone(),
+                    path.clone(),
                     StashedState {
-                        bytes,
+                        bytes: bytes.clone(),
                         patch_name: parsed.clone(),
                     },
                 );
-                (entry.path.clone(), parsed)
+                (path, target, bytes, parsed)
             });
             // Detach the plugin's view from our NSView before dropping —
             // otherwise the plugin's view holds a reference to a soon-dead
             // parent and may crash on its own cleanup pass.
             let _ = entry.view.detach();
             drop(entry); // explicit; clarifies intent
-            captured
+            result
         } else {
             None
         }
     };
 
-    // Tell the frontend a fresh patch name is available so the UI can
-    // refresh without polling. Non-fatal if emit fails.
-    if let Some((path, patch_name)) = captured_path_name {
-        use serde::Serialize;
-        #[derive(Serialize, Clone)]
-        #[serde(rename_all = "camelCase")]
-        struct PluginStateCaptured {
-            path: String,
-            patch_name: Option<String>,
-        }
-        use tauri::Emitter;
-        let _ = app.emit(
-            "plugin_state_captured",
-            PluginStateCaptured { path, patch_name },
-        );
+    let Some((path, target, bytes, patch_name)) = captured else {
+        return;
+    };
+
+    // Sync to the audio-thread back-end so the freshly-picked patch
+    // actually plays — without this, the GUI instance has the patch
+    // but the audio instance is still empty and notes are silent.
+    // Heavy work (dlopen + load_state + warm_up ~1 s) so done on a
+    // background thread; we just hand it off and return.
+    apply_state_to_engine(app.clone(), path.clone(), target, bytes);
+
+    // Tell the frontend the new patch name is available so the UI can
+    // refresh without polling.
+    use serde::Serialize;
+    #[derive(Serialize, Clone)]
+    #[serde(rename_all = "camelCase")]
+    struct PluginStateCaptured {
+        path: String,
+        patch_name: Option<String>,
     }
+    use tauri::Emitter;
+    let _ = app.emit(
+        "plugin_state_captured",
+        PluginStateCaptured { path, patch_name },
+    );
+}
+
+/// Spawn a background thread that rebuilds the audio-thread back-end
+/// with the captured state. Used by `cleanup_window` and by the
+/// manual "apply" command so the user can sync without closing.
+fn apply_state_to_engine(
+    app: AppHandle,
+    path: String,
+    target: WindowTarget,
+    bytes: Vec<u8>,
+) {
+    use tauri::Manager;
+    std::thread::spawn(move || {
+        let Some(state) = app.try_state::<crate::commands::AppState>() else {
+            return;
+        };
+        let result = match target {
+            WindowTarget::Default => state
+                .engine
+                .set_default_instrument_with_state(&path, Some(&bytes))
+                .map(|_| ()),
+            WindowTarget::Channel(ch) => state
+                .engine
+                .set_channel_override_with_state(ch, &path, Some(&bytes))
+                .map(|_| ()),
+        };
+        if let Err(e) = result {
+            eprintln!("apply_state_to_engine: {e}");
+        }
+    });
+}
+
+/// Capture the state of a still-open GUI window and apply it to the
+/// audio engine without closing. Used by the "🎵 应用音色" button so
+/// users can iterate on patches without close/open cycles.
+pub fn apply_open_state_to_engine(app: AppHandle, label: &str) -> Result<Option<String>, String> {
+    let info: Option<(String, WindowTarget, Vec<u8>, Option<String>)> = {
+        let reg = registry().lock();
+        let entry = reg
+            .iter()
+            .find(|o| o.label == label)
+            .ok_or_else(|| format!("no open plug-in window with label \"{label}\""))?;
+        let bytes = entry
+            .plugin
+            .get_state()
+            .map_err(|e| format!("get_state: {e}"))?;
+        let parsed = crate::state_metadata::extract_patch_name(&bytes);
+        Some((entry.path.clone(), entry.target, bytes, parsed))
+    };
+    let (path, target, bytes, patch_name) = info.unwrap();
+    state_stash().lock().insert(
+        path.clone(),
+        StashedState {
+            bytes: bytes.clone(),
+            patch_name: patch_name.clone(),
+        },
+    );
+    apply_state_to_engine(app, path, target, bytes);
+    Ok(patch_name)
 }
 
 fn ns_view_ptr_from(window: &tauri::WebviewWindow) -> Result<*mut c_void, String> {

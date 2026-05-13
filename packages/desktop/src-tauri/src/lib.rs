@@ -53,6 +53,7 @@ pub fn run() {
             commands::cmd_plugins_scan,
             commands::cmd_load_midi,
             commands::cmd_open_plugin_gui,
+            commands::cmd_apply_open_plugin_state,
             commands::cmd_save_plugin_state,
             commands::cmd_project_save_as,
             commands::cmd_project_open,

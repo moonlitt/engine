@@ -389,15 +389,35 @@ pub fn cmd_open_plugin_gui(
 ) -> Result<String, String> {
     #[cfg(target_os = "macos")]
     {
-        let target: ViewTarget = target.into();
-        let path = state.engine.instrument_path_for(target)?;
+        let view_target: ViewTarget = target.into();
+        let path = state.engine.instrument_path_for(view_target)?;
         let (sr, buf) = state.engine.audio_settings();
-        crate::plugin_window::open_plugin_window(app, path, sr, buf)
+        let window_target = match view_target {
+            ViewTarget::Default => crate::plugin_window::WindowTarget::Default,
+            ViewTarget::Channel(ch) => crate::plugin_window::WindowTarget::Channel(ch),
+        };
+        crate::plugin_window::open_plugin_window(app, path, window_target, sr, buf)
     }
     #[cfg(not(target_os = "macos"))]
     {
         let _ = (state, app, target);
         Err("plugin GUI window currently only implemented on macOS".to_string())
+    }
+}
+
+/// Capture the current state of an open GUI window and push it to the
+/// audio engine WITHOUT closing the window — lets the user A/B patches
+/// in real time. Returns the new patch name if extractable.
+#[tauri::command]
+pub fn cmd_apply_open_plugin_state(app: AppHandle, label: String) -> Result<Option<String>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        crate::plugin_window::apply_open_state_to_engine(app, &label)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, label);
+        Err("plug-in state apply is only implemented on macOS".to_string())
     }
 }
 

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useUiStore } from '../stores/ui';
 import {
+  applyOpenPluginState,
   isGuiSupported,
   openPluginGui,
   saveOpenPluginState,
@@ -20,6 +21,7 @@ export function DefaultInstrumentBar({ instrumentPath, patchName }: DefaultInstr
   const [guiError, setGuiError] = useState<string | null>(null);
   const [guiLabel, setGuiLabel] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [applying, setApplying] = useState(false);
 
   const defaultStateName = (() => {
     if (!name) return 'plugin-state.mlstate';
@@ -83,6 +85,30 @@ export function DefaultInstrumentBar({ instrumentPath, patchName }: DefaultInstr
         {isVst3 && guiSupported && guiLabel !== null && (
           <button
             type="button"
+            disabled={applying}
+            onClick={async () => {
+              setGuiError(null);
+              setSaveStatus(null);
+              setApplying(true);
+              const result = await applyOpenPluginState(guiLabel);
+              setApplying(false);
+              if (result.ok) {
+                setSaveStatus(
+                  result.patchName ? `已应用 → ${result.patchName}` : '已应用音色到播放',
+                );
+              } else {
+                setGuiError(result.error);
+              }
+            }}
+            className="text-[11px] px-2.5 py-1 rounded bg-daw-control hover:bg-daw-border text-[#e0e0e0] transition-colors disabled:opacity-50"
+            title="把 GUI 里当前选好的音色应用到播放（约 1 秒，期间会有短暂静音）"
+          >
+            {applying ? '⏳ 应用中…' : '🎵 应用到播放'}
+          </button>
+        )}
+        {isVst3 && guiSupported && guiLabel !== null && (
+          <button
+            type="button"
             onClick={async () => {
               setGuiError(null);
               setSaveStatus(null);
@@ -94,9 +120,9 @@ export function DefaultInstrumentBar({ instrumentPath, patchName }: DefaultInstr
               }
             }}
             className="text-[11px] px-2.5 py-1 rounded bg-daw-control hover:bg-daw-border text-[#aaa] transition-colors"
-            title="把当前在插件 GUI 里选好的 patch 存成状态文件，之后用 moonlitt midi --state 头无重放"
+            title="导出单个 plug-in 状态到独立文件（一般用 ⌘S 保存整个项目即可）"
           >
-            💾 保存状态
+            💾 导出状态
           </button>
         )}
         {name && (
