@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useProjectFileStore } from '../stores/projectFile';
+import { ProjectMenu } from './ProjectMenu';
 
 interface TopBarProps {
   connected: boolean;
@@ -22,6 +24,8 @@ function formatBarsBeats(ticks: number): string {
 export function TopBar({ connected, playing, position, bpm, onPlay, onStop, onBpmChange }: TopBarProps) {
   const [editingBpm, setEditingBpm] = useState(false);
   const [draft, setDraft] = useState('');
+  const currentPath = useProjectFileStore((s) => s.path);
+  const dirty = useProjectFileStore((s) => s.dirty);
 
   return (
     <div className="sticky top-0 z-10 bg-daw-panel border-b border-daw-border">
@@ -35,6 +39,8 @@ export function TopBar({ connected, playing, position, bpm, onPlay, onStop, onBp
             <span className="text-[10px] text-[#888]">{connected ? '已连接' : '未连接'}</span>
           </div>
         </div>
+
+        <ProjectMenu currentPath={currentPath} dirty={dirty} />
 
         <div className="ml-auto flex items-center gap-2">
           <button

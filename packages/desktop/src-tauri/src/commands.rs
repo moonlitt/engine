@@ -419,3 +419,128 @@ pub fn cmd_save_plugin_state(label: String, path: String) -> Result<usize, Strin
         Err("plug-in state capture is only implemented on macOS".to_string())
     }
 }
+
+// ---------------------------------------------------------------------------
+// Session (project file) commands
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSavedEvent {
+    pub path: String,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectOpenedEvent {
+    pub path: String,
+    pub project: ProjectState,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentListView {
+    pub recent: Vec<String>,
+    pub last_opened: Option<String>,
+}
+
+fn collect_plugin_states() -> std::collections::HashMap<String, Vec<u8>> {
+    #[cfg(target_os = "macos")]
+    {
+        crate::plugin_window::snapshot_all_open_states()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        std::collections::HashMap::new()
+    }
+}
+
+/// Save the engine's current state to a `.mlsession` JSON file.
+/// `path` is the destination file (absolute path from the frontend's
+/// save dialog).
+#[tauri::command]
+pub fn cmd_project_save_as(
+    state: State<AppState>,
+    app: AppHandle,
+    path: String,
+) -> Result<(), String> {
+    let plugin_states = collect_plugin_states();
+    let session = state.engine.capture_session(&plugin_states);
+    session
+        .save_to_file(&path)
+        .map_err(|e| format!("save session: {e}"))?;
+    crate::recent_files::record(&app, std::path::Path::new(&path));
+    let _ = app.emit("project_saved", ProjectSavedEvent { path });
+    Ok(())
+}
+
+/// Load a `.mlsession` file and apply it to the engine.
+#[tauri::command]
+pub fn cmd_project_open(
+    state: State<AppState>,
+    app: AppHandle,
+    path: String,
+) -> Result<ProjectState, String> {
+    use moonlitt_session::persistence::Session;
+
+    let session = Session::load_from_file(&path).map_err(|e| {
+        // If the file vanished, forget it from recent so the UI doesn't
+        // keep showing a dead link.
+        crate::recent_files::forget(&app, std::path::Path::new(&path));
+        format!("open session: {e}")
+    })?;
+    let restored_states = state
+        .engine
+        .restore_session(&session)
+        .map_err(|e| format!("restore: {e}"))?;
+
+    // Refresh the desktop's plug-in-state stash so a subsequent ⌘S
+    // captures the patches we just rehydrated (the user might re-save
+    // without ever opening a GUI window).
+    #[cfg(target_os = "macos")]
+    for (p, b) in &restored_states {
+        crate::plugin_window::stash_state(p.clone(), b.clone());
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = &restored_states;
+    }
+
+    crate::recent_files::record(&app, std::path::Path::new(&path));
+
+    let project = state.engine.snapshot();
+    let _ = app.emit(
+        "project_opened",
+        ProjectOpenedEvent {
+            path,
+            project: project.clone(),
+        },
+    );
+    Ok(project)
+}
+
+/// Read the recent-projects list (most-recent first, capped at 10).
+#[tauri::command]
+pub fn cmd_project_recent_list(app: AppHandle) -> RecentListView {
+    let st = crate::recent_files::read(&app);
+    RecentListView {
+        recent: st
+            .recent
+            .into_iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect(),
+        last_opened: st.last_opened.map(|p| p.to_string_lossy().into_owned()),
+    }
+}
+
+/// Clear the entire recent list.
+#[tauri::command]
+pub fn cmd_project_clear_recent(app: AppHandle) -> Result<(), String> {
+    crate::recent_files::clear(&app)
+}
+
+/// Remove a single entry — used when the UI detects a stale link.
+#[tauri::command]
+pub fn cmd_project_forget_recent(app: AppHandle, path: String) {
+    crate::recent_files::forget(&app, std::path::Path::new(&path));
+}

@@ -8,6 +8,7 @@ mod engine;
 mod midi_analyze;
 #[cfg(target_os = "macos")]
 mod plugin_window;
+mod recent_files;
 
 use std::time::Duration;
 
@@ -52,6 +53,11 @@ pub fn run() {
             commands::cmd_load_midi,
             commands::cmd_open_plugin_gui,
             commands::cmd_save_plugin_state,
+            commands::cmd_project_save_as,
+            commands::cmd_project_open,
+            commands::cmd_project_recent_list,
+            commands::cmd_project_clear_recent,
+            commands::cmd_project_forget_recent,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

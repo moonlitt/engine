@@ -11,6 +11,7 @@
 
 #![cfg(target_os = "macos")]
 
+use std::collections::HashMap;
 use std::ffi::c_void;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -25,9 +26,12 @@ use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
 /// lifetime of the window.
 struct OpenWindow {
     label: String,
+    /// Absolute path to the .vst3 bundle this window is showing — used to
+    /// key the state stash so closing the window doesn't lose the patch
+    /// the user picked.
+    path: String,
     /// Held only to keep the COM-loaded plugin alive while the GUI window
     /// is shown — view internals refer back into it via raw pointers.
-    #[allow(dead_code)]
     plugin: Vst3Plugin,
     view: Vst3PluginView,
 }
@@ -41,8 +45,19 @@ unsafe impl Send for OpenWindow {}
 static OPEN_WINDOWS: OnceLock<Mutex<Vec<OpenWindow>>> = OnceLock::new();
 static LABEL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// Latest known-good state blob captured per plug-in path. Populated when
+/// a GUI window is opened (initial state) AND refreshed every time
+/// session save is triggered. Survives across window close so the user
+/// can pick a patch → close GUI → ⌘S and still get their patch in the
+/// saved session.
+static STATE_STASH: OnceLock<Mutex<HashMap<String, Vec<u8>>>> = OnceLock::new();
+
 fn registry() -> &'static Mutex<Vec<OpenWindow>> {
     OPEN_WINDOWS.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+fn state_stash() -> &'static Mutex<HashMap<String, Vec<u8>>> {
+    STATE_STASH.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 pub fn open_plugin_window(
@@ -114,10 +129,40 @@ pub fn open_plugin_window(
     let label_for_caller = label.clone();
     registry().lock().push(OpenWindow {
         label,
+        path: path.clone(),
         plugin,
         view,
     });
     Ok(label_for_caller)
+}
+
+/// Walk every currently-open GUI window, call `getState()` on its
+/// plug-in, and merge into the stash keyed by .vst3 path. Returns the
+/// full stash (open windows + previously-captured closed-window state)
+/// so callers get a single map keyed by plug-in path.
+///
+/// Used by session save: ⌘S calls this to refresh the stash from any
+/// patches the user has just been editing before serialising.
+pub fn snapshot_all_open_states() -> HashMap<String, Vec<u8>> {
+    {
+        let reg = registry().lock();
+        let mut stash = state_stash().lock();
+        for entry in reg.iter() {
+            if let Ok(bytes) = entry.plugin.get_state() {
+                stash.insert(entry.path.clone(), bytes);
+            }
+        }
+    }
+    state_stash().lock().clone()
+}
+
+/// Manually inject a state blob into the stash. Used when the engine
+/// loads a session — the audio-thread back-end gets the state directly,
+/// but we also remember it here so a subsequent ⌘S doesn't lose it
+/// (e.g. if the user reloads a session and never opens the GUI before
+/// saving back).
+pub fn stash_state(path: String, state: Vec<u8>) {
+    state_stash().lock().insert(path, state);
 }
 
 /// Capture the current plug-in state for the GUI window identified by
@@ -148,6 +193,12 @@ fn cleanup_window(_app: &AppHandle, label: &str) {
     let mut reg = registry().lock();
     if let Some(idx) = reg.iter().position(|o| o.label == label) {
         let entry = reg.remove(idx);
+        // Stash the latest state so closing the window doesn't lose the
+        // patch the user picked. The plug-in is about to drop; any later
+        // session-save would otherwise see no state for this path.
+        if let Ok(bytes) = entry.plugin.get_state() {
+            state_stash().lock().insert(entry.path.clone(), bytes);
+        }
         // Detach the plugin's view from our NSView before dropping —
         // otherwise the plugin's view holds a reference to a soon-dead
         // parent and may crash on its own cleanup pass.

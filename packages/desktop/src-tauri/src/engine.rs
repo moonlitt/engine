@@ -160,6 +160,10 @@ struct Override {
     muted: bool,
     solo: bool,
     inserts: Vec<InsertState>,
+    /// Cached `AudioBackend::recommended_warm_up_blocks` from when this
+    /// override's back-end was loaded. Stored so session capture knows
+    /// the value without re-loading the plug-in.
+    warm_up_blocks: u32,
 }
 
 struct Inner {
@@ -168,6 +172,9 @@ struct Inner {
     runtime: Option<moonlitt_audio_io::Runtime>,
     master_track_id: Option<u32>,
     default_instrument_path: Option<String>,
+    /// Cached warm-up recommendation for the default instrument's
+    /// back-end. See `Override::warm_up_blocks` for rationale.
+    default_warm_up_blocks: u32,
     overrides: Vec<Override>,
     midi: Option<MidiState>,
     bpm: f64,
@@ -204,6 +211,7 @@ impl Engine {
                 runtime: None,
                 master_track_id: None,
                 default_instrument_path: None,
+                default_warm_up_blocks: 0,
                 overrides: Vec::new(),
                 midi: None,
                 bpm: 120.0,
@@ -279,12 +287,37 @@ impl Engine {
     // --- Default instrument ---
 
     pub fn set_default_instrument(&self, path: &str) -> Result<(), String> {
+        self.set_default_instrument_with_state(path, None)
+    }
+
+    /// Same as `set_default_instrument`, but also seeds the new back-end
+    /// with a state blob and runs the back-end's recommended warm-up
+    /// before the audio thread takes ownership. Used by session restore
+    /// so Keyscape-class samplers come up audible without the caller
+    /// needing to know about warm-up.
+    pub fn set_default_instrument_with_state(
+        &self,
+        path: &str,
+        state: Option<&[u8]>,
+    ) -> Result<(), String> {
         self.ensure_runtime()?;
         let (sr, buf) = {
             let s = self.inner.lock();
             (s.sample_rate, s.buffer_size)
         };
-        let backend = moonlitt_engine::create(path, sr, buf).map_err(|e| format!("{e}"))?;
+        let mut backend =
+            moonlitt_engine::create(path, sr, buf).map_err(|e| format!("create: {e}"))?;
+        let warm_up_blocks = backend.recommended_warm_up_blocks() as u32;
+        if let Some(state_bytes) = state {
+            backend
+                .load_state(state_bytes)
+                .map_err(|e| format!("load_state: {e}"))?;
+            if warm_up_blocks > 0 {
+                backend
+                    .warm_up(warm_up_blocks as usize)
+                    .map_err(|e| format!("warm_up: {e}"))?;
+            }
+        }
         let mut s = self.inner.lock();
         let track_id = s
             .master_track_id
@@ -295,6 +328,7 @@ impl Engine {
             .ok_or_else(|| "runtime missing".to_string())?;
         rt.swap_track_backend(track_id, backend);
         s.default_instrument_path = Some(path.to_string());
+        s.default_warm_up_blocks = warm_up_blocks;
         Ok(())
     }
 
@@ -332,6 +366,15 @@ impl Engine {
     // --- Per-channel overrides ---
 
     pub fn set_channel_override(&self, channel: u8, path: &str) -> Result<ChannelOverrideState, String> {
+        self.set_channel_override_with_state(channel, path, None)
+    }
+
+    pub fn set_channel_override_with_state(
+        &self,
+        channel: u8,
+        path: &str,
+        state: Option<&[u8]>,
+    ) -> Result<ChannelOverrideState, String> {
         if channel > 15 {
             return Err(format!("invalid channel {channel}"));
         }
@@ -340,7 +383,18 @@ impl Engine {
             let s = self.inner.lock();
             (s.sample_rate, s.buffer_size)
         };
-        let backend = moonlitt_engine::create(path, sr, buf).map_err(|e| format!("{e}"))?;
+        let mut backend = moonlitt_engine::create(path, sr, buf).map_err(|e| format!("{e}"))?;
+        let warm_up_blocks = backend.recommended_warm_up_blocks() as u32;
+        if let Some(state_bytes) = state {
+            backend
+                .load_state(state_bytes)
+                .map_err(|e| format!("load_state: {e}"))?;
+            if warm_up_blocks > 0 {
+                backend
+                    .warm_up(warm_up_blocks as usize)
+                    .map_err(|e| format!("warm_up: {e}"))?;
+            }
+        }
         let instrument_name = std::path::Path::new(path)
             .file_name()
             .and_then(|n| n.to_str())
@@ -358,6 +412,7 @@ impl Engine {
             let existing = s.overrides.iter_mut().find(|o| o.channel == channel).unwrap();
             existing.instrument_path = path.to_string();
             existing.instrument_name = instrument_name;
+            existing.warm_up_blocks = warm_up_blocks;
             return Ok(state_of(existing));
         }
 
@@ -376,6 +431,7 @@ impl Engine {
             muted: false,
             solo: false,
             inserts: Vec::new(),
+            warm_up_blocks,
         };
         let st = state_of(&ov);
         s.overrides.push(ov);
@@ -595,6 +651,188 @@ impl Engine {
     pub fn audio_settings(&self) -> (u32, u32) {
         let s = self.inner.lock();
         (s.sample_rate, s.buffer_size)
+    }
+
+    // --- Session capture / restore ---
+
+    /// Snapshot the current engine state into a `moonlitt_session::Session`
+    /// JSON-ready struct. `plugin_states` provides the state blobs keyed by
+    /// instrument path (the desktop layer harvests these from the GUI plug-in
+    /// registry — see `plugin_window::snapshot_all_open_states`).
+    pub fn capture_session(
+        &self,
+        plugin_states: &std::collections::HashMap<String, Vec<u8>>,
+    ) -> moonlitt_session::persistence::Session {
+        use base64::engine::general_purpose::STANDARD as BASE64;
+        use base64::Engine as _;
+        use moonlitt_session::persistence::{
+            MasterState, Session, SourceState, TrackState, TransportSnapshot,
+        };
+
+        let s = self.inner.lock();
+
+        let mut master_mask: u16 = 0xFFFF;
+        for o in &s.overrides {
+            master_mask &= !(1u16 << o.channel);
+        }
+
+        let encode_state =
+            |path: &Option<String>| -> Option<String> {
+                path.as_ref()
+                    .and_then(|p| plugin_states.get(p))
+                    .map(|b| BASE64.encode(b))
+            };
+
+        let mut tracks = vec![TrackState {
+            id: 0,
+            channel_mask: master_mask,
+            volume: 1.0,
+            trim_db: 0.0,
+            pan: 0.0,
+            mute: false,
+            solo: false,
+            send_levels: vec![],
+            source: SourceState {
+                path: s.default_instrument_path.clone(),
+                state: encode_state(&s.default_instrument_path),
+                warm_up_blocks: s.default_warm_up_blocks,
+            },
+            inserts: vec![],
+        }];
+
+        for o in &s.overrides {
+            let path = Some(o.instrument_path.clone());
+            tracks.push(TrackState {
+                id: o.native_track_id,
+                channel_mask: 1u16 << o.channel,
+                volume: o.volume as f32,
+                trim_db: 0.0,
+                pan: 0.0,
+                mute: o.muted,
+                solo: o.solo,
+                send_levels: vec![],
+                source: SourceState {
+                    path: path.clone(),
+                    state: encode_state(&path),
+                    warm_up_blocks: o.warm_up_blocks,
+                },
+                inserts: vec![],
+            });
+        }
+
+        Session {
+            version: 2,
+            sample_rate: s.sample_rate,
+            master: MasterState {
+                volume: 1.0,
+                limiter_threshold: 0.95,
+            },
+            tracks,
+            send_buses: vec![],
+            transport: TransportSnapshot {
+                tempo_override_bpm: Some(s.bpm),
+                looping: false,
+            },
+            sequencer_source: s.midi.as_ref().map(|m| m.path.clone()),
+        }
+    }
+
+    /// Apply a `Session` to this engine — wipes overrides, sets default
+    /// instrument, restores tempo and (optionally) reloads the MIDI file.
+    /// Plug-in state blobs and warm-up are applied inline before the audio
+    /// thread takes the back-end, so sample streamers come up audible.
+    ///
+    /// Returns the list of state blobs that were applied so the desktop
+    /// layer can refresh its plug-in-state stash (otherwise a subsequent
+    /// ⌘S would lose the patches we just restored).
+    pub fn restore_session(
+        &self,
+        session: &moonlitt_session::persistence::Session,
+    ) -> Result<std::collections::HashMap<String, Vec<u8>>, String> {
+        use base64::engine::general_purpose::STANDARD as BASE64;
+        use base64::Engine as _;
+
+        self.ensure_runtime()?;
+
+        // Clear existing overrides on the audio thread.
+        {
+            let mut s = self.inner.lock();
+            let override_ids: Vec<u32> =
+                s.overrides.iter().map(|o| o.native_track_id).collect();
+            if let Some(rt) = s.runtime.as_mut() {
+                for id in &override_ids {
+                    rt.remove_track(*id);
+                }
+            }
+            s.overrides.clear();
+        }
+
+        let mut restored_states = std::collections::HashMap::new();
+
+        // The session always has a master track at index 0 — apply it as
+        // the default instrument. Skip silently if the slot is empty.
+        if let Some(master) = session.tracks.first() {
+            if let Some(path) = master.source.path.as_deref() {
+                let state_bytes = master
+                    .source
+                    .state
+                    .as_deref()
+                    .map(|b64| BASE64.decode(b64))
+                    .transpose()
+                    .map_err(|e| format!("decode default state: {e}"))?;
+                self.set_default_instrument_with_state(path, state_bytes.as_deref())?;
+                if let Some(b) = state_bytes {
+                    restored_states.insert(path.to_string(), b);
+                }
+            }
+        }
+
+        // Restore overrides — every track after index 0 maps to one MIDI
+        // channel via its channel_mask. Sessions captured by this engine
+        // always set a single bit; anything else gets ignored.
+        for track in session.tracks.iter().skip(1) {
+            let Some(path) = track.source.path.as_deref() else {
+                continue;
+            };
+            let mask = track.channel_mask;
+            if mask == 0 || mask.count_ones() != 1 {
+                continue;
+            }
+            let channel = mask.trailing_zeros() as u8;
+            let state_bytes = track
+                .source
+                .state
+                .as_deref()
+                .map(|b64| BASE64.decode(b64))
+                .transpose()
+                .map_err(|e| format!("decode override state ch{channel}: {e}"))?;
+            self.set_channel_override_with_state(channel, path, state_bytes.as_deref())?;
+            if let Some(b) = state_bytes {
+                restored_states.insert(path.to_string(), b);
+            }
+        }
+
+        // Transport tempo.
+        if let Some(bpm) = session.transport.tempo_override_bpm {
+            let mut s = self.inner.lock();
+            s.bpm = bpm;
+            if let Some(rt) = s.runtime.as_ref() {
+                rt.set_tempo(bpm);
+            }
+        }
+
+        // Sequencer source — best-effort: if the MIDI file is missing
+        // we still consider the session "loaded" but emit no MIDI state.
+        if let Some(midi_path) = session.sequencer_source.as_deref() {
+            let name = std::path::Path::new(midi_path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(midi_path)
+                .to_string();
+            let _ = self.load_midi(midi_path, &name);
+        }
+
+        Ok(restored_states)
     }
 
     // --- Internals ---

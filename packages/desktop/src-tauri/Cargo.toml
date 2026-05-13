@@ -23,7 +23,9 @@ moonlitt-core = { path = "../../../crates/moonlitt-core" }
 moonlitt-engine = { path = "../../../crates/moonlitt-engine", features = ["sf2", "vst3", "clap"] }
 moonlitt-audio-io = { path = "../../../crates/moonlitt-audio-io" }
 moonlitt-effects = { path = "../../../crates/moonlitt-effects", features = ["all"] }
+moonlitt-session = { path = "../../../crates/moonlitt-session" }
 moonlitt-vst3 = { path = "../../../crates/moonlitt-vst3" }
+base64 = "0.22"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.5"
