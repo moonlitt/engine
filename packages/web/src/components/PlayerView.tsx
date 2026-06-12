@@ -7,6 +7,7 @@ import { DefaultInstrumentBar } from './DefaultInstrumentBar';
 import { ChannelRow } from './ChannelRow';
 import { SendBusRack } from './SendBusRack';
 import { PatchBrowser } from './PatchBrowser';
+import { Toasts } from './Toasts';
 
 export function PlayerView() {
   const connected = useSessionStore((s) => s.connected);
@@ -67,6 +68,7 @@ export function PlayerView() {
       </main>
 
       <PatchBrowser />
+      <Toasts />
     </div>
   );
 }

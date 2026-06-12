@@ -5,6 +5,10 @@ import { useSessionStore } from '../stores/session';
 
 interface InstrumentSelectorProps {
   open: boolean;
+  /** Which slot is being filled — the DEFAULT slot is the project's
+   *  multi-channel GM bed, so single-instrument plug-ins get a warning
+   *  there (all channels would play the same sound). */
+  targetKind: 'default' | 'override' | null;
   onLoad: (path: string) => void;
   onClose: () => void;
 }
@@ -16,9 +20,16 @@ const FORMAT_META: Record<string, { label: string; badge: string }> = {
   Clap: { label: 'CLAP 插件', badge: 'bg-amber-500/20 text-amber-300' },
 };
 
+/** Default-slot guidance overrides: the bed must cover 16 channels. */
+const FORMAT_META_DEFAULT_SLOT: Record<string, string> = {
+  Sf2: 'SF2 SoundFont — 推荐做默认音色：按 MIDI Program Change 自动给每个通道配音色',
+  Vst3: 'VST3 单乐器插件 — 注意：设为默认后所有未单独指定的通道都发同一种声音（钢琴曲适用；多乐器 MIDI 建议用 SF2 做底座，再按通道单独指定）',
+  Clap: 'CLAP 插件 — 同上，单乐器',
+};
+
 const FORMAT_ORDER: readonly string[] = ['Sf2', 'Vst3', 'Clap'];
 
-export function InstrumentSelector({ open, onLoad, onClose }: InstrumentSelectorProps) {
+export function InstrumentSelector({ open, targetKind, onLoad, onClose }: InstrumentSelectorProps) {
   const send = useSessionStore((s) => s.send);
   const plugins = usePluginsStore((s) => s.list);
   const scanning = usePluginsStore((s) => s.scanning);
@@ -159,7 +170,11 @@ export function InstrumentSelector({ open, onLoad, onClose }: InstrumentSelector
             </div>
           )}
           {grouped.map((group) => {
-            const meta = FORMAT_META[group.format] ?? { label: group.format, badge: 'bg-[#444] text-[#aaa]' };
+            const base = FORMAT_META[group.format] ?? { label: group.format, badge: 'bg-[#444] text-[#aaa]' };
+            const meta =
+              targetKind === 'default' && FORMAT_META_DEFAULT_SLOT[group.format]
+                ? { ...base, label: FORMAT_META_DEFAULT_SLOT[group.format] }
+                : base;
             return (
               <div key={group.format} className="mb-3">
                 <div className="text-[9px] uppercase tracking-wider text-[#777] px-2 mb-1">

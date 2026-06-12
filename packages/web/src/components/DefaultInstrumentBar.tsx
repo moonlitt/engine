@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useProjectStore } from '../stores/project';
 import { useUiStore } from '../stores/ui';
 import {
   isGuiSupported,
@@ -16,6 +17,7 @@ interface DefaultInstrumentBarProps {
 export function DefaultInstrumentBar({ instrumentPath, patchName }: DefaultInstrumentBarProps) {
   const open = useUiStore((s) => s.openInstrumentPicker);
   const openPatchBrowser = useUiStore((s) => s.openPatchBrowser);
+  const loading = useProjectStore((s) => s.instrumentLoading?.kind === 'default');
   const libraryAvailable = hasPatchLibrary(instrumentPath);
   const name = instrumentPath ? (instrumentPath.split('/').pop() ?? instrumentPath) : null;
   const isVst3 = instrumentPath?.toLowerCase().endsWith('.vst3') ?? false;
@@ -37,13 +39,19 @@ export function DefaultInstrumentBar({ instrumentPath, patchName }: DefaultInstr
         <button
           type="button"
           onClick={() => open({ kind: 'default' })}
-          className={`px-4 py-2 rounded text-sm font-medium transition-colors text-left ${
+          disabled={loading}
+          className={`px-4 py-2 rounded text-sm font-medium transition-colors text-left disabled:opacity-60 ${
             name
               ? 'bg-daw-control hover:bg-daw-border text-[#e0e0e0]'
               : 'bg-daw-accent hover:bg-daw-accent/80 text-white'
           }`}
         >
-          {name ? (
+          {loading ? (
+            <span className="flex items-center gap-2.5">
+              <span className="pulse-dot w-2 h-2 rounded-full bg-daw-accent shrink-0" />
+              正在加载乐器…
+            </span>
+          ) : name ? (
             <span className="flex items-center gap-2.5">
               <KeysIcon className="shrink-0 text-[#9a948a]" />
               <span className="flex flex-col leading-tight">

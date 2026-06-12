@@ -45,9 +45,19 @@ interface ProjectStore {
   patchPending: { target: 'default' | number; path: string } | null;
   setPatchPending(p: { target: 'default' | number; path: string } | null): void;
   clearPatchPendingFor(path: string): void;
+
+  /** An instrument is currently loading into this slot (main-thread
+   *  instantiation + warm-up can take seconds) — UI shows a busy chip
+   *  and guards against double-clicks. */
+  instrumentLoading: { kind: 'default' } | { kind: 'override'; channel: number } | null;
+  setInstrumentLoading(t: { kind: 'default' } | { kind: 'override'; channel: number } | null): void;
 }
 
 export const useProjectStore = create<ProjectStore>((set) => ({
+  instrumentLoading: null,
+  setInstrumentLoading(t) {
+    set({ instrumentLoading: t });
+  },
   patchPending: null,
   setPatchPending(p) {
     set({ patchPending: p });

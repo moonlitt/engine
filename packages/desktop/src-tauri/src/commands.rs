@@ -252,28 +252,127 @@ pub fn cmd_default_set_instrument(
     app: AppHandle,
     path: String,
 ) -> Result<bool, String> {
+    let needs_patch = apply_default_instrument(&state, &app, &path)?;
+    // Remember as the cross-project preference — but only multi-timbral
+    // sources (SF2). The global default is the project's GM *bed*; a
+    // single-instrument plug-in (Keyscape) as the bed would turn every
+    // channel of the next multi-track MIDI into that one instrument,
+    // so those picks stay project-local.
+    if path.to_ascii_lowercase().ends_with(".sf2") {
+        crate::settings::remember_preferred_default(&app, &path);
+    }
+    Ok(needs_patch)
+}
+
+/// Shared default-instrument flow: seed from the per-plugin patch
+/// cache, mirror into the window stash (event payloads parse the patch
+/// name from it), set on the engine, broadcast.
+fn apply_default_instrument(
+    state: &State<AppState>,
+    app: &AppHandle,
+    path: &str,
+) -> Result<bool, String> {
     // Sample streamers are silent without a patch — seed the new
     // instance with the last patch this plug-in was seen using, so
     // picking Keyscape sounds immediately instead of confusing silence.
-    let cached = crate::plugin_state_cache::load(&app, &path);
-    // Mirror the seeded state into the window stash BEFORE the engine
-    // call: event payloads and snapshots parse the patch name out of
-    // the stash, so it must be there when they're built.
+    let cached = crate::plugin_state_cache::load(app, path);
     #[cfg(target_os = "macos")]
     if let Some(bytes) = &cached {
-        crate::plugin_window::stash_state(path.clone(), bytes.clone());
+        crate::plugin_window::stash_state(path.to_string(), bytes.clone());
     }
     let needs_patch = state
         .engine
-        .set_default_instrument_with_state(&path, cached.as_deref())?;
+        .set_default_instrument_with_state(path, cached.as_deref())?;
     let _ = app.emit(
         "default:instrument_changed",
         DefaultInstrumentChanged {
-            instrument_path: Some(path),
+            instrument_path: Some(path.to_string()),
             needs_patch,
         },
     );
     Ok(needs_patch)
+}
+
+/// How an auto-picked default instrument was chosen — drives the UI's
+/// explanation toast.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutopickResult {
+    pub path: Option<String>,
+    /// "preferred" | "fallback" | "none"
+    pub source: String,
+    /// Why the preferred instrument was skipped, when it was.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// Give a fresh project a default instrument without user ceremony:
+/// the remembered preference when it's still healthy, else the best
+/// GM SoundFont on the machine, else nothing (UI explains). Called by
+/// the frontend whenever a snapshot arrives with no default set.
+#[tauri::command]
+pub fn cmd_default_autopick(state: State<AppState>, app: AppHandle) -> AutopickResult {
+    if state.engine.has_default_instrument() {
+        return AutopickResult {
+            path: None,
+            source: "none".into(),
+            reason: None,
+        };
+    }
+
+    let mut skipped_reason = None;
+    let preferred = crate::settings::load(&app).preferred_default_instrument;
+    if let Some(path) = preferred {
+        if !std::path::Path::new(&path).exists() {
+            skipped_reason = Some(format!("首选音色已不存在：{path}"));
+        } else {
+            match apply_default_instrument(&state, &app, &path) {
+                Ok(_) => {
+                    return AutopickResult {
+                        path: Some(path),
+                        source: "preferred".into(),
+                        reason: None,
+                    }
+                }
+                Err(e) => skipped_reason = Some(e),
+            }
+        }
+    }
+
+    // Fallback: best GM SoundFont — multi-timbral, needs no patch,
+    // covers all 16 channels via program changes.
+    let plugins = state.engine.scan_plugins(&app, false);
+    let mut sf2s: Vec<_> = plugins.iter().filter(|p| p.format == "Sf2").collect();
+    sf2s.sort_by_key(|p| {
+        let n = p.name.to_lowercase();
+        if n.contains("generaluser") {
+            0
+        } else if n.contains("gm") || n.contains("gs") {
+            1
+        } else {
+            2
+        }
+    });
+    if let Some(sf2) = sf2s.first() {
+        if apply_default_instrument(&state, &app, &sf2.path).is_ok() {
+            return AutopickResult {
+                path: Some(sf2.path.clone()),
+                // "fallback" only when a remembered preference FAILED —
+                // first-run auto-selection is just "auto".
+                source: if skipped_reason.is_some() {
+                    "fallback".into()
+                } else {
+                    "auto".into()
+                },
+                reason: skipped_reason,
+            };
+        }
+    }
+    AutopickResult {
+        path: None,
+        source: "none".into(),
+        reason: skipped_reason,
+    }
 }
 
 // --- Per-channel overrides -----------------------------------------------

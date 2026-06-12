@@ -70,6 +70,11 @@ export function ChannelRow({ info, override, defaultInstrumentPath }: ChannelRow
   const defaultPatchName = useProjectStore((s) => s.defaultPatchName);
 
   const inherited = override === null;
+  const loadingThis = useProjectStore(
+    (s) =>
+      s.instrumentLoading?.kind === 'override' &&
+      s.instrumentLoading.channel === info.channel,
+  );
   const displayName = channelDisplayName(info.displayNumber, info.trackName, info.program);
 
   // What instrument actually plays this channel right now?
@@ -129,11 +134,12 @@ export function ChannelRow({ info, override, defaultInstrumentPath }: ChannelRow
         {inherited ? (
           <button
             type="button"
+            disabled={loadingThis}
             onClick={() => openPicker({ kind: 'override', channel: info.channel })}
-            className="text-[11px] px-2.5 py-1 rounded bg-daw-control hover:bg-daw-border text-[#aaa] transition-colors"
+            className="text-[11px] px-2.5 py-1 rounded bg-daw-control hover:bg-daw-border text-[#aaa] transition-colors disabled:opacity-60"
             title="给这个通道单独指定一个音色（覆盖默认）"
           >
-            单独指定音色…
+            {loadingThis ? '正在加载乐器…' : '单独指定音色…'}
           </button>
         ) : (
           <>

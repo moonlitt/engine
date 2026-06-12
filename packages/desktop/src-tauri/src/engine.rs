@@ -1012,6 +1012,11 @@ impl Engine {
     /// Resolve `target` → an instrument path so the plugin-window module can
     /// open a dedicated GUI plugin instance without holding the engine mutex
     /// while it talks to AppKit.
+    /// Does the project currently have a default instrument assigned?
+    pub fn has_default_instrument(&self) -> bool {
+        self.inner.lock().default_instrument_path.is_some()
+    }
+
     pub fn instrument_path_for(&self, target: ViewTarget) -> Result<String, String> {
         let s = self.inner.lock();
         match target {

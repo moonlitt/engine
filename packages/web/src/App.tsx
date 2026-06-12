@@ -65,6 +65,7 @@ export function App() {
       <PlayerView />
       <InstrumentSelector
         open={target !== null}
+        targetKind={target?.kind ?? null}
         onLoad={handleLoad}
         onClose={close}
       />

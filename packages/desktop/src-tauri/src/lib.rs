@@ -12,6 +12,7 @@ mod plugin_state_cache;
 mod plugin_window;
 mod recent_files;
 mod sentinel_scan;
+mod settings;
 mod state_metadata;
 
 use std::time::Duration;
@@ -99,6 +100,7 @@ pub fn run() {
             commands::cmd_transport_set_metronome,
             commands::cmd_master_set_volume,
             commands::cmd_default_set_instrument,
+            commands::cmd_default_autopick,
             commands::cmd_channel_set_override,
             commands::cmd_channel_remove_override,
             commands::cmd_channel_set_volume,

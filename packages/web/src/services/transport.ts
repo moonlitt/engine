@@ -322,12 +322,32 @@ function createTauriTransport(): Transport {
       case 'plugins.scan':
         await invoke('cmd_plugins_scan', { force: cmd.force ?? false });
         return;
-      case 'default.set_instrument':
-        await invoke('cmd_default_set_instrument', { path: cmd.path });
+      case 'default.set_instrument': {
+        const { useProjectStore } = await import('../stores/project');
+        const { toastError } = await import('../stores/toasts');
+        useProjectStore.getState().setInstrumentLoading({ kind: 'default' });
+        try {
+          await invoke('cmd_default_set_instrument', { path: cmd.path });
+        } catch (err) {
+          toastError(`默认音色设置失败：${String(err)}`);
+        } finally {
+          useProjectStore.getState().setInstrumentLoading(null);
+        }
         return;
-      case 'channel.set_override':
-        await invoke('cmd_channel_set_override', { channel: cmd.channel, path: cmd.path });
+      }
+      case 'channel.set_override': {
+        const { useProjectStore } = await import('../stores/project');
+        const { toastError } = await import('../stores/toasts');
+        useProjectStore.getState().setInstrumentLoading({ kind: 'override', channel: cmd.channel });
+        try {
+          await invoke('cmd_channel_set_override', { channel: cmd.channel, path: cmd.path });
+        } catch (err) {
+          toastError(`通道 ${cmd.channel + 1} 音色设置失败：${String(err)}`);
+        } finally {
+          useProjectStore.getState().setInstrumentLoading(null);
+        }
         return;
+      }
       case 'channel.remove_override':
         await invoke('cmd_channel_remove_override', { channel: cmd.channel });
         return;
@@ -535,11 +555,43 @@ function createTauriTransport(): Transport {
         onPlugins, onMeter, onPluginStateCaptured,
       );
 
+      /** Zero-ceremony default instrument: when the project has none,
+       *  ask the backend to apply the remembered preference, falling
+       *  back to the best GM SoundFont. Explains itself via toast. */
+      async function autopickDefaultInstrument() {
+        const { toastInfo, toastError } = await import('../stores/toasts');
+        try {
+          const r = await invoke<{
+            path: string | null;
+            source: string;
+            reason?: string;
+          }>('cmd_default_autopick');
+          if (r.reason) {
+            toastError(`首选默认音色不可用：${r.reason}`);
+          }
+          if (r.path) {
+            const name = r.path.split('/').pop() ?? r.path;
+            toastInfo(
+              r.source === 'fallback'
+                ? `已自动回退默认音色：${name}`
+                : r.source === 'preferred'
+                  ? `默认音色已就绪：${name}`
+                  : `默认音色已就绪：${name}（自动选择）`,
+            );
+          }
+        } catch (err) {
+          console.error('[tauri] autopick:', err);
+        }
+      }
+
       // Pull the initial snapshot.
       try {
         const snapshot = await invoke<import('@moonlitt/protocol').ProjectState>('cmd_snapshot');
         dispatchEvent({ type: 'state.init', project: snapshot });
         setConnected(true);
+        if (!snapshot.defaultInstrumentPath) {
+          void autopickDefaultInstrument();
+        }
       } catch (err) {
         console.error('[tauri] cmd_snapshot:', err);
         setConnected(false);
