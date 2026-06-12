@@ -621,3 +621,65 @@ fn test_pianoteq_session_save_captures_plugin_state() {
     moonlitt_runtime_destroy(rt);
     moonlitt_engine_destroy(e);
 }
+
+// ---------------------------------------------------------------------------
+// Keyscape headless replay — THE game-mod workflow, end to end through
+// the C ABI: load plugin → restore captured patch → warm up → audible.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_keyscape_headless_replay_through_c_api() {
+    let plugin = "/Library/Audio/Plug-Ins/VST3/Keyscape.vst3";
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../moonlitt-vst3/tests/fixtures/keyscape-default.mlstate");
+    if !std::path::Path::new(plugin).exists() {
+        eprintln!("Keyscape not installed — skipping");
+        return;
+    }
+    if !fixture.exists() {
+        eprintln!("Keyscape state fixture missing — skipping");
+        return;
+    }
+
+    let e = moonlitt_engine_create(44100, 256);
+    let cplugin = CString::new(plugin).unwrap();
+    assert_eq!(moonlitt_engine_load(e, cplugin.as_ptr()), MOONLITT_OK);
+    assert_eq!(moonlitt_engine_supports_state(e), 1);
+
+    // Restore the captured patch.
+    let blob = std::fs::read(&fixture).unwrap();
+    assert_eq!(
+        moonlitt_engine_load_state(e, blob.as_ptr(), blob.len()),
+        MOONLITT_OK
+    );
+
+    // Sample streamer must advertise warm-up, and warming must succeed.
+    let warm = moonlitt_engine_recommended_warmup_blocks(e);
+    assert!(warm > 0, "Spectrasonics streamer must advertise warm-up");
+    assert_eq!(moonlitt_engine_warm_up(e, warm), MOONLITT_OK);
+
+    // Play a chord and verify audible output through the C render path.
+    moonlitt_engine_note_on(e, 0, 60, 100);
+    moonlitt_engine_note_on(e, 0, 64, 100);
+    moonlitt_engine_note_on(e, 0, 67, 100);
+
+    let mut left = vec![0.0f32; 256];
+    let mut right = vec![0.0f32; 256];
+    let mut peak = 0.0f32;
+    for _ in 0..128 {
+        assert_eq!(
+            moonlitt_engine_render(e, left.as_mut_ptr(), right.as_mut_ptr(), 256),
+            MOONLITT_OK
+        );
+        for s in left.iter().chain(right.iter()) {
+            peak = peak.max(s.abs());
+        }
+    }
+    assert!(
+        peak > 1e-3,
+        "headless Keyscape replay must be audible (peak={peak})"
+    );
+    println!("✅ Keyscape headless replay via C ABI: peak={peak:.4}");
+
+    moonlitt_engine_destroy(e);
+}
