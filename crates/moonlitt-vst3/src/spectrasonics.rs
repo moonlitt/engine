@@ -209,13 +209,22 @@ pub struct LibraryPatch {
     pub source: PatchSource,
 }
 
-/// Patch-file extensions across the Spectrasonics family.
-const PATCH_EXTENSIONS: &[&str] = &["prt_key", "prt_omn", "prt_trl"];
+/// Patch extension a given Spectrasonics product loads. Products only
+/// read their own format — e.g. the `Keyscape Creative` library that
+/// ships inside `STEAM/Keyscape` is 1271 `.prt_omn` files usable only
+/// from Omnisphere; Keyscape's own browser hides them.
+pub fn product_patch_extension(product_name: &str) -> Option<&'static str> {
+    match product_name.to_ascii_lowercase().as_str() {
+        "keyscape" => Some("prt_key"),
+        "omnisphere" => Some("prt_omn"),
+        "trilian" => Some("prt_trl"),
+        _ => None,
+    }
+}
 
-fn is_patch_file(name: &str) -> bool {
-    PATCH_EXTENSIONS
-        .iter()
-        .any(|ext| name.to_ascii_lowercase().ends_with(&format!(".{ext}")))
+fn has_extension(name: &str, ext: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.ends_with(&format!(".{ext}"))
 }
 
 fn split_patch_path(path: &str) -> (String, String) {
@@ -227,10 +236,11 @@ fn split_patch_path(path: &str) -> (String, String) {
     (dir.to_string(), name.to_string())
 }
 
-/// Enumerate every browsable patch under a STEAM product directory
-/// (e.g. `…/STEAM/Keyscape`): factory `.db` containers plus loose User
-/// patch files. Returns patches sorted by category then name.
-pub fn scan_patch_library(product_dir: &std::path::Path) -> Result<Vec<LibraryPatch>> {
+/// Enumerate every patch with extension `ext` (no leading dot — see
+/// [`product_patch_extension`]) under a STEAM product directory:
+/// factory `.db` containers plus loose User patch files. Returns
+/// patches sorted by category then name.
+pub fn scan_patch_library(product_dir: &std::path::Path, ext: &str) -> Result<Vec<LibraryPatch>> {
     let patches_dir = product_dir.join("Settings Library").join("Patches");
     let mut out = Vec::new();
 
@@ -250,7 +260,7 @@ pub fn scan_patch_library(product_dir: &std::path::Path) -> Result<Vec<LibraryPa
                 .map_err(|e| Error::Other(format!("read {}: {e}", path.display())))?;
             let index = parse_db_index(&bytes)?;
             for db_entry in &index.entries {
-                if !is_patch_file(&db_entry.path) {
+                if !has_extension(&db_entry.path, ext) {
                     continue;
                 }
                 let (category, name) = split_patch_path(&db_entry.path);
@@ -282,7 +292,7 @@ pub fn scan_patch_library(product_dir: &std::path::Path) -> Result<Vec<LibraryPa
             let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else {
                 continue;
             };
-            if !is_patch_file(file_name) {
+            if !has_extension(file_name, ext) {
                 continue;
             }
             let rel = path
@@ -321,10 +331,9 @@ pub fn load_patch_bytes(patch: &LibraryPatch) -> Result<Vec<u8>> {
     }
 }
 
-/// Locate the STEAM product directory for a plug-in, by display name
-/// (`"Keyscape"` → `…/STEAM/Keyscape`). Checks the standard install
-/// locations; returns `None` when the product isn't installed.
-pub fn steam_product_dir(plugin_name: &str) -> Option<std::path::PathBuf> {
+/// Existing STEAM root directories on this machine, across the
+/// standard install locations.
+pub fn steam_roots() -> Vec<std::path::PathBuf> {
     let candidates = [
         dirs_home().map(|h| h.join("Library/Application Support/Spectrasonics/STEAM")),
         Some(std::path::PathBuf::from(
@@ -334,13 +343,41 @@ pub fn steam_product_dir(plugin_name: &str) -> Option<std::path::PathBuf> {
             "/Library/Application Support/Spectrasonics/STEAM",
         )),
     ];
-    for root in candidates.into_iter().flatten() {
-        let dir = root.join(plugin_name);
-        if dir.is_dir() {
-            return Some(dir);
+    candidates
+        .into_iter()
+        .flatten()
+        .filter(|p| p.is_dir())
+        .collect()
+}
+
+/// Every product directory under every STEAM root (`…/STEAM/Keyscape`,
+/// `…/STEAM/Omnisphere`, …). Cross-product libraries make scanning all
+/// of them necessary: `Keyscape Creative` (1271 Omnisphere patches)
+/// ships inside the *Keyscape* product directory.
+pub fn steam_product_dirs() -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    for root in steam_roots() {
+        let Ok(read) = std::fs::read_dir(&root) else {
+            continue;
+        };
+        for entry in read.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                out.push(path);
+            }
         }
     }
-    None
+    out
+}
+
+/// Locate the STEAM product directory for a plug-in, by display name
+/// (`"Keyscape"` → `…/STEAM/Keyscape`). Returns `None` when the
+/// product isn't installed.
+pub fn steam_product_dir(plugin_name: &str) -> Option<std::path::PathBuf> {
+    steam_roots()
+        .into_iter()
+        .map(|root| root.join(plugin_name))
+        .find(|dir| dir.is_dir())
 }
 
 fn dirs_home() -> Option<std::path::PathBuf> {
@@ -591,6 +628,49 @@ mod tests {
 
     // --- scan_patch_library -------------------------------------------------
 
+    /// A product's browser must only list its own patch format. The
+    /// real-world case: `STEAM/Keyscape/...Factory/Keyscape Creative.db`
+    /// holds 1271 `.prt_omn` (Omnisphere-only) patches — the Keyscape
+    /// plug-in can't load them and its own browser hides them.
+    #[test]
+    fn scan_filters_by_product_extension() {
+        let root = std::env::temp_dir().join(format!(
+            "moonlitt-spectra-ext-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let patches = root.join("Settings Library/Patches");
+        std::fs::create_dir_all(patches.join("Factory")).unwrap();
+        std::fs::create_dir_all(patches.join("User")).unwrap();
+        let mixed_db = {
+            let index = "<FileSystem>\n\
+                <FILE name=\"A Piano.prt_key\" offset=\"0\" size=\"1\"/>\n\
+                <FILE name=\"A Guitar.prt_omn\" offset=\"1\" size=\"1\"/>\n\
+                </FileSystem>\n";
+            let mut db = index.as_bytes().to_vec();
+            db.extend_from_slice(b"kg");
+            db
+        };
+        std::fs::write(patches.join("Factory/Mixed.db"), mixed_db).unwrap();
+        std::fs::write(patches.join("User/Mine.prt_omn"), b"x").unwrap();
+
+        let keyscape_view = scan_patch_library(&root, "prt_key").expect("scan key");
+        let omni_view = scan_patch_library(&root, "prt_omn").expect("scan omn");
+        std::fs::remove_dir_all(&root).ok();
+
+        let names = |v: &[LibraryPatch]| v.iter().map(|p| p.name.clone()).collect::<Vec<_>>();
+        assert_eq!(names(&keyscape_view), vec!["A Piano"]);
+        assert_eq!(names(&omni_view), vec!["A Guitar", "Mine"]);
+    }
+
+    #[test]
+    fn product_extensions_map_the_family() {
+        assert_eq!(product_patch_extension("Keyscape"), Some("prt_key"));
+        assert_eq!(product_patch_extension("omnisphere"), Some("prt_omn"));
+        assert_eq!(product_patch_extension("Trilian"), Some("prt_trl"));
+        assert_eq!(product_patch_extension("Surge"), None);
+    }
+
     #[test]
     fn scan_finds_factory_db_patches_and_loose_user_patches() {
         let root = std::env::temp_dir().join(format!(
@@ -604,7 +684,7 @@ mod tests {
         std::fs::write(patches.join("Factory/Test Library.db"), synthetic_db()).unwrap();
         std::fs::write(patches.join("User/My Sounds/Custom Clav.prt_key"), b"x").unwrap();
 
-        let found = scan_patch_library(&root).expect("scan");
+        let found = scan_patch_library(&root, "prt_key").expect("scan");
         std::fs::remove_dir_all(&root).ok();
 
         let summary: Vec<(String, String, String)> = found
@@ -644,7 +724,7 @@ mod tests {
         std::fs::write(patches.join("Factory/Lib.db"), synthetic_db()).unwrap();
         std::fs::write(patches.join("User/Mine.prt_key"), b"loose bytes").unwrap();
 
-        let found = scan_patch_library(&root).expect("scan");
+        let found = scan_patch_library(&root, "prt_key").expect("scan");
         let clav = found.iter().find(|p| p.name == "Clav A").expect("db patch");
         let mine = found.iter().find(|p| p.name == "Mine").expect("user patch");
         let clav_bytes = load_patch_bytes(clav).expect("db bytes");

@@ -28,11 +28,17 @@ fn keyscape_library_patch_loads_and_sounds() {
         return;
     };
 
-    let patches = spectrasonics::scan_patch_library(&product_dir).expect("scan library");
+    let patches = spectrasonics::scan_patch_library(&product_dir, "prt_key").expect("scan library");
     assert!(
         patches.len() > 100,
         "expected a real factory library, found {} patches",
         patches.len()
+    );
+    // The Keyscape view must NOT include the Omnisphere-only "Keyscape
+    // Creative" library that ships in the same product directory.
+    assert!(
+        patches.iter().all(|p| p.library != "Keyscape Creative"),
+        "Keyscape browser leaked Omnisphere-only Creative patches"
     );
 
     // A patch whose name is easy to assert on and sonically unmistakable.

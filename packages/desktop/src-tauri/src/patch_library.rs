@@ -40,10 +40,29 @@ fn product_name(plugin_path: &str) -> Option<String> {
 fn scan_for(plugin_path: &str) -> Result<Arc<Vec<LibraryPatch>>, String> {
     let product = product_name(plugin_path)
         .ok_or_else(|| format!("无法从 {plugin_path} 解析插件名"))?;
-    let dir = spectrasonics::steam_product_dir(&product)
-        .ok_or_else(|| format!("未找到 {product} 的 STEAM 音色库（仅 Spectrasonics 系插件支持）"))?;
-    let patches = spectrasonics::scan_patch_library(&dir)
-        .map_err(|e| format!("扫描 {product} 音色库失败: {e}"))?;
+    // Only list patches this product can actually load: Keyscape reads
+    // .prt_key, Omnisphere .prt_omn, Trilian .prt_trl. (This is why
+    // Keyscape's browser shows 455 patches, not the 1271 Omnisphere-only
+    // "Keyscape Creative" sounds installed right next to them.)
+    let ext = spectrasonics::product_patch_extension(&product)
+        .ok_or_else(|| format!("{product} 不是 Spectrasonics 系插件，没有 STEAM 音色库"))?;
+
+    // Scan every STEAM product directory — cross-product libraries
+    // (e.g. Keyscape Creative for Omnisphere, inside STEAM/Keyscape)
+    // only surface this way.
+    let mut patches: Vec<LibraryPatch> = Vec::new();
+    for dir in spectrasonics::steam_product_dirs() {
+        let found = spectrasonics::scan_patch_library(&dir, ext)
+            .map_err(|e| format!("扫描 {} 失败: {e}", dir.display()))?;
+        patches.extend(found);
+    }
+    if patches.is_empty() {
+        return Err(format!("未找到 {product} 的 STEAM 音色库"));
+    }
+    patches.sort_by(|a, b| {
+        (&a.library, &a.category, &a.name).cmp(&(&b.library, &b.category, &b.name))
+    });
+
     let arc = Arc::new(patches);
     scans()
         .lock()
