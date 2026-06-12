@@ -22,8 +22,8 @@ const FORMAT_META: Record<string, { label: string; badge: string }> = {
 
 /** Default-slot guidance overrides: the bed must cover 16 channels. */
 const FORMAT_META_DEFAULT_SLOT: Record<string, string> = {
-  Sf2: 'SF2 SoundFont — 推荐做默认音色：按 MIDI Program Change 自动给每个通道配音色',
-  Vst3: 'VST3 单乐器插件 — 注意：设为默认后所有未单独指定的通道都发同一种声音（钢琴曲适用；多乐器 MIDI 建议用 SF2 做底座，再按通道单独指定）',
+  Sf2: 'SF2 SoundFont — GM 底座：按 MIDI Program Change 自动给每个通道配音色',
+  Vst3: 'VST3 单乐器插件 — 仅在没有任何 SF2 时可选：所有通道会发同一种声音',
   Clap: 'CLAP 插件 — 同上，单乐器',
 };
 
@@ -79,9 +79,19 @@ export function InstrumentSelector({ open, targetKind, onLoad, onClose }: Instru
   // Filter + group. Effect-only plug-ins (FX-Omnisphere,
   // SurgeEffectsBank) can't act as a sound source — hide them here;
   // they stay available as channel/bus inserts.
+  //
+  // The DEFAULT slot is the project's GM bed and must cover all 16
+  // channels, so it only lists multi-timbral sources (SF2) — a
+  // single-instrument plug-in there would turn every channel into one
+  // sound. Keyscape-class plug-ins belong on channel overrides. Escape
+  // hatch: machines with no SF2 at all still see everything (any sound
+  // beats silence).
   const grouped = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const instruments = plugins.filter((p) => p.isInstrument !== false);
+    let instruments = plugins.filter((p) => p.isInstrument !== false);
+    if (targetKind === 'default' && instruments.some((p) => p.format === 'Sf2')) {
+      instruments = instruments.filter((p) => p.format === 'Sf2');
+    }
     const filtered = q
       ? instruments.filter(
           (p) =>
@@ -104,7 +114,7 @@ export function InstrumentSelector({ open, targetKind, onLoad, onClose }: Instru
           .filter((fmt) => !FORMAT_ORDER.includes(fmt))
           .map((fmt) => ({ format: fmt, items: map.get(fmt)!.sort((a, b) => a.name.localeCompare(b.name)) })),
       );
-  }, [plugins, query]);
+  }, [plugins, query, targetKind]);
 
   if (!open) return null;
 

@@ -34,7 +34,7 @@ export function DefaultInstrumentBar({ instrumentPath, patchName }: DefaultInstr
 
   return (
     <section className="strip p-4">
-      <div className="lcd-label text-[#7c776c] mb-2.5">默认音色</div>
+      <div className="lcd-label text-[#7c776c] mb-2.5">默认音色 · GM 底座</div>
       <div className="flex items-center gap-3 flex-wrap">
         <button
           type="button"
