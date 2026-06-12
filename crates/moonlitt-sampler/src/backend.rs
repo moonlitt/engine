@@ -55,7 +55,7 @@ impl AudioBackend for SamplerBackend {
         if let Some(pool) = &self.pool {
             let ch = (channel as usize).min(15);
             let program = self.channel_programs[ch];
-            self.voices.note_on(pool, 0, program, note, velocity);
+            self.voices.note_on(pool, channel, 0, program, note, velocity);
         }
     }
 
@@ -63,12 +63,12 @@ impl AudioBackend for SamplerBackend {
         self.voices.note_off(channel, note);
     }
 
-    fn cc(&mut self, _channel: u8, _cc: u8, _value: u8) {
-        // TODO Sprint 6: CC handling (volume, expression, sustain)
+    fn cc(&mut self, channel: u8, cc: u8, value: u8) {
+        self.voices.cc(channel, cc, value);
     }
 
-    fn pitch_bend(&mut self, _channel: u8, _value: i16) {
-        // TODO Sprint 6: pitch bend
+    fn pitch_bend(&mut self, channel: u8, value: i16) {
+        self.voices.pitch_bend(channel, value);
     }
 
     fn program_change(&mut self, channel: u8, program: u8) {

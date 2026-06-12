@@ -30,9 +30,9 @@ fn t1_polyphony() {
     let mut vp = VoicePool::new(16, SAMPLE_RATE);
 
     // Play C major chord: C4, E4, G4
-    vp.note_on(&pool, 0, 0, 60, 100); // C4
-    vp.note_on(&pool, 0, 0, 64, 100); // E4
-    vp.note_on(&pool, 0, 0, 67, 100); // G4
+    vp.note_on(&pool, 0, 0, 0, 60, 100); // C4
+    vp.note_on(&pool, 0, 0, 0, 64, 100); // E4
+    vp.note_on(&pool, 0, 0, 0, 67, 100); // G4
 
     assert_eq!(vp.active_count(), 3, "Should have 3 active voices");
 
@@ -57,11 +57,11 @@ fn t2_voice_stealing() {
     let mut vp = VoicePool::new(4, SAMPLE_RATE); // Only 4 voices
 
     // Play 5 notes — should steal the oldest
-    vp.note_on(&pool, 0, 0, 60, 100);
-    vp.note_on(&pool, 0, 0, 62, 100);
-    vp.note_on(&pool, 0, 0, 64, 100);
-    vp.note_on(&pool, 0, 0, 65, 100);
-    vp.note_on(&pool, 0, 0, 67, 100); // This should steal voice 0 (note 60)
+    vp.note_on(&pool, 0, 0, 0, 60, 100);
+    vp.note_on(&pool, 0, 0, 0, 62, 100);
+    vp.note_on(&pool, 0, 0, 0, 64, 100);
+    vp.note_on(&pool, 0, 0, 0, 65, 100);
+    vp.note_on(&pool, 0, 0, 0, 67, 100); // This should steal voice 0 (note 60)
 
     assert!(vp.active_count() <= 4, "Should not exceed pool size of 4");
 
@@ -85,8 +85,8 @@ fn t3_note_off() {
     let pool = SamplePool::from_file(SF2_PATH).unwrap();
     let mut vp = VoicePool::new(16, SAMPLE_RATE);
 
-    vp.note_on(&pool, 0, 0, 60, 100);
-    vp.note_on(&pool, 0, 0, 64, 100);
+    vp.note_on(&pool, 0, 0, 0, 60, 100);
+    vp.note_on(&pool, 0, 0, 0, 64, 100);
     assert_eq!(vp.active_count(), 2);
 
     // Release note 60
@@ -115,7 +115,7 @@ fn t4_all_notes_off() {
 
     // Play many notes
     for note in 48..72 {
-        vp.note_on(&pool, 0, 0, note, 100);
+        vp.note_on(&pool, 0, 0, 0, note, 100);
     }
     assert!(vp.active_count() > 0);
 
@@ -144,7 +144,7 @@ fn t5_bounded_voices() {
 
     // Spam 100 notes
     for note in 0..100 {
-        vp.note_on(&pool, 0, 0, (note % 128) as u8, 100);
+        vp.note_on(&pool, 0, 0, 0, (note % 128) as u8, 100);
     }
 
     assert!(
@@ -167,7 +167,7 @@ fn t6_no_clipping() {
 
     // Play a full chord
     for note in [60, 64, 67, 72, 76, 79] {
-        vp.note_on(&pool, 0, 0, note, 100);
+        vp.note_on(&pool, 0, 0, 0, note, 100);
     }
 
     let mut left = vec![0.0f32; 4096];

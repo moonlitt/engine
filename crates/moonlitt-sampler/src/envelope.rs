@@ -113,6 +113,12 @@ impl Envelope {
     }
 
     /// Returns true if the envelope has finished (silent after release).
+    /// Whether the envelope is in its release stage (note released but
+    /// still audibly fading).
+    pub fn is_releasing(&self) -> bool {
+        matches!(self.stage, Stage::Release)
+    }
+
     pub fn is_finished(&self) -> bool {
         self.stage == Stage::Finished
     }

@@ -13,6 +13,8 @@ pub struct Voice {
     envelope: Envelope,
     position: f64,
     speed: f64,
+    /// Live pitch-bend multiplier on top of `speed` (1.0 = no bend).
+    bend: f64,
     output_rate: u32,
     amplitude: f32,
     active: bool,
@@ -31,6 +33,7 @@ impl Voice {
             envelope: Envelope::new(EnvelopeParams::default(), output_rate),
             position: 0.0,
             speed: 1.0,
+            bend: 1.0,
             output_rate,
             amplitude: 1.0,
             active: false,
@@ -71,6 +74,17 @@ impl Voice {
 
     pub fn is_active(&self) -> bool {
         self.active
+    }
+
+    /// Whether the voice is fading out after note-off / pedal release.
+    pub fn is_releasing(&self) -> bool {
+        self.envelope.is_releasing()
+    }
+
+    /// Set the live pitch-bend multiplier (1.0 = centre). Applied on top
+    /// of the note's base playback speed; takes effect mid-note.
+    pub fn set_bend_ratio(&mut self, ratio: f64) {
+        self.bend = ratio;
     }
 
     /// Begin envelope release (smooth fade out instead of abrupt cutoff).
@@ -119,7 +133,7 @@ impl Voice {
             let env = self.envelope.process();
 
             *out = raw * env * self.amplitude;
-            self.position += self.speed;
+            self.position += self.speed * self.bend;
         }
     }
 }
