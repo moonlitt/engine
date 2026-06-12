@@ -29,6 +29,13 @@ pub struct Vst3Backend {
     sample_rate: u32,
     #[allow(dead_code)]
     buffer_size: u32,
+    /// Audio-path lock misses: the GUI side held the plugin mutex, so a
+    /// render block went out silent / an event was dropped. Counted
+    /// instead of logged — no I/O on the audio thread.
+    lock_contentions: u64,
+    /// Plugin `process` calls that returned an error (counted, not
+    /// printed, for the same reason).
+    render_errors: u64,
 }
 
 impl Vst3Backend {
@@ -40,6 +47,8 @@ impl Vst3Backend {
             plugin: None,
             sample_rate,
             buffer_size,
+            lock_contentions: 0,
+            render_errors: 0,
         })
     }
 
@@ -52,6 +61,36 @@ impl Vst3Backend {
     /// turns) will glitch playback.
     pub fn plugin_handle(&self) -> Option<Arc<Mutex<Vst3Plugin>>> {
         self.plugin.clone()
+    }
+
+    /// How many audio-path operations missed the plugin lock (rendered
+    /// silence / dropped an event) because the GUI side was holding it.
+    pub fn lock_contentions(&self) -> u64 {
+        self.lock_contentions
+    }
+
+    /// How many plugin `process` calls returned an error.
+    pub fn render_errors(&self) -> u64 {
+        self.render_errors
+    }
+
+    /// Run `f` on the plugin without blocking: the audio thread must
+    /// never wait on the GUI side's critical sections. A miss is
+    /// counted and the operation is skipped.
+    fn try_plugin(&mut self, f: impl FnOnce(&mut Vst3Plugin)) {
+        let contended = match self.plugin.as_ref() {
+            Some(p) => match p.try_lock() {
+                Some(mut plugin) => {
+                    f(&mut plugin);
+                    false
+                }
+                None => true,
+            },
+            None => false,
+        };
+        if contended {
+            self.lock_contentions += 1;
+        }
     }
 }
 
@@ -81,59 +120,94 @@ impl AudioBackend for Vst3Backend {
     }
 
     fn note_on(&mut self, channel: u8, note: u8, velocity: u8) {
-        if let Some(p) = self.plugin.as_ref() {
-            p.lock().note_on(channel, note, velocity);
-        }
+        self.try_plugin(|p| p.note_on(channel, note, velocity));
     }
 
     fn note_off(&mut self, channel: u8, note: u8) {
-        if let Some(p) = self.plugin.as_ref() {
-            p.lock().note_off(channel, note);
-        }
+        self.try_plugin(|p| p.note_off(channel, note));
     }
 
     fn cc(&mut self, channel: u8, cc: u8, value: u8) {
-        if let Some(p) = self.plugin.as_ref() {
-            p.lock().cc(channel, cc, value);
-        }
+        self.try_plugin(|p| p.cc(channel, cc, value));
     }
 
     fn pitch_bend(&mut self, channel: u8, value: i16) {
-        if let Some(p) = self.plugin.as_ref() {
-            p.lock().pitch_bend(channel, value);
-        }
+        self.try_plugin(|p| p.pitch_bend(channel, value));
     }
 
     fn program_change(&mut self, channel: u8, program: u8) {
-        if let Some(p) = self.plugin.as_ref() {
-            p.lock().program_change(channel, program);
-        }
+        self.try_plugin(|p| p.program_change(channel, program));
     }
 
     fn all_notes_off(&mut self) {
-        if let Some(p) = self.plugin.as_ref() {
-            p.lock().all_notes_off();
-        }
+        self.try_plugin(|p| p.all_notes_off());
     }
 
     fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
-        if let Some(p) = self.plugin.as_ref() {
-            // `try_lock` would let us render silence rather than wait —
-            // safer for hard real-time. For now we block: GUI lock holds
-            // are bounded (set_state, create_view) and brief enough that
-            // a stall is acceptable. If this ever shows up as glitching
-            // under load, switch to try_lock + fill(0).
-            if let Err(e) = p.lock().render(left, right) {
-                eprintln!("[moonlitt] VST3 render error: {e}");
+        // Audio thread must never wait on the GUI side: when the plugin
+        // mutex is held (a streamer's set_state can run ~1 s), this
+        // block goes out silent instead of stalling the device callback.
+        enum Outcome {
+            Ok,
+            ProcessError,
+            Contended,
+        }
+        let outcome = match self.plugin.as_ref() {
+            None => {
+                left.fill(0.0);
+                right.fill(0.0);
+                return;
             }
+            Some(p) => match p.try_lock() {
+                Some(mut plugin) => match plugin.render(left, right) {
+                    Ok(()) => Outcome::Ok,
+                    Err(_) => Outcome::ProcessError,
+                },
+                None => {
+                    left.fill(0.0);
+                    right.fill(0.0);
+                    Outcome::Contended
+                }
+            },
+        };
+        match outcome {
+            Outcome::ProcessError => self.render_errors += 1,
+            Outcome::Contended => self.lock_contentions += 1,
+            Outcome::Ok => {}
         }
     }
 
     fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
-        if let Some(p) = self.plugin.as_ref() {
-            if let Err(e) = p.lock().process_effect(in_l, in_r, out_l, out_r) {
-                eprintln!("[moonlitt] VST3 effect error: {e}");
+        // Same non-blocking rule as `render`, but an insert that misses
+        // its lock passes audio through (momentary bypass) rather than
+        // muting the whole track.
+        enum Outcome {
+            Ok,
+            ProcessError,
+            Contended,
+        }
+        let outcome = match self.plugin.as_ref() {
+            None => {
+                out_l.copy_from_slice(in_l);
+                out_r.copy_from_slice(in_r);
+                return;
             }
+            Some(p) => match p.try_lock() {
+                Some(mut plugin) => match plugin.process_effect(in_l, in_r, out_l, out_r) {
+                    Ok(()) => Outcome::Ok,
+                    Err(_) => Outcome::ProcessError,
+                },
+                None => {
+                    out_l.copy_from_slice(in_l);
+                    out_r.copy_from_slice(in_r);
+                    Outcome::Contended
+                }
+            },
+        };
+        match outcome {
+            Outcome::ProcessError => self.render_errors += 1,
+            Outcome::Contended => self.lock_contentions += 1,
+            Outcome::Ok => {}
         }
     }
 
