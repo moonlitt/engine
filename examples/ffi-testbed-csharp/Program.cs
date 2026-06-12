@@ -106,7 +106,7 @@ void Phase0_AbiAndErrorModel(TestRunner t)
     uint v = NativeEngine.moonlitt_abi_version();
     uint major = v >> 16, minor = (v >> 8) & 0xFF, patch = v & 0xFF;
     t.Check($"abi_version is packed semver (got {major}.{minor}.{patch})", v != 0);
-    t.Check("abi_version matches the 0.9.x draft this testbed targets", major == 0 && minor == 9);
+    t.Check("abi_version matches the frozen v1 ABI this testbed targets", major == 1 && minor == 0);
 
     // The panic guard must convert an internal Rust panic into a status
     // code — if this crashes the process, the guard is broken.

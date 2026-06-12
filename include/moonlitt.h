@@ -25,11 +25,12 @@
 
 /**
  * ABI version, bumped by hand on every ABI-affecting change.
- * Draft surface is 0.9.x; the freeze tag will set 1.0.0.
+ * 1.0.0 is the frozen v1 surface: existing signatures and semantics
+ * are stable; additions bump MINOR, breaking changes bump MAJOR.
  */
-#define MOONLITT_ABI_MAJOR 0
+#define MOONLITT_ABI_MAJOR 1
 
-#define MOONLITT_ABI_MINOR 9
+#define MOONLITT_ABI_MINOR 0
 
 #define MOONLITT_ABI_PATCH 0
 
