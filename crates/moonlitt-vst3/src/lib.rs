@@ -370,12 +370,12 @@ impl Vst3Plugin {
     ///
     /// Convenience wrapper for the single-bus case: writes bus 0's output
     /// into `left` / `right`, and renders the remaining buses into the
-    /// internal scratch (silently discarded — use [`render_all`] +
-    /// [`bus_output`] when you need access to non-primary buses).
+    /// internal scratch (silently discarded — use [`Self::render_all`] +
+    /// [`Self::bus_output`] when you need access to non-primary buses).
     ///
     /// `left` and `right` must be the same length (the buffer size).
     ///
-    /// Wrapped in [`catch_plugin_panic`](error::catch_plugin_panic) — a Rust
+    /// Wrapped in `catch_plugin_panic` — a Rust
     /// panic inside our wrapper code (lock poisoning, OOM in event drain,
     /// etc.) returns [`Error::PluginPanicked`] instead of crashing the
     /// audio thread. Does NOT catch C++ segfaults from the loaded
@@ -451,7 +451,7 @@ impl Vst3Plugin {
     }
 
     /// Render one buffer of audio across all output buses, writing into
-    /// the internal per-bus scratches. After this call, [`bus_output`]
+    /// the internal per-bus scratches. After this call, [`Self::bus_output`]
     /// gives access to each bus's L/R audio for this block.
     ///
     /// Drains all pending MIDI events. Use this when you need the
@@ -459,7 +459,7 @@ impl Vst3Plugin {
     /// per-voice channels in a multi-timbral sampler, sidechain returns,
     /// etc.) rather than just the primary stereo mix.
     ///
-    /// Panic-isolated like [`render`].
+    /// Panic-isolated like [`Self::render`].
     pub fn render_all(&mut self) -> Result<()> {
         error::catch_plugin_panic("Vst3Plugin::render_all", || self.render_all_inner())
     }
@@ -585,13 +585,13 @@ impl Vst3Plugin {
     }
 
     /// Returns the L/R audio rendered for output bus `index` during the
-    /// most recent [`render`] or [`render_all`] call. Returns `None` if
+    /// most recent [`Self::render`] or [`Self::render_all`] call. Returns `None` if
     /// `index >= audio_output_bus_count()`.
     ///
-    /// Note: after [`render`], bus 0's slice contains whatever was most
+    /// Note: after [`Self::render`], bus 0's slice contains whatever was most
     /// recently rendered into the **internal scratch** (which may be
     /// stale, since render uses the caller's buffers for bus 0 by
-    /// design). Use this primarily after [`render_all`] for full bus
+    /// design). Use this primarily after [`Self::render_all`] for full bus
     /// access.
     pub fn bus_output(&self, index: usize) -> Option<(&[f32], &[f32])> {
         self.bus_scratches
@@ -602,7 +602,7 @@ impl Vst3Plugin {
     /// Process audio through the plugin as an effect (audio in → audio out).
     ///
     /// Reads from `in_left`/`in_right`, writes processed audio to `out_left`/`out_right`.
-    /// Panic-isolated like [`render`].
+    /// Panic-isolated like [`Self::render`].
     pub fn process_effect(
         &mut self,
         in_left: &[f32],

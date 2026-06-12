@@ -47,7 +47,7 @@ pub struct PluginInfo {
 }
 
 impl PluginInfo {
-    /// Routing classification derived from [`subcategories`].
+    /// Routing classification derived from [`Self::subcategories`].
     pub fn kind(&self) -> PluginKind {
         let Some(sub) = self.subcategories.as_deref() else {
             return PluginKind::Unknown;

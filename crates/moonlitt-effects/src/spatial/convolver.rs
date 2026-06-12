@@ -1,8 +1,8 @@
 //! FFT Partitioned Convolution Reverb
 //!
 //! References:
-//! - Linear convolution theorem: y[n] = Sigma_k x[k] * h[n-k]
-//! - Parseval's theorem: Sigma|x[n]|^2 = (1/N) Sigma|X[k]|^2
+//! - Linear convolution theorem: `y[n] = Sigma_k x[k] * h[n-k]`
+//! - Parseval's theorem: `Sigma|x[n]|^2 = (1/N) Sigma|X[k]|^2`
 //! - Overlap-add: zero-pad to 2N, FFT multiply, IFFT, overlap-add
 //! - Gardner 1995: "Efficient Convolution without Input-Output Delay"
 //!

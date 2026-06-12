@@ -30,7 +30,7 @@ pub struct Runtime {
     next_bus_id: u32,
     next_insert_id: u32,
     /// Cloned meter handles for cross-thread reading.
-    /// The audio thread writes via the mixer's meters (same Arc<AtomicU32>),
+    /// The audio thread writes via the mixer's meters (same `Arc<AtomicU32>`),
     /// the main thread reads via these clones.
     master_meter: LevelMeter,
     track_meters: HashMap<u32, LevelMeter>,

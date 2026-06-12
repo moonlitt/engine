@@ -2,9 +2,9 @@
 //!
 //! Handles plugin creation, initialization, activation, and teardown.
 //! Follows the VST3 hosting sequence:
-//!   GetPluginFactory → enumerate classes → createInstance<IComponent>
-//!   → initialize → QI<IAudioProcessor> → QI/create IEditController
-//!   → setupProcessing → activateBuses → setActive → setProcessing
+//! `GetPluginFactory → enumerate classes → createInstance<IComponent>
+//! → initialize → QI<IAudioProcessor> → QI/create IEditController
+//! → setupProcessing → activateBuses → setActive → setProcessing`
 
 use std::ffi::c_void;
 use std::mem::MaybeUninit;

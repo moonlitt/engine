@@ -6,7 +6,7 @@
 //! Reference:
 //! Jon Dattorro, "Effect Design Part 1: Reverberator and Other Filters"
 //! JAES Vol. 45 No. 9, 1997.
-//! https://ccrma.stanford.edu/~dattorro/EffectDesignPart1.pdf
+//! <https://ccrma.stanford.edu/~dattorro/EffectDesignPart1.pdf>
 
 /// A modulated allpass filter with LFO-driven read-position modulation.
 ///
@@ -45,10 +45,12 @@ impl ModAllpass {
     /// the nominal delay length. Linear interpolation between integer neighbors.
     ///
     /// Allpass topology:
+    /// ```text
     ///   read_pos = index - (size + mod_offset)   (wrapped)
     ///   delayed  = linear_interp(buffer, read_pos)
     ///   output   = -feedback * input + delayed
     ///   buffer[index] = input + feedback * delayed
+    /// ```
     #[inline]
     pub fn process(&mut self, input: f32, mod_offset: f32) -> f32 {
         let buf_len = self.buffer.len();

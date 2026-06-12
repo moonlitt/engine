@@ -177,7 +177,7 @@ pub enum OutputTarget {
 }
 
 /// A single insert effect slot on a track.
-/// Processed pre-fader in series: Backend → Insert[0] → Insert[1] → ... → Fader.
+/// Processed pre-fader in series: `Backend → Insert[0] → Insert[1] → … → Fader`.
 pub struct InsertEffect {
     pub id: u32,
     pub backend: Box<dyn AudioBackend>,

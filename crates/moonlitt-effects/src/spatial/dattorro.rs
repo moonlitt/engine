@@ -3,7 +3,7 @@
 //! Implementation of the plate reverberator described in:
 //! Jon Dattorro, "Effect Design Part 1: Reverberator and Other Filters"
 //! Journal of the Audio Engineering Society, Vol. 45, No. 9, 1997.
-//! https://ccrma.stanford.edu/~dattorro/EffectDesignPart1.pdf
+//! <https://ccrma.stanford.edu/~dattorro/EffectDesignPart1.pdf>
 //!
 //! Signal flow: Dattorro 1997, Figure 1
 //! Output taps: Dattorro 1997, Table 1

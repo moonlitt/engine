@@ -56,9 +56,9 @@ pub enum HostNotification {
     /// string is allowed (means "the default editor").
     RequestOpenEditor(String),
     /// Begin a group of edits — host should treat subsequent performEdit
-    /// calls as one atomic undo step until [`FinishGroupEdit`].
+    /// calls as one atomic undo step until [`Self::FinishGroupEdit`].
     StartGroupEdit,
-    /// End of a group edit started by [`StartGroupEdit`].
+    /// End of a group edit started by [`Self::StartGroupEdit`].
     FinishGroupEdit,
     /// Selected unit changed inside the plug-in (multi-timbral samplers).
     UnitSelection(UnitID),
