@@ -256,15 +256,16 @@ pub fn cmd_default_set_instrument(
     // instance with the last patch this plug-in was seen using, so
     // picking Keyscape sounds immediately instead of confusing silence.
     let cached = crate::plugin_state_cache::load(&app, &path);
-    let needs_patch = state
-        .engine
-        .set_default_instrument_with_state(&path, cached.as_deref())?;
-    // Mirror the seeded state into the window stash so the snapshot's
-    // patch-name lookup works before any GUI window ever opens.
+    // Mirror the seeded state into the window stash BEFORE the engine
+    // call: event payloads and snapshots parse the patch name out of
+    // the stash, so it must be there when they're built.
     #[cfg(target_os = "macos")]
     if let Some(bytes) = &cached {
         crate::plugin_window::stash_state(path.clone(), bytes.clone());
     }
+    let needs_patch = state
+        .engine
+        .set_default_instrument_with_state(&path, cached.as_deref())?;
     let _ = app.emit(
         "default:instrument_changed",
         DefaultInstrumentChanged {
@@ -285,14 +286,16 @@ pub fn cmd_channel_set_override(
     path: String,
 ) -> Result<bool, String> {
     let cached = crate::plugin_state_cache::load(&app, &path);
-    let (ov, needs_patch) =
-        state
-            .engine
-            .set_channel_override_with_state(channel, &path, cached.as_deref())?;
+    // Seed the stash first — `state_of(ov)` inside the engine call
+    // parses the patch name from it for the event payload.
     #[cfg(target_os = "macos")]
     if let Some(bytes) = &cached {
         crate::plugin_window::stash_state(path.clone(), bytes.clone());
     }
+    let (ov, needs_patch) =
+        state
+            .engine
+            .set_channel_override_with_state(channel, &path, cached.as_deref())?;
     let _ = app.emit(
         "channel:override_added",
         ChannelOverrideAdded { o: ov, needs_patch },

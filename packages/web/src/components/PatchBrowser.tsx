@@ -23,6 +23,11 @@ export function PatchBrowser() {
 
 function Browser({ target, onClose }: { target: PatchTarget; onClose(): void }) {
   const defaultPatchName = useProjectStore((s) => s.defaultPatchName);
+  const overrides = useProjectStore((s) => s.overrides);
+  const currentPatchName =
+    target.kind === 'default'
+      ? defaultPatchName
+      : overrides.find((o) => o.channel === target.channel)?.patchName ?? null;
   const [patches, setPatches] = useState<LibraryPatchView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -66,7 +71,7 @@ function Browser({ target, onClose }: { target: PatchTarget; onClose(): void }) 
     });
   }, [patches, query, category]);
 
-  const activeName = loadedName ?? defaultPatchName;
+  const activeName = loadedName ?? currentPatchName;
 
   const pick = async (p: LibraryPatchView) => {
     if (loadingId !== null) return;

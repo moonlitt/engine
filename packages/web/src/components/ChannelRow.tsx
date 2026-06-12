@@ -67,6 +67,7 @@ const EFFECT_TYPES: readonly { label: string; value: string }[] = [
 export function ChannelRow({ info, override, defaultInstrumentPath }: ChannelRowProps) {
   const send = useSessionStore((s) => s.send);
   const openPicker = useUiStore((s) => s.openInstrumentPicker);
+  const defaultPatchName = useProjectStore((s) => s.defaultPatchName);
 
   const inherited = override === null;
   const displayName = channelDisplayName(info.displayNumber, info.trackName, info.program);
@@ -75,6 +76,9 @@ export function ChannelRow({ info, override, defaultInstrumentPath }: ChannelRow
   const activeInstrument = inherited
     ? defaultInstrumentPath?.split('/').pop() ?? null
     : override.instrumentName;
+  // …and which patch is loaded inside it (Keyscape/Pianoteq-class
+  // plug-ins whose state embeds a parseable name).
+  const activePatch = inherited ? defaultPatchName : override.patchName ?? null;
 
   const channelColor = override?.color ?? null;
 
@@ -112,6 +116,9 @@ export function ChannelRow({ info, override, defaultInstrumentPath }: ChannelRow
             {inherited ? '沿用默认音色' : '单独指定音色'}
             {activeInstrument && (
               <span className="text-[#bbb] ml-1.5">· {activeInstrument}</span>
+            )}
+            {activePatch && (
+              <span className="text-daw-accent/90 ml-1.5">· {activePatch}</span>
             )}
             {info.program !== undefined && info.trackName === undefined && (
               <span className="text-[#666] ml-1.5">· MIDI 默认 #{info.program} {GM_PROGRAM_ZH[info.program] ?? ''}</span>
