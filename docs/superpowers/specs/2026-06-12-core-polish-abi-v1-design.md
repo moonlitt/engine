@@ -1,7 +1,7 @@
 # Core Polish → ABI v1 Freeze — Design
 
 **Date:** 2026-06-12
-**Status:** Approved by user (design dialogue, this session)
+**Status:** ✅ COMPLETED 2026-06-12 — all four phases delivered, DoD (§8) verified, tagged `capi-v1.0.0`
 **Scope:** 14 engine crates + moonlitt-capi. Game integration explicitly deferred to a later round.
 
 ## 1. Background & Goal
