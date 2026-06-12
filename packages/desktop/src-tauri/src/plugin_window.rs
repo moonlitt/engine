@@ -233,41 +233,45 @@ pub fn open_window_count() -> usize {
     registry().lock().len()
 }
 
-/// For each currently-open GUI window, attempt to refresh the patch
-/// name from the live plug-in instance. Uses `try_lock` so the audio
-/// thread is never blocked; windows whose plug-in is mid-render are
-/// silently skipped (we'll catch them on the next tick).
+/// Drain host-side notification queues (`IComponentHandler2::setDirty`,
+/// `IUnitHandler` program/unit changes, …) for every open GUI window
+/// and return the paths that showed activity.
 ///
-/// Returns the deltas — `(plug-in path, parsed patch name)` for windows
-/// whose patch name changed since the last poll. The caller compares
-/// against its own "last seen" map; we don't keep state inside this
-/// module so the loop can decide when to emit.
-pub fn poll_patch_name_updates() -> Vec<(String, Option<String>, Vec<u8>)> {
-    let probes: Vec<(String, Vec<u8>)> = {
-        let reg = registry().lock();
-        reg.iter()
-            .filter_map(|entry| {
-                // `try_lock` ↔ "if the audio thread isn't using it
-                // right now". A miss is fine — patch picking is rare
-                // and we poll often.
-                entry
-                    .plugin
-                    .try_lock()
-                    .and_then(|p| p.get_state().ok().map(|b| (entry.path.clone(), b)))
+/// SAFETY-CRITICAL DESIGN NOTE: this reads OUR queues — plain Rust,
+/// never calls into plug-in code — so it is safe to run at any moment,
+/// including while the plug-in's own threads are mid-patch-load.
+/// `getState`, by contrast, segfaults inside Spectrasonics when called
+/// during an internal instrument load (observed 2026-06-12: SIGSEGV in
+/// Keyscape under a 500 ms state poll). State capture therefore only
+/// happens in [`capture_state_for`] after a quiet period, on window
+/// close, on save, and after library patch loads — never on a blind
+/// timer.
+pub fn poll_activity() -> Vec<String> {
+    let reg = registry().lock();
+    reg.iter()
+        .filter_map(|entry| {
+            // `try_lock` ↔ "if the audio thread isn't using it right
+            // now". A miss is fine — we poll the queues often.
+            entry.plugin.try_lock().and_then(|mut p| {
+                let notes = p.take_host_notifications();
+                (!notes.is_empty()).then(|| entry.path.clone())
             })
-            .collect()
-    };
-    probes
-        .into_iter()
-        .map(|(path, bytes)| {
-            let parsed = crate::state_metadata::extract_patch_name(&bytes);
-            // Refresh stash so subsequent ⌘S and on-demand
-            // `patch_name_for` lookups see the freshest value, not
-            // just the one captured at GUI open.
-            put_in_stash(path.clone(), bytes.clone());
-            (path, parsed, bytes)
         })
         .collect()
+}
+
+/// Capture the live state for one open window's plug-in, refresh the
+/// stash, and return the parsed patch name + bytes. `None` when the
+/// window is gone or the plug-in is busy (caller re-arms and retries).
+pub fn capture_state_for(path: &str) -> Option<(Option<String>, Vec<u8>)> {
+    let plugin = {
+        let reg = registry().lock();
+        reg.iter().find(|o| o.path == path)?.plugin.clone()
+    };
+    let bytes = plugin.try_lock()?.get_state().ok()?;
+    let parsed = crate::state_metadata::extract_patch_name(&bytes);
+    put_in_stash(path.to_string(), bytes.clone());
+    Some((parsed, bytes))
 }
 
 /// Walk every currently-open GUI window, call `getState()` on its
@@ -345,51 +349,54 @@ pub fn save_state_for_label(label: &str, path: &Path) -> Result<usize, String> {
 }
 
 fn cleanup_window(app: &AppHandle, label: &str) {
-    let captured: Option<(String, Option<String>)> = {
+    let removed: Option<(String, Vst3PluginHandle)> = {
         let mut reg = registry().lock();
         if let Some(idx) = reg.iter().position(|o| o.label == label) {
             let entry = reg.remove(idx);
             let path = entry.path.clone();
-            // Refresh the stash from the live (still-shared) plug-in so
-            // a subsequent session save sees the latest patch.
-            let result = entry.plugin.lock().get_state().ok().map(|bytes| {
-                let parsed = crate::state_metadata::extract_patch_name(&bytes);
-                state_stash().lock().insert(
-                    path.clone(),
-                    StashedState {
-                        bytes,
-                        patch_name: parsed.clone(),
-                    },
-                );
-                (path, parsed)
-            });
+            let plugin = entry.plugin.clone();
             // Detach view before dropping the entry — the plug-in keeps
             // running on the audio thread; the view is what we're
             // letting go of.
             let _ = entry.view.detach();
             drop(entry);
-            result
+            Some((path, plugin))
         } else {
             None
         }
     };
 
-    let Some((path, patch_name)) = captured else {
+    let Some((path, plugin)) = removed else {
         return;
     };
 
-    use serde::Serialize;
-    #[derive(Serialize, Clone)]
-    #[serde(rename_all = "camelCase")]
-    struct PluginStateCaptured {
-        path: String,
-        patch_name: Option<String>,
-    }
-    use tauri::Emitter;
-    let _ = app.emit(
-        "plugin_state_captured",
-        PluginStateCaptured { path, patch_name },
-    );
+    // Final state capture, OFF the main thread and after a settle
+    // delay: the user may close the window a beat after picking a
+    // patch, while the sampler's own threads are still loading it —
+    // Spectrasonics' getState crashes when probed mid-load.
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(1200));
+        let Ok(bytes) = plugin.lock().get_state() else {
+            return;
+        };
+        let patch_name = crate::state_metadata::extract_patch_name(&bytes);
+        put_in_stash(path.clone(), bytes.clone());
+        crate::plugin_state_cache::store(&app, &path, &bytes);
+
+        use serde::Serialize;
+        #[derive(Serialize, Clone)]
+        #[serde(rename_all = "camelCase")]
+        struct PluginStateCaptured {
+            path: String,
+            patch_name: Option<String>,
+        }
+        use tauri::Emitter;
+        let _ = app.emit(
+            "plugin_state_captured",
+            PluginStateCaptured { path, patch_name },
+        );
+    });
 }
 
 /// Size the window to `(w, h)` logical points, clamped to the current

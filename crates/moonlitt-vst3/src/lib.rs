@@ -37,7 +37,7 @@ pub use component_handler::HostNotification;
 pub use error::{Error, Result};
 pub use events::{MidiEvent, MidiEventKind};
 pub use scan_cache::PluginScanCache;
-pub use scanner::{PluginInfo, PluginKind};
+pub use scanner::{candidate_bundle_paths, probe_path, PluginInfo, PluginKind};
 pub use state_format::ChunkedState;
 pub use view::{platform, Vst3PluginView};
 

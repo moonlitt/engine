@@ -123,6 +123,40 @@ pub fn supported_formats() -> Vec<&'static str> {
     formats
 }
 
+/// Scan system paths for CLAP and SF2 sources only — used by hosts
+/// that probe VST3 bundles in isolated child processes (sentinel
+/// scanning) and merge the results themselves. CLAP/SF2 stay
+/// in-process: the SF2 scan is a pure file walk and CLAP probing has
+/// not shown crash-prone plug-ins yet.
+#[allow(unused_variables, unused_mut)]
+pub fn scan_plugins_excluding_vst3(sample_rate: u32, buffer_size: u32) -> Vec<PluginInfo> {
+    let mut plugins = Vec::new();
+
+    #[cfg(feature = "clap")]
+    {
+        if let Ok(host) = moonlitt_clap::ClapHost::new(sample_rate, buffer_size) {
+            if let Ok(clap_plugins) = host.scan() {
+                for p in clap_plugins {
+                    plugins.push(PluginInfo {
+                        name: p.name,
+                        path: p.path.to_string_lossy().into_owned(),
+                        format: PluginFormat::Clap,
+                        is_instrument: true,
+                    });
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "sf2")]
+    {
+        let _ = (sample_rate, buffer_size);
+        scan_sf2_into(&mut plugins);
+    }
+
+    plugins
+}
+
 /// Scan system paths for available plugins (VST3, CLAP, SF2).
 #[allow(unused_variables, unused_mut)]
 pub fn scan_plugins(sample_rate: u32, buffer_size: u32) -> Vec<PluginInfo> {

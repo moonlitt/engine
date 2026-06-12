@@ -419,7 +419,7 @@ impl Engine {
 
     // --- Plugin scanning ---
 
-    pub fn scan_plugins(&self, force: bool) -> Vec<PluginInfoView> {
+    pub fn scan_plugins(&self, app: &tauri::AppHandle, force: bool) -> Vec<PluginInfoView> {
         let (sr, buf, cached) = {
             let s = self.inner.lock();
             let cached = if force { None } else { s.plugin_cache.clone() };
@@ -429,7 +429,30 @@ impl Engine {
             return c.into_iter().map(plugin_info_to_view).collect();
         }
         // Scan outside the mutex — it's slow.
-        let scanned = moonlitt_engine::scan_plugins(sr, buf);
+        //
+        // VST3 bundles are probed in ISOLATED child processes (sentinel
+        // scanning): a crashing or hanging plug-in is quarantined on a
+        // persistent blacklist instead of taking the app down.
+        let (probed, quarantine_log) = crate::sentinel_scan::scan_vst3(app);
+        for line in &quarantine_log {
+            eprintln!("[plugin-scan] {line}");
+        }
+        let mut scanned: Vec<PluginInfo> = probed
+            .into_iter()
+            .map(|p| PluginInfo {
+                name: p.name,
+                path: p.path,
+                format: PluginFormat::Vst3,
+                is_instrument: p
+                    .subcategories
+                    .as_deref()
+                    .map(|s| s.contains("Instrument"))
+                    .unwrap_or(true),
+            })
+            .collect();
+        // CLAP + SF2 stay in-process (file walks / no known crashers).
+        scanned.extend(moonlitt_engine::scan_plugins_excluding_vst3(sr, buf));
+
         let mut s = self.inner.lock();
         s.plugin_cache = Some(scanned.clone());
         scanned.into_iter().map(plugin_info_to_view).collect()
@@ -1311,11 +1334,36 @@ fn plugin_info_to_view(p: PluginInfo) -> PluginInfoView {
 /// is that we go directly through `Vst3Backend::new` so the typed
 /// `plugin_handle()` is reachable before the backend is type-erased
 /// into `Box<dyn AudioBackend>`.
-fn create_backend_with_vst3_handle(
-    path: &str,
-    sr: u32,
-    buf: u32,
-) -> Result<(Box<dyn AudioBackend>, Option<Vst3PluginHandle>), String> {
+/// Result type produced when instantiating a backend for a slot.
+pub type CreatedBackend = (Box<dyn AudioBackend>, Option<Vst3PluginHandle>);
+
+/// Pluggable instantiation dispatcher. The desktop app installs one at
+/// startup that runs [`create_backend_direct`] on the MAIN thread with
+/// a timeout — plug-ins widely assume main-thread instantiation, and a
+/// plug-in that pops a native dialog during load (half-installed
+/// Omnisphere) needs the main run loop alive for that dialog to be
+/// dismissable at all. Without a loader installed (tests, headless),
+/// creation happens directly on the calling thread.
+type BackendLoader = Box<dyn Fn(&str, u32, u32) -> Result<CreatedBackend, String> + Send + Sync>;
+static BACKEND_LOADER: std::sync::OnceLock<BackendLoader> = std::sync::OnceLock::new();
+
+/// Install the process-wide backend loader. Later calls are ignored.
+pub fn install_backend_loader(
+    loader: impl Fn(&str, u32, u32) -> Result<CreatedBackend, String> + Send + Sync + 'static,
+) {
+    let _ = BACKEND_LOADER.set(Box::new(loader));
+}
+
+fn create_backend_with_vst3_handle(path: &str, sr: u32, buf: u32) -> Result<CreatedBackend, String> {
+    preflight_check(path)?;
+    match BACKEND_LOADER.get() {
+        Some(loader) => loader(path, sr, buf),
+        None => create_backend_direct(path, sr, buf),
+    }
+}
+
+/// The actual instantiation — runs on whatever thread the loader picks.
+pub fn create_backend_direct(path: &str, sr: u32, buf: u32) -> Result<CreatedBackend, String> {
     use moonlitt_engine::backends::vst3::Vst3Backend;
     if path.to_ascii_lowercase().ends_with(".vst3") {
         let mut b = Vst3Backend::new(sr, buf).map_err(|e| format!("create vst3: {e}"))?;
@@ -1325,6 +1373,41 @@ fn create_backend_with_vst3_handle(
     } else {
         let b = moonlitt_engine::create(path, sr, buf).map_err(|e| format!("create: {e}"))?;
         Ok((b, None))
+    }
+}
+
+/// Refuse to instantiate plug-ins whose on-disk data is known-broken,
+/// BEFORE they get a chance to hang or pop install dialogs.
+/// Currently: Spectrasonics products without a usable STEAM patch
+/// library (the half-installed-Omnisphere case).
+fn preflight_check(path: &str) -> Result<(), String> {
+    let Some(stem) = std::path::Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+    else {
+        return Ok(());
+    };
+    if moonlitt_vst3::spectrasonics::product_patch_extension(stem).is_none() {
+        return Ok(()); // not a Spectrasonics product — nothing to check
+    }
+    let healthy = moonlitt_vst3::spectrasonics::steam_product_dir(stem)
+        .map(|dir| {
+            let factory = dir.join("Settings Library").join("Patches").join("Factory");
+            std::fs::read_dir(factory)
+                .map(|rd| {
+                    rd.flatten()
+                        .any(|e| e.path().extension().and_then(|x| x.to_str()) == Some("db"))
+                })
+                .unwrap_or(false)
+        })
+        .unwrap_or(false);
+    if healthy {
+        Ok(())
+    } else {
+        Err(format!(
+            "{stem} 的 STEAM 数据未安装或不完整（找不到音色库 .db）。\
+             请用官方安装器补全数据后再加载——现在加载它只会弹安装警告并且没有声音。"
+        ))
     }
 }
 

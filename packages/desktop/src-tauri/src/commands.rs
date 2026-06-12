@@ -544,7 +544,7 @@ pub fn cmd_plugins_scan(
     app: AppHandle,
     force: Option<bool>,
 ) -> Vec<PluginInfoView> {
-    let list = state.engine.scan_plugins(force.unwrap_or(false));
+    let list = state.engine.scan_plugins(&app, force.unwrap_or(false));
     let _ = app.emit(
         "plugins:list",
         PluginsList {

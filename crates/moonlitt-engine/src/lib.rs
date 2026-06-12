@@ -18,4 +18,6 @@ pub mod plugin_info;
 pub use engine::create_from_shared_sf2;
 #[cfg(feature = "sf2-sampler")]
 pub use engine::create_with_sampler;
-pub use engine::{create, create_high_quality, scan_plugins, supported_formats};
+pub use engine::{
+    create, create_high_quality, scan_plugins, scan_plugins_excluding_vst3, supported_formats,
+};

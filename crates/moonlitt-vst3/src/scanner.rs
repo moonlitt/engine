@@ -133,6 +133,25 @@ pub fn probe_path(path: &Path) -> Result<Vec<PluginInfo>> {
     probe_plugin(path)
 }
 
+/// Every .vst3 bundle path a default scan would visit — a pure
+/// directory walk, no dlopen. Sentinel scanners use this to decide
+/// what to probe in isolated child processes.
+pub fn candidate_bundle_paths() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for dir in system_vst3_dirs() {
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().is_some_and(|e| e == "vst3") {
+                    out.push(path);
+                }
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
 /// Probe a .vst3 bundle: load it, get the factory, enumerate audio classes.
 fn probe_plugin(path: &Path) -> Result<Vec<PluginInfo>> {
     let module = load_module(path)?;
