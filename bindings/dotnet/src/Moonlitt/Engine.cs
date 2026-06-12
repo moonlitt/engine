@@ -227,12 +227,12 @@ public sealed class Engine : IDisposable
     }
 
     /// <summary>
-    /// Get the last error message, or null if no error.
+    /// Detail of the most recent failure on the calling thread, or null.
+    /// (Thread-local; only meaningful right after a failed call.)
     /// </summary>
-    public string? GetError()
+    public static string? GetError()
     {
-        ThrowIfDisposed();
-        var ptr = NativeApi.moonlitt_engine_get_error(_handle);
+        var ptr = NativeApi.moonlitt_last_error_message();
         return ptr == IntPtr.Zero ? null : Marshal.PtrToStringUTF8(ptr);
     }
 

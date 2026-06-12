@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using Xunit;
 
 namespace Moonlitt.Tests;
@@ -93,10 +94,14 @@ public class EngineTests
     }
 
     [Fact]
-    public void GetErrorReturnsNullInitially()
+    public void GetErrorIsNullOnFreshThread()
     {
-        using var engine = new Engine();
-        Assert.Null(engine.GetError());
+        // Error detail is thread-local; a brand-new thread has none.
+        string? observed = "sentinel";
+        var t = new Thread(() => observed = Engine.GetError());
+        t.Start();
+        t.Join();
+        Assert.Null(observed);
     }
 
     [Fact]

@@ -7,7 +7,7 @@
 //! because they handle NULL checks internally. From Rust they're called like
 //! normal functions; from C they go through the shared library's symbol table.
 
-use moonlitt_capi::*;
+use moonlitt::*;
 use std::ffi::{CStr, CString};
 
 // ---------------------------------------------------------------------------
@@ -80,9 +80,9 @@ fn test_engine_load_invalid_path() {
     let e = moonlitt_engine_create(44100, 256);
     let path = CString::new("/nonexistent/file.sf2").unwrap();
     let result = moonlitt_engine_load(e, path.as_ptr());
-    assert_ne!(result, 0, "loading nonexistent file should fail");
+    assert_eq!(result, MOONLITT_ERR_IO, "nonexistent file is an I/O failure");
 
-    let err = moonlitt_engine_get_error(e);
+    let err = moonlitt_last_error_message();
     assert!(!err.is_null(), "error message should be set");
     let err_str = unsafe { CStr::from_ptr(err).to_str().unwrap() };
     assert!(!err_str.is_empty(), "error message should not be empty");
@@ -146,13 +146,12 @@ fn test_scan_plugins() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_presets_empty() {
+fn test_presets_without_backend_is_null() {
     let e = moonlitt_engine_create(44100, 256);
-    let json = moonlitt_engine_get_presets(e);
-    assert!(!json.is_null());
-    let s = unsafe { CStr::from_ptr(json).to_str().unwrap() };
-    assert_eq!(s, "[]");
-    moonlitt_free_string(json);
+    assert!(
+        moonlitt_engine_get_presets(e).is_null(),
+        "no backend → NULL + NOT_LOADED, not a fake empty list"
+    );
     moonlitt_engine_destroy(e);
 }
 
@@ -185,16 +184,14 @@ fn test_free_null_string() {
 fn test_null_engine_operations() {
     let null = std::ptr::null_mut();
     assert_eq!(moonlitt_engine_is_loaded(null), 0);
-    moonlitt_engine_note_on(null, 0, 60, 100);
-    moonlitt_engine_note_off(null, 0, 60);
-    moonlitt_engine_cc(null, 0, 64, 127);
-    moonlitt_engine_pitch_bend(null, 0, 0);
-    moonlitt_engine_program_change(null, 0, 0);
-    moonlitt_engine_all_notes_off(null);
+    assert_eq!(moonlitt_engine_note_on(null, 0, 60, 100), MOONLITT_ERR_INVALID_ARG);
+    assert_eq!(moonlitt_engine_note_off(null, 0, 60), MOONLITT_ERR_INVALID_ARG);
+    assert_eq!(moonlitt_engine_cc(null, 0, 64, 127), MOONLITT_ERR_INVALID_ARG);
+    assert_eq!(moonlitt_engine_pitch_bend(null, 0, 0), MOONLITT_ERR_INVALID_ARG);
+    assert_eq!(moonlitt_engine_program_change(null, 0, 0), MOONLITT_ERR_INVALID_ARG);
+    assert_eq!(moonlitt_engine_all_notes_off(null), MOONLITT_ERR_INVALID_ARG);
     moonlitt_engine_unload(null);
-    moonlitt_engine_set_volume(null, 1.0);
-    let err = moonlitt_engine_get_error(null);
-    assert!(err.is_null());
+    assert_eq!(moonlitt_engine_set_volume(null, 1.0), MOONLITT_ERR_INVALID_ARG);
 }
 
 // ---------------------------------------------------------------------------
@@ -209,17 +206,22 @@ fn test_runtime_destroy_null() {
 #[test]
 fn test_runtime_null_operations() {
     let null = std::ptr::null_mut();
-    assert_eq!(moonlitt_runtime_start(null), 1);
-    assert_eq!(moonlitt_runtime_stop(null), 1);
-    moonlitt_runtime_note_on(null, 0, 60, 100);
-    moonlitt_runtime_note_off(null, 0, 60);
-    moonlitt_runtime_cc(null, 0, 64, 127);
-    moonlitt_runtime_pitch_bend(null, 0, 0);
-    moonlitt_runtime_all_notes_off(null);
-    moonlitt_runtime_set_volume(null, 1.0);
-    moonlitt_runtime_play(null);
-    moonlitt_runtime_pause(null);
-    moonlitt_runtime_stop_playback(null);
+    assert_eq!(moonlitt_runtime_start_audio(null), MOONLITT_ERR_INVALID_ARG);
+    assert_eq!(moonlitt_runtime_stop_audio(null), MOONLITT_ERR_INVALID_ARG);
+    assert_eq!(moonlitt_runtime_note_on(null, 0, 60, 100), MOONLITT_ERR_INVALID_ARG);
+    assert_eq!(moonlitt_runtime_note_off(null, 0, 60), MOONLITT_ERR_INVALID_ARG);
+    assert_eq!(moonlitt_runtime_cc(null, 0, 64, 127), MOONLITT_ERR_INVALID_ARG);
+    assert_eq!(moonlitt_runtime_pitch_bend(null, 0, 0), MOONLITT_ERR_INVALID_ARG);
+    assert_eq!(moonlitt_runtime_all_notes_off(null), MOONLITT_ERR_INVALID_ARG);
+    assert_eq!(moonlitt_runtime_set_volume(null, 1.0), MOONLITT_ERR_INVALID_ARG);
+    assert_eq!(moonlitt_runtime_play(null), MOONLITT_ERR_INVALID_ARG);
+    assert_eq!(moonlitt_runtime_pause(null), MOONLITT_ERR_INVALID_ARG);
+    assert_eq!(moonlitt_runtime_stop(null), MOONLITT_ERR_INVALID_ARG);
+    // Out-of-range ids are rejected, never truncated.
+    assert_eq!(
+        moonlitt_runtime_set_track_volume(null, 300, 1.0),
+        MOONLITT_ERR_INVALID_ARG
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -279,4 +281,57 @@ fn test_panic_guard_returns_status_and_sets_message() {
     assert!(!msg.is_null(), "panic must leave a last-error message");
     let text = unsafe { CStr::from_ptr(msg) }.to_string_lossy().to_string();
     assert!(text.contains("panic"), "message should mention panic: {text}");
+}
+
+// ---------------------------------------------------------------------------
+// Status-code conventions (ABI draft 0.9): arguments are validated before
+// backend presence; no silent failures
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_engine_arg_validation_precedes_backend_check() {
+    let e = moonlitt_engine_create(44100, 256); // nothing loaded
+    assert_eq!(moonlitt_engine_note_on(e, 16, 60, 100), MOONLITT_ERR_INVALID_ARG, "channel > 15");
+    assert_eq!(moonlitt_engine_note_on(e, 0, 128, 100), MOONLITT_ERR_INVALID_ARG, "note > 127");
+    assert_eq!(moonlitt_engine_note_on(e, 0, 60, 128), MOONLITT_ERR_INVALID_ARG, "velocity > 127");
+    assert_eq!(moonlitt_engine_pitch_bend(e, 0, 9000), MOONLITT_ERR_INVALID_ARG, "bend > 8191");
+    // Valid args but no backend loaded → NOT_LOADED
+    assert_eq!(moonlitt_engine_note_on(e, 0, 60, 100), MOONLITT_ERR_NOT_LOADED);
+    let msg = moonlitt_last_error_message();
+    assert!(!msg.is_null());
+    moonlitt_engine_destroy(e);
+}
+
+#[test]
+fn test_engine_render_reports_not_loaded_but_still_silences() {
+    let e = moonlitt_engine_create(44100, 256);
+    let mut left = vec![1.0f32; 64];
+    let mut right = vec![1.0f32; 64];
+    let st = moonlitt_engine_render(e, left.as_mut_ptr(), right.as_mut_ptr(), 64);
+    assert_eq!(st, MOONLITT_ERR_NOT_LOADED, "detectable, even though buffers are silenced");
+    assert!(left.iter().chain(right.iter()).all(|&s| s == 0.0));
+    assert_eq!(
+        moonlitt_engine_render(e, std::ptr::null_mut(), right.as_mut_ptr(), 64),
+        MOONLITT_ERR_INVALID_ARG
+    );
+    moonlitt_engine_destroy(e);
+}
+
+#[test]
+fn test_engine_param_validation() {
+    let e = moonlitt_engine_create(44100, 256);
+    assert_eq!(moonlitt_engine_set_param(e, -1, 0.5), MOONLITT_ERR_INVALID_ARG);
+    assert_eq!(moonlitt_engine_set_param(e, 0, f64::NAN), MOONLITT_ERR_INVALID_ARG);
+    assert_eq!(moonlitt_engine_set_param(e, 0, 0.5), MOONLITT_ERR_NOT_LOADED);
+    assert!(moonlitt_engine_get_param(e, 0).is_nan(), "documented NaN sentinel");
+    assert!(moonlitt_engine_get_presets(e).is_null(), "no backend → NULL, not a fake empty list");
+    moonlitt_engine_destroy(e);
+}
+
+#[test]
+fn test_engine_create_rejects_invalid_config() {
+    assert!(moonlitt_engine_create(0, 256).is_null());
+    assert!(moonlitt_engine_create(44100, -1).is_null());
+    let msg = moonlitt_last_error_message();
+    assert!(!msg.is_null());
 }

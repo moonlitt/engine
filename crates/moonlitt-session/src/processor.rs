@@ -231,7 +231,7 @@ fn dispatch_to_mixer(mixer: &mut Mixer, event: AudioEvent) {
         AudioEvent::ProgramChange { channel, program } => mixer.program_change(channel, program),
         AudioEvent::AllNotesOff => mixer.all_notes_off(),
         AudioEvent::SetVolume(v) => mixer.set_volume(v),
-        AudioEvent::SetParam { id, value } => mixer.set_param(id, value as f64),
+        AudioEvent::SetParam { id, value } => mixer.set_param(id, value),
         AudioEvent::MixerTrackVolume { track_id, volume } => {
             if let Some(t) = mixer.track_mut(track_id as u32) { t.volume = volume; }
         }
@@ -259,13 +259,13 @@ fn dispatch_to_mixer(mixer: &mut Mixer, event: AudioEvent) {
             mixer.set_insert_bypass(track_id as u32, insert_id as u32, bypass);
         }
         AudioEvent::SetParamForTrack { track_id, param_id, value } => {
-            mixer.set_param_for_track(track_id as u32, param_id as u32, value as f64);
+            mixer.set_param_for_track(track_id as u32, param_id as u32, value);
         }
         AudioEvent::SetInsertParam { track_id, insert_id, param_id, value } => {
-            mixer.set_insert_param(track_id as u32, insert_id as u32, param_id as u32, value as f64);
+            mixer.set_insert_param(track_id as u32, insert_id as u32, param_id as u32, value);
         }
         AudioEvent::SetSendBusParam { bus_id, param_id, value } => {
-            mixer.set_send_bus_param(bus_id as u32, param_id as u32, value as f64);
+            mixer.set_send_bus_param(bus_id as u32, param_id as u32, value);
         }
         AudioEvent::MixerTrackRoute { track_id, target_id } => {
             let target = if target_id == 0xFF {

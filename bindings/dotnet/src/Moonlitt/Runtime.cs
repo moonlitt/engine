@@ -37,21 +37,21 @@ public sealed class Runtime : IDisposable
     // Audio output
     // -------------------------------------------------------------------
 
-    /// <summary>Start audio output.</summary>
+    /// <summary>Start the audio output stream.</summary>
     /// <exception cref="MoonlittException">Thrown when audio output fails to start.</exception>
     public void Start()
     {
         ThrowIfDisposed();
-        if (NativeApi.moonlitt_runtime_start(_handle) != 0)
-            throw new MoonlittException("Failed to start audio output");
+        if (NativeApi.moonlitt_runtime_start_audio(_handle) != 0)
+            throw new MoonlittException(Engine.GetError() ?? "Failed to start audio output");
     }
 
-    /// <summary>Stop audio output.</summary>
+    /// <summary>Stop the audio output stream.</summary>
     public void Stop()
     {
         ThrowIfDisposed();
-        if (NativeApi.moonlitt_runtime_stop(_handle) != 0)
-            throw new MoonlittException("Failed to stop audio output");
+        if (NativeApi.moonlitt_runtime_stop_audio(_handle) != 0)
+            throw new MoonlittException(Engine.GetError() ?? "Failed to stop audio output");
     }
 
     // -------------------------------------------------------------------
@@ -154,7 +154,7 @@ public sealed class Runtime : IDisposable
     public void StopPlayback()
     {
         ThrowIfDisposed();
-        NativeApi.moonlitt_runtime_stop_playback(_handle);
+        NativeApi.moonlitt_runtime_stop(_handle);
     }
 
     // -------------------------------------------------------------------

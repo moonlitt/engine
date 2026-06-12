@@ -9,7 +9,7 @@ pub enum AudioEvent {
     ProgramChange { channel: u8, program: u8 },
     AllNotesOff,
     SetVolume(f32),
-    SetParam { id: u32, value: f32 },
+    SetParam { id: u32, value: f64 },
     // Mixer control events
     MixerTrackVolume { track_id: u8, volume: f32 },
     MixerTrackPan { track_id: u8, pan: f32 },
@@ -21,10 +21,10 @@ pub enum AudioEvent {
     // Insert effect control
     InsertBypass { track_id: u8, insert_id: u8, bypass: bool },
     // Per-track parameter targeting
-    SetParamForTrack { track_id: u8, param_id: u16, value: f32 },
-    SetInsertParam { track_id: u8, insert_id: u8, param_id: u16, value: f32 },
+    SetParamForTrack { track_id: u8, param_id: u16, value: f64 },
+    SetInsertParam { track_id: u8, insert_id: u8, param_id: u16, value: f64 },
     // Send bus parameter control
-    SetSendBusParam { bus_id: u8, param_id: u16, value: f32 },
+    SetSendBusParam { bus_id: u8, param_id: u16, value: f64 },
     // Track routing (0xFF = master, else = group track ID)
     MixerTrackRoute { track_id: u8, target_id: u8 },
     /// Set external sidechain source for an insert effect.

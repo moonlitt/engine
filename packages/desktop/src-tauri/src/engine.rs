@@ -850,7 +850,7 @@ impl Engine {
             .map(|o| o.native_track_id);
         let track_id = track_id_opt.ok_or_else(|| format!("no override on channel {channel}"))?;
         if let Some(rt) = s.runtime.as_mut() {
-            rt.set_insert_param(track_id as u8, insert_id as u8, param_id as u16, value as f32);
+            rt.set_insert_param(track_id as u8, insert_id as u8, param_id as u16, value);
         }
         if let Some(o) = s.overrides.iter_mut().find(|o| o.channel == channel) {
             if let Some(ins) = o.inserts.iter_mut().find(|i| i.id == insert_id) {

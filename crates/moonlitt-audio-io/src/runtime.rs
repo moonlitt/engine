@@ -158,21 +158,30 @@ impl Runtime {
 
     // --- MIDI events (lock-free SPSC — single caller only) ---
 
-    fn send(&mut self, event: AudioEvent) {
+    /// Push an event to the audio thread. Returns `false` (and bumps
+    /// `dropped_events`) when the ring buffer is full — the event is
+    /// dropped, never blocked on.
+    fn send(&mut self, event: AudioEvent) -> bool {
         if self.producer.push(TimedEvent {
             event,
             delay_samples: 0,
         }).is_err() {
             self.dropped_events.fetch_add(1, Ordering::Relaxed);
+            false
+        } else {
+            true
         }
     }
 
-    fn send_delayed(&mut self, event: AudioEvent, delay_samples: u32) {
+    fn send_delayed(&mut self, event: AudioEvent, delay_samples: u32) -> bool {
         if self.producer.push(TimedEvent {
             event,
             delay_samples,
         }).is_err() {
             self.dropped_events.fetch_add(1, Ordering::Relaxed);
+            false
+        } else {
+            true
         }
     }
 
@@ -182,15 +191,15 @@ impl Runtime {
         self.dropped_events.load(Ordering::Relaxed)
     }
 
-    pub fn note_on(&mut self, channel: u8, note: u8, velocity: u8) {
+    pub fn note_on(&mut self, channel: u8, note: u8, velocity: u8) -> bool {
         self.send(AudioEvent::NoteOn {
             channel,
             note,
             velocity,
-        });
+        })
     }
 
-    pub fn note_on_delayed(&mut self, channel: u8, note: u8, velocity: u8, delay_samples: u32) {
+    pub fn note_on_delayed(&mut self, channel: u8, note: u8, velocity: u8, delay_samples: u32) -> bool {
         self.send_delayed(
             AudioEvent::NoteOn {
                 channel,
@@ -198,18 +207,18 @@ impl Runtime {
                 velocity,
             },
             delay_samples,
-        );
+        )
     }
 
-    pub fn note_off(&mut self, channel: u8, note: u8) {
+    pub fn note_off(&mut self, channel: u8, note: u8) -> bool {
         self.send(AudioEvent::NoteOff {
             channel,
             note,
             velocity: 0,
-        });
+        })
     }
 
-    pub fn note_off_delayed(&mut self, channel: u8, note: u8, delay_samples: u32) {
+    pub fn note_off_delayed(&mut self, channel: u8, note: u8, delay_samples: u32) -> bool {
         self.send_delayed(
             AudioEvent::NoteOff {
                 channel,
@@ -217,93 +226,93 @@ impl Runtime {
                 velocity: 0,
             },
             delay_samples,
-        );
+        )
     }
 
-    pub fn cc(&mut self, channel: u8, cc: u8, value: u8) {
-        self.send(AudioEvent::CC { channel, cc, value });
+    pub fn cc(&mut self, channel: u8, cc: u8, value: u8) -> bool {
+        self.send(AudioEvent::CC { channel, cc, value })
     }
 
-    pub fn pitch_bend(&mut self, channel: u8, value: i16) {
-        self.send(AudioEvent::PitchBend { channel, value });
+    pub fn pitch_bend(&mut self, channel: u8, value: i16) -> bool {
+        self.send(AudioEvent::PitchBend { channel, value })
     }
 
-    pub fn program_change(&mut self, channel: u8, program: u8) {
-        self.send(AudioEvent::ProgramChange { channel, program });
+    pub fn program_change(&mut self, channel: u8, program: u8) -> bool {
+        self.send(AudioEvent::ProgramChange { channel, program })
     }
 
-    pub fn all_notes_off(&mut self) {
-        self.send(AudioEvent::AllNotesOff);
+    pub fn all_notes_off(&mut self) -> bool {
+        self.send(AudioEvent::AllNotesOff)
     }
 
-    pub fn set_volume(&mut self, volume: f32) {
-        self.send(AudioEvent::SetVolume(volume));
+    pub fn set_volume(&mut self, volume: f32) -> bool {
+        self.send(AudioEvent::SetVolume(volume))
     }
 
-    pub fn set_param(&mut self, id: u32, value: f32) {
-        self.send(AudioEvent::SetParam { id, value });
+    pub fn set_param(&mut self, id: u32, value: f64) -> bool {
+        self.send(AudioEvent::SetParam { id, value })
     }
 
     // --- Mixer control (lock-free SPSC — single caller only) ---
 
-    pub fn mixer_set_track_volume(&mut self, track_id: u8, volume: f32) {
-        self.send(AudioEvent::MixerTrackVolume { track_id, volume });
+    pub fn mixer_set_track_volume(&mut self, track_id: u8, volume: f32) -> bool {
+        self.send(AudioEvent::MixerTrackVolume { track_id, volume })
     }
 
-    pub fn mixer_set_track_pan(&mut self, track_id: u8, pan: f32) {
-        self.send(AudioEvent::MixerTrackPan { track_id, pan });
+    pub fn mixer_set_track_pan(&mut self, track_id: u8, pan: f32) -> bool {
+        self.send(AudioEvent::MixerTrackPan { track_id, pan })
     }
 
-    pub fn mixer_set_track_trim(&mut self, track_id: u8, trim_db: f32) {
-        self.send(AudioEvent::MixerTrackTrim { track_id, trim_db });
+    pub fn mixer_set_track_trim(&mut self, track_id: u8, trim_db: f32) -> bool {
+        self.send(AudioEvent::MixerTrackTrim { track_id, trim_db })
     }
 
-    pub fn mixer_set_track_mute(&mut self, track_id: u8, mute: bool) {
-        self.send(AudioEvent::MixerTrackMute { track_id, mute });
+    pub fn mixer_set_track_mute(&mut self, track_id: u8, mute: bool) -> bool {
+        self.send(AudioEvent::MixerTrackMute { track_id, mute })
     }
 
-    pub fn mixer_set_track_solo(&mut self, track_id: u8, solo: bool) {
-        self.send(AudioEvent::MixerTrackSolo { track_id, solo });
+    pub fn mixer_set_track_solo(&mut self, track_id: u8, solo: bool) -> bool {
+        self.send(AudioEvent::MixerTrackSolo { track_id, solo })
     }
 
-    pub fn mixer_set_track_send(&mut self, track_id: u8, bus_id: u8, level: f32) {
-        self.send(AudioEvent::MixerTrackSend { track_id, bus_id, level });
+    pub fn mixer_set_track_send(&mut self, track_id: u8, bus_id: u8, level: f32) -> bool {
+        self.send(AudioEvent::MixerTrackSend { track_id, bus_id, level })
     }
 
-    pub fn mixer_set_master_volume(&mut self, volume: f32) {
-        self.send(AudioEvent::MixerMasterVolume(volume));
+    pub fn mixer_set_master_volume(&mut self, volume: f32) -> bool {
+        self.send(AudioEvent::MixerMasterVolume(volume))
     }
 
-    pub fn mixer_set_insert_bypass(&mut self, track_id: u8, insert_id: u8, bypass: bool) {
-        self.send(AudioEvent::InsertBypass { track_id, insert_id, bypass });
+    pub fn mixer_set_insert_bypass(&mut self, track_id: u8, insert_id: u8, bypass: bool) -> bool {
+        self.send(AudioEvent::InsertBypass { track_id, insert_id, bypass })
     }
 
-    pub fn set_param_for_track(&mut self, track_id: u8, param_id: u16, value: f32) {
-        self.send(AudioEvent::SetParamForTrack { track_id, param_id, value });
+    pub fn set_param_for_track(&mut self, track_id: u8, param_id: u16, value: f64) -> bool {
+        self.send(AudioEvent::SetParamForTrack { track_id, param_id, value })
     }
 
-    pub fn set_insert_param(&mut self, track_id: u8, insert_id: u8, param_id: u16, value: f32) {
-        self.send(AudioEvent::SetInsertParam { track_id, insert_id, param_id, value });
+    pub fn set_insert_param(&mut self, track_id: u8, insert_id: u8, param_id: u16, value: f64) -> bool {
+        self.send(AudioEvent::SetInsertParam { track_id, insert_id, param_id, value })
     }
 
-    pub fn set_send_bus_param(&mut self, bus_id: u8, param_id: u16, value: f32) {
-        self.send(AudioEvent::SetSendBusParam { bus_id, param_id, value });
+    pub fn set_send_bus_param(&mut self, bus_id: u8, param_id: u16, value: f64) -> bool {
+        self.send(AudioEvent::SetSendBusParam { bus_id, param_id, value })
     }
 
     /// Route a track's output. target_id = 0xFF for master, else group track ID.
-    pub fn mixer_set_track_route(&mut self, track_id: u8, target_id: u8) {
-        self.send(AudioEvent::MixerTrackRoute { track_id, target_id });
+    pub fn mixer_set_track_route(&mut self, track_id: u8, target_id: u8) -> bool {
+        self.send(AudioEvent::MixerTrackRoute { track_id, target_id })
     }
 
     /// Set external sidechain source for an insert effect.
     /// source_track_id = None means revert to internal sidechain.
-    pub fn set_insert_sidechain(&mut self, track_id: u8, insert_id: u8, source_track_id: Option<u8>) {
+    pub fn set_insert_sidechain(&mut self, track_id: u8, insert_id: u8, source_track_id: Option<u8>) -> bool {
         let src = source_track_id.unwrap_or(0xFF);
         self.send(AudioEvent::SetInsertSidechain {
             track_id,
             insert_id,
             source_track_id: src,
-        });
+        })
     }
 
     // --- Structural commands (via mpsc command channel) ---

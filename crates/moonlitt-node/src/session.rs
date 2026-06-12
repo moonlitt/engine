@@ -173,7 +173,7 @@ impl Session {
     /// Set a backend parameter by ID.
     #[napi]
     pub fn set_param(&mut self, id: u32, value: f64) -> Result<()> {
-        self.rt_mut()?.set_param(id, value as f32);
+        self.rt_mut()?.set_param(id, value);
         Ok(())
     }
 
@@ -338,7 +338,7 @@ impl Session {
         param_id: u16,
         value: f64,
     ) -> Result<()> {
-        self.rt_mut()?.set_param_for_track(track_id, param_id, value as f32);
+        self.rt_mut()?.set_param_for_track(track_id, param_id, value);
         Ok(())
     }
 
@@ -351,7 +351,7 @@ impl Session {
         param_id: u16,
         value: f64,
     ) -> Result<()> {
-        self.rt_mut()?.set_insert_param(track_id, insert_id, param_id, value as f32);
+        self.rt_mut()?.set_insert_param(track_id, insert_id, param_id, value);
         Ok(())
     }
 
@@ -363,7 +363,7 @@ impl Session {
         param_id: u16,
         value: f64,
     ) -> Result<()> {
-        self.rt_mut()?.set_send_bus_param(bus_id, param_id, value as f32);
+        self.rt_mut()?.set_send_bus_param(bus_id, param_id, value);
         Ok(())
     }
 

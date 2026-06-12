@@ -7,6 +7,9 @@ license.workspace = true
 repository.workspace = true
 
 [lib]
+# The distributable artifact is libmoonlitt.{dylib,so,dll} — one name,
+# matching include/moonlitt.h. (The crate itself stays moonlitt-capi.)
+name = "moonlitt"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]

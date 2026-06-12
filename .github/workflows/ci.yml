@@ -16,6 +16,17 @@ jobs:
       - run: cargo test --workspace -- --skip pianoteq --skip keyscape
       - run: cargo clippy --workspace -- -D warnings -A clippy::not_unsafe_ptr_arg_deref
 
+      # ABI header drift check — include/moonlitt.h must match the source.
+      - name: Install cbindgen
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cbindgen
+      - name: Check generated header is current
+        run: |
+          cbindgen --config crates/moonlitt-capi/cbindgen.toml \
+                   --crate moonlitt-capi --output include/moonlitt.h
+          git diff --exit-code include/moonlitt.h
+
       # FFI testbed — validates the C ABI surface that piano-block consumes.
       # Runs in --no-sf2 mode (CI runner has no GeneralUser_GS.sf2). The full
       # suite is available locally with an SF2 path or MOONLITT_SF2 env var.
