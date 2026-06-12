@@ -15,3 +15,18 @@ jobs:
       - run: cargo build --workspace
       - run: cargo test --workspace -- --skip pianoteq --skip keyscape
       - run: cargo clippy --workspace -- -D warnings -A clippy::not_unsafe_ptr_arg_deref
+
+      # FFI testbed — validates the C ABI surface that piano-block consumes.
+      # Runs in --no-sf2 mode (CI runner has no GeneralUser_GS.sf2). The full
+      # suite is available locally with an SF2 path or MOONLITT_SF2 env var.
+      - name: Build moonlitt-capi (release)
+        run: cargo build -p moonlitt-capi --release
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Run FFI testbed (no-SF2 ABI subset)
+        working-directory: examples/ffi-testbed-csharp
+        env:
+          DYLD_LIBRARY_PATH: ${{ github.workspace }}/target/release
+        run: dotnet run --configuration Release -- --no-sf2

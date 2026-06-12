@@ -1,0 +1,20 @@
+[package]
+name = "bevy-piano-tiles"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Opt out of the parent workspace — Bevy is a heavy dep we don't want
+# pulled into every workspace build.
+[workspace]
+
+[dependencies]
+bevy = "0.15"
+moonlitt-engine = { path = "../../crates/moonlitt-engine", features = ["sf2"] }
+moonlitt-audio-io = { path = "../../crates/moonlitt-audio-io" }
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

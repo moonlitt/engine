@@ -6,3 +6,7 @@ tests/sf2-spec-test/
 # Node.js
 node_modules/
 dist/
+
+# .NET build artifacts (examples/ffi-testbed-csharp)
+examples/**/bin/
+examples/**/obj/
