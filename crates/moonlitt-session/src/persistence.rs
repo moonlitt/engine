@@ -103,6 +103,10 @@ pub struct TransportSnapshot {
     /// without this field deserialise as `false`.
     #[serde(default)]
     pub metronome_enabled: bool,
+    /// Practice-loop region `[start, end)` in ticks; `None` = loop the
+    /// whole clip. Older session files deserialise as `None`.
+    #[serde(default)]
+    pub loop_region: Option<(f64, f64)>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -332,10 +336,12 @@ impl From<&Transport> for TransportSnapshot {
         Self {
             tempo_override_bpm: t.tempo(),
             looping: t.looping(),
-            // Transport doesn't own the metronome — that flag lives on
-            // the audio thread. Callers that want to persist it must set
-            // it explicitly after this conversion.
+            // Transport doesn't own the metronome or the loop region —
+            // those live on the audio thread / runtime mirror. Callers
+            // that want to persist them must set them explicitly after
+            // this conversion.
             metronome_enabled: false,
+            loop_region: None,
         }
     }
 }

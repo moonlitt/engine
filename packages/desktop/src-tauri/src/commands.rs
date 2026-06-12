@@ -875,12 +875,19 @@ pub struct AutosaveRestoreView {
 }
 
 /// Restore the autosave journal, if one exists. Returns `None` when
-/// there's nothing to restore (first run / corrupted journal).
+/// there's nothing to restore (first run / corrupted journal) — and on
+/// every call after the first: journal restore is a boot-time act, and
+/// webview reloads (vite HMR, ⌘R) re-run the frontend boot sequence
+/// against an engine that's already live.
 #[tauri::command]
 pub fn cmd_autosave_restore(
     state: State<AppState>,
     app: AppHandle,
 ) -> Result<Option<AutosaveRestoreView>, String> {
+    static RESTORED_ONCE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if RESTORED_ONCE.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return Ok(None);
+    }
     let Some(envelope) = crate::autosave::read(&app) else {
         return Ok(None);
     };
@@ -969,6 +976,36 @@ pub fn cmd_render_to_wav(state: State<AppState>, path: String) -> Result<RenderR
 #[tauri::command]
 pub fn cmd_transport_seek(state: State<AppState>, ticks: f64) -> Result<(), String> {
     state.engine.seek(ticks)
+}
+
+/// Set (or clear, with `None`s) the practice-loop region in ticks.
+/// Implicitly enables looping when a region is set — drawing a cycle
+/// region and then wondering why nothing loops is a classic trap.
+#[tauri::command]
+pub fn cmd_transport_set_loop_region(
+    state: State<AppState>,
+    app: AppHandle,
+    start_ticks: Option<f64>,
+    end_ticks: Option<f64>,
+) -> Result<(), String> {
+    let region = match (start_ticks, end_ticks) {
+        (Some(s), Some(e)) => Some((s, e)),
+        _ => None,
+    };
+    state.engine.set_loop_region(region)?;
+    if region.is_some() && !state.engine.snapshot().looping {
+        state.engine.set_loop(true);
+        let _ = app.emit("transport:loop_changed", serde_json::json!({ "looping": true }));
+    }
+    let applied = state.engine.loop_region();
+    let _ = app.emit(
+        "transport:loop_region_changed",
+        serde_json::json!({
+            "startTicks": applied.map(|r| r.0),
+            "endTicks": applied.map(|r| r.1),
+        }),
+    );
+    Ok(())
 }
 
 // --- Spectrasonics patch library -------------------------------------------

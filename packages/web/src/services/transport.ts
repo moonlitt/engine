@@ -70,6 +70,7 @@ export function dispatchEvent(event: ServerEvent): void {
       transport.setBpm(event.project.bpm);
       transport.setPlaying(event.project.playing);
       transport.setLooping(event.project.looping);
+      transport.setLoopRegion(event.project.loopRegion ?? null);
       transport.setMetronomeEnabled(event.project.metronomeEnabled);
       break;
     case 'transport.state':
@@ -81,6 +82,13 @@ export function dispatchEvent(event: ServerEvent): void {
       break;
     case 'transport.loop_changed':
       transport.setLooping(event.looping);
+      break;
+    case 'transport.loop_region_changed':
+      transport.setLoopRegion(
+        event.startTicks !== null && event.endTicks !== null
+          ? [event.startTicks, event.endTicks]
+          : null,
+      );
       break;
     case 'transport.metronome_changed':
       transport.setMetronomeEnabled(event.enabled);
@@ -304,6 +312,12 @@ function createTauriTransport(): Transport {
       case 'transport.seek':
         await invoke('cmd_transport_seek', { ticks: cmd.ticks });
         return;
+      case 'transport.set_loop_region':
+        await invoke('cmd_transport_set_loop_region', {
+          startTicks: cmd.startTicks,
+          endTicks: cmd.endTicks,
+        });
+        return;
       case 'transport.stop':
         await invoke('cmd_transport_stop');
         return;
@@ -454,6 +468,16 @@ function createTauriTransport(): Transport {
       const onTempo = await e.listen('transport:tempo_changed', (m: Wrap<{ bpm: number }>) => {
         dispatchEvent({ type: 'transport.tempo_changed', bpm: m.payload.bpm });
       });
+      const onLoopRegion = await e.listen(
+        'transport:loop_region_changed',
+        (m: Wrap<{ startTicks: number | null; endTicks: number | null }>) => {
+          dispatchEvent({
+            type: 'transport.loop_region_changed',
+            startTicks: m.payload.startTicks,
+            endTicks: m.payload.endTicks,
+          });
+        },
+      );
       const onLoop = await e.listen('transport:loop_changed', (m: Wrap<{ looping: boolean }>) => {
         dispatchEvent({ type: 'transport.loop_changed', looping: m.payload.looping });
       });
@@ -550,6 +574,7 @@ function createTauriTransport(): Transport {
         },
       );
       unsubs.push(
+        onLoopRegion,
         onTransportState, onTempo, onLoop, onMet, onMaster, onMidi, onDefault,
         onAdd, onRm, onUpd, onIns, onInsRm, onInsBypass, onSendBusAdded, onSendLevel,
         onPlugins, onMeter, onPluginStateCaptured,

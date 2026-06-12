@@ -132,6 +132,7 @@ pub fn run() {
             commands::cmd_render_to_wav,
             commands::cmd_send_bus_set_param,
             commands::cmd_transport_seek,
+            commands::cmd_transport_set_loop_region,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

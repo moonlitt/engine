@@ -120,6 +120,9 @@ pub struct ProjectState {
     pub bpm: f64,
     pub playing: bool,
     pub looping: bool,
+    /// Practice-loop region `[startTicks, endTicks)`; `None` = loop the
+    /// whole clip when looping.
+    pub loop_region: Option<(f64, f64)>,
     pub metronome_enabled: bool,
     pub master: MasterStateView,
     pub default_instrument_path: Option<String>,
@@ -350,6 +353,7 @@ impl Engine {
             bpm: s.bpm,
             playing: s.playing,
             looping: s.looping,
+            loop_region: s.runtime.as_ref().and_then(|rt| rt.loop_region()),
             metronome_enabled: s.metronome_enabled,
             master: MasterStateView {
                 volume_db: s.master_volume_db,
@@ -528,6 +532,8 @@ impl Engine {
         let mut clip_total_ticks = 0u64;
         let mut clip_ticks_per_beat = 480u16;
         if let Some(rt) = s.runtime.as_mut() {
+            // A practice-loop region is meaningless across clips.
+            rt.set_loop_region(None);
             let clip = rt.load_midi(path).map_err(|e| format!("loadMidi: {e}"))?;
             clip_total_ticks = clip.total_ticks;
             clip_ticks_per_beat = clip.ticks_per_beat;
@@ -1134,6 +1140,7 @@ impl Engine {
                 tempo_override_bpm: s.runtime.as_ref().and_then(|rt| rt.tempo_override()),
                 looping: s.looping,
                 metronome_enabled: s.metronome_enabled,
+                loop_region: s.runtime.as_ref().and_then(|rt| rt.loop_region()),
             },
             sequencer_source: s.midi.as_ref().map(|m| m.path.clone()),
         }
@@ -1255,9 +1262,41 @@ impl Engine {
                 .unwrap_or(midi_path)
                 .to_string();
             let _ = self.load_midi(midi_path, &name);
+            // Practice-loop region applies AFTER the clip stages — a
+            // fresh sequencer starts with no region, and load_midi
+            // clears the mirror (a region only means something for the
+            // clip it was drawn on).
+            if session.transport.loop_region.is_some() {
+                let mut s = self.inner.lock();
+                if let Some(rt) = s.runtime.as_mut() {
+                    rt.set_loop_region(session.transport.loop_region);
+                }
+            }
         }
 
         Ok(restored_states)
+    }
+
+    /// Set (or clear) the practice-loop region in ticks. Returns the
+    /// region as accepted (the audio-thread sequencer sanitises again
+    /// against the clip; the mirror holds the requested values).
+    pub fn set_loop_region(&self, region: Option<(f64, f64)>) -> Result<(), String> {
+        let mut s = self.inner.lock();
+        let rt = s
+            .runtime
+            .as_mut()
+            .ok_or_else(|| "runtime missing".to_string())?;
+        rt.set_loop_region(region);
+        Ok(())
+    }
+
+    /// Control-side mirror of the practice-loop region.
+    pub fn loop_region(&self) -> Option<(f64, f64)> {
+        self.inner
+            .lock()
+            .runtime
+            .as_ref()
+            .and_then(|rt| rt.loop_region())
     }
 
     // --- Internals ---

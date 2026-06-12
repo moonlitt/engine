@@ -41,6 +41,10 @@ pub struct Sequencer {
     state: SeqState,
     /// Total ticks in the sequence (used for looping).
     total_ticks: u64,
+    /// Optional practice-loop region `[start, end)` in ticks. When set
+    /// AND looping is on, playback wraps inside the region instead of
+    /// the whole clip.
+    loop_region: Option<(f64, f64)>,
 }
 
 impl Sequencer {
@@ -150,7 +154,24 @@ impl Sequencer {
             cursor: 0,
             state: SeqState::Stopped,
             total_ticks,
+            loop_region: None,
         })
+    }
+
+    /// Set (or clear) the practice-loop region, in ticks. Input is
+    /// sanitised: clamped to the clip, rejected when inverted or
+    /// degenerate after clamping.
+    pub fn set_loop_region(&mut self, region: Option<(f64, f64)>) {
+        self.loop_region = region.and_then(|(start, end)| {
+            let start = start.clamp(0.0, self.total_ticks as f64);
+            let end = end.clamp(0.0, self.total_ticks as f64);
+            (start < end).then_some((start, end))
+        });
+    }
+
+    /// The active practice-loop region, if any.
+    pub fn loop_region(&self) -> Option<(f64, f64)> {
+        self.loop_region
     }
 
     /// Start or resume playback.
@@ -260,10 +281,20 @@ impl Sequencer {
 
         self.current_tick = new_tick;
 
-        // Loop back to the beginning if we've passed the end
-        if looping && self.current_tick >= self.total_ticks as f64 {
-            self.current_tick = 0.0;
-            self.cursor = 0;
+        // Loop wrap: inside the practice region when one is set, else
+        // around the whole clip. Hanging notes are flushed — a region
+        // boundary can cut right through held notes.
+        if looping {
+            let (wrap_start, wrap_end) = self
+                .loop_region
+                .unwrap_or((0.0, self.total_ticks as f64));
+            if self.current_tick >= wrap_end {
+                output.push(AudioEvent::AllNotesOff);
+                self.current_tick = wrap_start;
+                self.cursor = self
+                    .events
+                    .partition_point(|e| (e.tick as f64) < wrap_start);
+            }
         }
     }
 }
@@ -346,5 +377,70 @@ mod seek_tests {
         // 0 + 240 + 240 + 240 = 720.
         assert_eq!(seq.total_ticks(), 720);
         assert_eq!(seq.ticks_per_beat(), 480);
+    }
+
+    /// A loop REGION wraps playback inside [start, end): crossing the
+    /// end jumps back to the start, flushes hanging notes, and re-emits
+    /// the region's events on the next pass. This is the practice-loop
+    /// feature — without a region, looping wraps the whole clip.
+    #[test]
+    fn loop_region_wraps_to_region_start_and_replays() {
+        let mut seq = Sequencer::from_bytes(&test_midi()).unwrap();
+        seq.set_loop_region(Some((0.0, 480.0)));
+        seq.play();
+
+        // Advance 1.25 s = 600 ticks at 120 BPM — crosses the region
+        // end (480) once.
+        let mut events = Vec::new();
+        seq.advance(55125, 44100, &mut events, None, true);
+        assert!(
+            seq.position_ticks() < 480.0,
+            "position must wrap inside the region, got {}",
+            seq.position_ticks()
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, moonlitt_core::AudioEvent::AllNotesOff)),
+            "wrap must flush hanging notes"
+        );
+
+        // Next pass re-emits the region's first note.
+        events.clear();
+        seq.advance(11025, 44100, &mut events, None, true);
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, moonlitt_core::AudioEvent::NoteOn { note: 60, .. })),
+            "region restart must re-emit the first note"
+        );
+    }
+
+    #[test]
+    fn loop_without_region_still_wraps_whole_clip() {
+        let mut seq = Sequencer::from_bytes(&test_midi()).unwrap();
+        seq.play();
+        let mut events = Vec::new();
+        // 2 s = 960 ticks — crosses total (720).
+        seq.advance(88200, 44100, &mut events, None, true);
+        assert!(
+            seq.position_ticks() < 720.0,
+            "whole-clip loop must wrap, got {}",
+            seq.position_ticks()
+        );
+    }
+
+    #[test]
+    fn loop_region_sanitises_bad_input() {
+        let mut seq = Sequencer::from_bytes(&test_midi()).unwrap();
+        // Inverted → rejected.
+        seq.set_loop_region(Some((480.0, 240.0)));
+        assert_eq!(seq.loop_region(), None);
+        // Out of bounds → clamped to the clip.
+        seq.set_loop_region(Some((-50.0, 10_000.0)));
+        assert_eq!(seq.loop_region(), Some((0.0, 720.0)));
+        // Degenerate (start == end after clamping) → rejected.
+        seq.set_loop_region(Some((700.0, 700.0)));
+        assert_eq!(seq.loop_region(), None);
     }
 }

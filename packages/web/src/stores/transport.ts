@@ -3,12 +3,15 @@ import { create } from 'zustand';
 interface TransportStore {
   playing: boolean;
   looping: boolean;
+  /** Practice-loop region [startTicks, endTicks); null = whole clip. */
+  loopRegion: [number, number] | null;
   metronomeEnabled: boolean;
   bpm: number;
   position: number;
   timeSignature: [number, number];
   setPlaying(playing: boolean): void;
   setLooping(looping: boolean): void;
+  setLoopRegion(region: [number, number] | null): void;
   setMetronomeEnabled(enabled: boolean): void;
   setBpm(bpm: number): void;
   updatePosition(pos: number): void;
@@ -18,6 +21,7 @@ interface TransportStore {
 export const useTransportStore = create<TransportStore>((set) => ({
   playing: false,
   looping: false,
+  loopRegion: null,
   metronomeEnabled: false,
   bpm: 120,
   position: 0,
@@ -29,6 +33,10 @@ export const useTransportStore = create<TransportStore>((set) => ({
 
   setLooping(looping: boolean) {
     set({ looping });
+  },
+
+  setLoopRegion(region: [number, number] | null) {
+    set({ loopRegion: region });
   },
 
   setMetronomeEnabled(enabled: boolean) {

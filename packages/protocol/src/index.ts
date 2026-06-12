@@ -35,6 +35,7 @@ export type Command =
   | { type: 'insert.set_bypass'; channel: number; insertId: number; bypassed: boolean }
   | { type: 'insert.set_param'; channel: number; insertId: number; paramId: number; value: number }
   | { type: 'transport.seek'; ticks: number }
+  | { type: 'transport.set_loop_region'; startTicks: number | null; endTicks: number | null }
   | { type: 'send_bus.add'; effectType: string }
   | { type: 'send_bus.set_param'; busId: number; paramId: number; value: number }
   | { type: 'channel.set_send_level'; channel: number; busId: number; level: number };
@@ -45,6 +46,7 @@ export type ServerEvent =
   | { type: 'transport.state'; playing: boolean; position: number }
   | { type: 'transport.tempo_changed'; bpm: number }
   | { type: 'transport.loop_changed'; looping: boolean }
+  | { type: 'transport.loop_region_changed'; startTicks: number | null; endTicks: number | null }
   | { type: 'transport.metronome_changed'; enabled: boolean }
   | { type: 'master.updated'; volumeDb: number }
   | { type: 'midi.loaded'; midi: MidiState }
@@ -72,6 +74,8 @@ export interface ProjectState {
   bpm: number;
   playing: boolean;
   looping: boolean;
+  /** Practice-loop region [startTicks, endTicks); null/absent = loop whole clip. */
+  loopRegion?: [number, number] | null;
   metronomeEnabled: boolean;
   master: MasterState;
   defaultInstrumentPath: string | null;

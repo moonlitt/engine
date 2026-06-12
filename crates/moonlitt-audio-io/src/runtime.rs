@@ -33,6 +33,9 @@ pub struct Runtime {
     sample_rate: u32,
     /// Counter for events dropped due to ring buffer overflow.
     dropped_events: Arc<AtomicU64>,
+    /// Control-side mirror of the practice-loop region (ticks) — the
+    /// authoritative copy lives in the audio-thread sequencer.
+    loop_region: Option<(f64, f64)>,
     /// Pre-assigned ID counters (synchronized with Mixer on audio thread).
     next_track_id: u32,
     next_bus_id: u32,
@@ -140,6 +143,7 @@ impl Runtime {
             buffer_size,
             sample_rate,
             dropped_events: Arc::new(AtomicU64::new(0)),
+            loop_region: None,
             next_track_id,
             next_bus_id,
             next_insert_id,
@@ -539,6 +543,24 @@ impl Runtime {
 
     pub fn set_loop(&self, enabled: bool) {
         self.transport.set_loop(enabled);
+    }
+
+    /// Set (or clear) the practice-loop region in ticks. Applies on the
+    /// audio thread via the sequencer command channel; the sequencer
+    /// sanitises the bounds. A control-side mirror is kept for session
+    /// capture and UI reads.
+    pub fn set_loop_region(&mut self, region: Option<(f64, f64)>) {
+        self.loop_region = region;
+        let _ = self.sequencer_tx.send(Box::new(move |slot| {
+            if let Some(seq) = slot.as_mut() {
+                seq.set_loop_region(region);
+            }
+        }));
+    }
+
+    /// Control-side mirror of the practice-loop region.
+    pub fn loop_region(&self) -> Option<(f64, f64)> {
+        self.loop_region
     }
 
     /// Jump the sequencer playhead to an absolute tick (clamped to the
