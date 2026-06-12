@@ -23,7 +23,7 @@
 use crate::engine_api::{channel, data_byte, take_backend, EngineHandle};
 use crate::error::{
     ffi_guard, set_last_error, set_last_error_static, MoonlittStatus, MOONLITT_ERR_INVALID_ARG,
-    MOONLITT_ERR_PANIC, MOONLITT_ERR_QUEUE_FULL, MOONLITT_ERR_UNSUPPORTED, MOONLITT_OK,
+    MOONLITT_ERR_PANIC, MOONLITT_ERR_QUEUE_FULL, MOONLITT_OK,
 };
 use crate::util::{cstr_to_str, json_escape, to_c_string};
 use moonlitt_audio_io::Runtime;
@@ -32,6 +32,10 @@ use std::ffi::{c_char, c_float, c_int};
 /// Opaque runtime handle exposed to C callers.
 pub struct RuntimeHandle {
     pub(crate) runtime: Runtime,
+    /// Control-side mirror of the mixer, kept in lock-step by every
+    /// mutation here so `moonlitt_runtime_save_session` can snapshot
+    /// without touching the audio thread.
+    pub(crate) shadow: crate::shadow::SessionShadow,
 }
 
 // ---------------------------------------------------------------------------
@@ -130,9 +134,14 @@ pub extern "C" fn moonlitt_runtime_create(engine_handle: *mut EngineHandle) -> *
 
         let sample_rate = handle.sample_rate;
         let buffer_size = handle.buffer_size;
+        let source =
+            crate::shadow::ShadowSource::from_backend(&*backend, handle.loaded_path.clone());
 
         match Runtime::new(backend, sample_rate, buffer_size) {
-            Ok(runtime) => Box::into_raw(Box::new(RuntimeHandle { runtime })),
+            Ok(runtime) => Box::into_raw(Box::new(RuntimeHandle {
+                runtime,
+                shadow: crate::shadow::SessionShadow::single_track(sample_rate, source),
+            })),
             Err((err, backend)) => {
                 // Put the backend back — caller can retry or render offline.
                 handle.backend = Some(backend);
@@ -465,6 +474,7 @@ pub extern "C" fn moonlitt_runtime_set_track_volume(
             let vol = not_nan_f32(vol)?;
             let h = rt_mut(rt)?;
             queued(h.runtime.mixer_set_track_volume(track, vol))
+                .inspect(|_| h.shadow.set_track_volume(track as u32, vol))
         })())
     })
 }
@@ -482,6 +492,7 @@ pub extern "C" fn moonlitt_runtime_set_track_trim(
             let trim = not_nan_f32(trim_db)?;
             let h = rt_mut(rt)?;
             queued(h.runtime.mixer_set_track_trim(track, trim))
+                .inspect(|_| h.shadow.set_track_trim(track as u32, trim))
         })())
     })
 }
@@ -499,6 +510,7 @@ pub extern "C" fn moonlitt_runtime_set_track_pan(
             let pan = not_nan_f32(pan)?;
             let h = rt_mut(rt)?;
             queued(h.runtime.mixer_set_track_pan(track, pan))
+                .inspect(|_| h.shadow.set_track_pan(track as u32, pan))
         })())
     })
 }
@@ -515,6 +527,7 @@ pub extern "C" fn moonlitt_runtime_set_track_mute(
             let track = id_u8(track_id)?;
             let h = rt_mut(rt)?;
             queued(h.runtime.mixer_set_track_mute(track, mute != 0))
+                .inspect(|_| h.shadow.set_track_mute(track as u32, mute != 0))
         })())
     })
 }
@@ -531,6 +544,7 @@ pub extern "C" fn moonlitt_runtime_set_track_solo(
             let track = id_u8(track_id)?;
             let h = rt_mut(rt)?;
             queued(h.runtime.mixer_set_track_solo(track, solo != 0))
+                .inspect(|_| h.shadow.set_track_solo(track as u32, solo != 0))
         })())
     })
 }
@@ -549,6 +563,7 @@ pub extern "C" fn moonlitt_runtime_set_track_send(
             let level = not_nan_f32(level)?;
             let h = rt_mut(rt)?;
             queued(h.runtime.mixer_set_track_send(track, bus, level))
+                .inspect(|_| h.shadow.set_track_send(track as u32, bus as usize, level))
         })())
     })
 }
@@ -581,6 +596,7 @@ pub extern "C" fn moonlitt_runtime_set_master_volume(
             let vol = not_nan_f32(vol)?;
             let h = rt_mut(rt)?;
             queued(h.runtime.mixer_set_master_volume(vol))
+                .inspect(|_| h.shadow.set_master_volume(vol))
         })())
     })
 }
@@ -598,6 +614,7 @@ pub extern "C" fn moonlitt_runtime_set_insert_bypass(
             let (track, insert) = (id_u8(track_id)?, id_u8(insert_id)?);
             let h = rt_mut(rt)?;
             queued(h.runtime.mixer_set_insert_bypass(track, insert, bypass != 0))
+                .inspect(|_| h.shadow.set_insert_bypass(track as u32, insert as u32, bypass != 0))
         })())
     })
 }
@@ -643,11 +660,15 @@ pub extern "C" fn moonlitt_runtime_add_track(
             Ok(h) => h,
             Err(s) => return s,
         };
+        let path = unsafe { engine_handle.as_ref() }.and_then(|e| e.loaded_path.clone());
         let backend = match take_backend(engine_handle) {
             Ok(b) => b,
             Err(s) => return s,
         };
-        h.runtime.add_track(backend, channel_mask as u16) as c_int
+        let source = crate::shadow::ShadowSource::from_backend(&*backend, path);
+        let id = h.runtime.add_track(backend, channel_mask as u16);
+        h.shadow.add_track(id, channel_mask as u16, source);
+        id as c_int
     })
 }
 
@@ -666,6 +687,7 @@ pub extern "C" fn moonlitt_runtime_remove_track(
             }
             let h = rt_mut(rt)?;
             h.runtime.remove_track(track_id as u32);
+            h.shadow.remove_track(track_id as u32);
             Ok(MOONLITT_OK)
         })())
     })
@@ -688,11 +710,15 @@ pub extern "C" fn moonlitt_runtime_add_insert(
             set_last_error_static(c"track_id must be >= 0");
             return MOONLITT_ERR_INVALID_ARG;
         }
+        let path = unsafe { engine_handle.as_ref() }.and_then(|e| e.loaded_path.clone());
         let backend = match take_backend(engine_handle) {
             Ok(b) => b,
             Err(s) => return s,
         };
-        h.runtime.add_insert(track_id as u32, backend) as c_int
+        let source = crate::shadow::ShadowSource::from_backend(&*backend, path);
+        let id = h.runtime.add_insert(track_id as u32, backend);
+        h.shadow.add_insert(track_id as u32, id, source);
+        id as c_int
     })
 }
 
@@ -712,6 +738,7 @@ pub extern "C" fn moonlitt_runtime_remove_insert(
             }
             let h = rt_mut(rt)?;
             h.runtime.remove_insert(track_id as u32, insert_id as u32);
+            h.shadow.remove_insert(track_id as u32, insert_id as u32);
             Ok(MOONLITT_OK)
         })())
     })
@@ -729,11 +756,15 @@ pub extern "C" fn moonlitt_runtime_add_send_bus(
             Ok(h) => h,
             Err(s) => return s,
         };
+        let path = unsafe { engine_handle.as_ref() }.and_then(|e| e.loaded_path.clone());
         let backend = match take_backend(engine_handle) {
             Ok(b) => b,
             Err(s) => return s,
         };
-        h.runtime.add_send_bus(backend) as c_int
+        let source = crate::shadow::ShadowSource::from_backend(&*backend, path);
+        let id = h.runtime.add_send_bus(backend);
+        h.shadow.add_send_bus(id, source);
+        id as c_int
     })
 }
 
@@ -810,12 +841,18 @@ pub extern "C" fn moonlitt_runtime_stop(rt: *mut RuntimeHandle) -> MoonlittStatu
 // Session save
 // ---------------------------------------------------------------------------
 
-/// Save the runtime's full session (mixer topology + plugin states +
-/// transport) to a JSON file.
+/// Save the runtime's full session — mixer topology, levels, plugin
+/// patch states and transport flags — to a `.mlsession` JSON file that
+/// `moonlitt_session_load_from_file` restores.
 ///
-/// NOT IMPLEMENTED YET — always returns `MOONLITT_ERR_UNSUPPORTED`.
-/// Lands with ABI 1.0 (Phase 2 of the core-polish plan); the shape of
-/// the signature is already final so bindings can prepare for it.
+/// Plugin states are pulled through shared handles with a brief
+/// per-plugin lock; sample streamers (Spectrasonics) can hold that lock
+/// up to ~1 s, during which the audio thread renders silence rather
+/// than stalling. Save is a user-initiated, rare operation — schedule
+/// it accordingly.
+///
+/// Errors: `INVALID_ARG` (NULL handle/path), `STATE` (a plugin failed
+/// to serialise — message names the track), `IO` (file write failed).
 #[no_mangle]
 pub extern "C" fn moonlitt_runtime_save_session(
     rt: *mut RuntimeHandle,
@@ -823,15 +860,28 @@ pub extern "C" fn moonlitt_runtime_save_session(
 ) -> MoonlittStatus {
     ffi_guard!(MOONLITT_ERR_PANIC, {
         status((|| {
-            let _h = rt_mut(rt)?;
-            if unsafe { cstr_to_str(path) }.is_none() {
-                set_last_error_static(c"path is NULL or not valid UTF-8");
-                return Err(MOONLITT_ERR_INVALID_ARG);
+            let h = rt_mut(rt)?;
+            let path = match unsafe { cstr_to_str(path) } {
+                Some(p) => p,
+                None => {
+                    set_last_error_static(c"path is NULL or not valid UTF-8");
+                    return Err(MOONLITT_ERR_INVALID_ARG);
+                }
+            };
+            let session = match h.shadow.to_session(h.runtime.is_metronome_enabled()) {
+                Ok(s) => s,
+                Err(e) => {
+                    set_last_error(e);
+                    return Err(crate::error::MOONLITT_ERR_STATE);
+                }
+            };
+            match session.save_to_file(path) {
+                Ok(()) => Ok(MOONLITT_OK),
+                Err(e) => {
+                    set_last_error(format!("write session '{path}': {e}"));
+                    Err(crate::error::MOONLITT_ERR_IO)
+                }
             }
-            set_last_error_static(
-                c"moonlitt_runtime_save_session is not implemented yet (planned for ABI 1.0)",
-            );
-            Err(MOONLITT_ERR_UNSUPPORTED)
         })())
     })
 }

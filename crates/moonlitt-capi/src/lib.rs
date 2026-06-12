@@ -8,6 +8,7 @@
 //! All functions are `extern "C"`, NULL-safe, and return 0 for success.
 
 pub(crate) mod error;
+pub(crate) mod shadow;
 
 mod engine_api;
 mod runtime_api;

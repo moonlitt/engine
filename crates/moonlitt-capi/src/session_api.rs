@@ -58,6 +58,7 @@ pub extern "C" fn moonlitt_session_load_from_file(
             }
         };
 
+        let sample_rate = session.sample_rate;
         let restored = match session.restore(buffer_size as usize) {
             Ok(r) => r,
             Err(e) => {
@@ -66,8 +67,13 @@ pub extern "C" fn moonlitt_session_load_from_file(
             }
         };
 
+        // Capture the shadow while the restored backends are still
+        // reachable, so a later `moonlitt_runtime_save_session` keeps
+        // working (live capture handles for VST3 plugins).
+        let shadow = crate::shadow::SessionShadow::from_mixer(sample_rate, &restored.mixer);
+
         match Runtime::with_mixer_and_transport(restored.mixer, restored.transport, buffer_size) {
-            Ok(runtime) => Box::into_raw(Box::new(RuntimeHandle { runtime })),
+            Ok(runtime) => Box::into_raw(Box::new(RuntimeHandle { runtime, shadow })),
             Err(e) => {
                 set_last_error(format!("create runtime: {e}"));
                 std::ptr::null_mut()

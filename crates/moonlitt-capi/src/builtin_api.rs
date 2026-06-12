@@ -388,6 +388,7 @@ pub extern "C" fn moonlitt_builtin_create_convolver(
 /// Opaque mixer handle for pre-building a mixer before creating a Runtime.
 pub struct MixerHandle {
     pub(crate) mixer: Option<Mixer>,
+    pub(crate) sample_rate: u32,
 }
 
 /// Create a new Mixer for pre-building (tracks → sends → inserts →
@@ -406,6 +407,7 @@ pub extern "C" fn moonlitt_mixer_create(
         };
         Box::into_raw(Box::new(MixerHandle {
             mixer: Some(Mixer::new(sr, bs as usize)),
+            sample_rate: sr,
         }))
     })
 }
@@ -545,8 +547,11 @@ pub extern "C" fn moonlitt_runtime_create_from_mixer(
                 return std::ptr::null_mut();
             }
         };
+        // Capture the shadow while the backends are still reachable —
+        // Runtime::with_mixer consumes the mixer into the audio thread.
+        let shadow = crate::shadow::SessionShadow::from_mixer(handle.sample_rate, &mixer);
         match Runtime::with_mixer(mixer, buffer_size as u32) {
-            Ok(runtime) => Box::into_raw(Box::new(RuntimeHandle { runtime })),
+            Ok(runtime) => Box::into_raw(Box::new(RuntimeHandle { runtime, shadow })),
             Err(e) => {
                 set_last_error(format!("runtime creation failed: {e}"));
                 std::ptr::null_mut()
@@ -608,11 +613,12 @@ pub extern "C" fn moonlitt_multitrack_create(
                     return std::ptr::null_mut();
                 }
             };
-            mixer.add_track(backend, 1 << ch);
+            mixer.add_track_with_source(backend, Some(path.to_string()), 1 << ch);
         }
 
+        let shadow = crate::shadow::SessionShadow::from_mixer(sr, &mixer);
         match Runtime::with_mixer(mixer, bs) {
-            Ok(runtime) => Box::into_raw(Box::new(RuntimeHandle { runtime })),
+            Ok(runtime) => Box::into_raw(Box::new(RuntimeHandle { runtime, shadow })),
             Err(e) => {
                 set_last_error(format!("runtime creation failed: {e}"));
                 std::ptr::null_mut()

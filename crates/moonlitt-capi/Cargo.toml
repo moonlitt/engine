@@ -19,4 +19,5 @@ moonlitt-audio-io = { path = "../moonlitt-audio-io" }
 moonlitt-effects = { path = "../moonlitt-effects" }
 moonlitt-session = { path = "../moonlitt-session" }
 hound = "3"
+base64 = "0.22"
 oxisynth = { path = "../../deps/oxisynth/oxisynth" }

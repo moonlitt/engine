@@ -309,9 +309,14 @@ void PhaseA_EngineAndRuntime(TestRunner t, string sf2Path)
     t.Check("runtime pause Ok", NativeEngine.moonlitt_runtime_pause(runtime) == Status.Ok);
     t.Check("runtime stop Ok", NativeEngine.moonlitt_runtime_stop(runtime) == Status.Ok);
 
-    // Session-save stub: signature is final, behaviour lands at ABI 1.0.
-    t.Check("runtime_save_session returns Status.Unsupported (stub)",
-        NativeEngine.moonlitt_runtime_save_session(runtime, "/tmp/moonlitt-testbed.mlsession") == Status.Unsupported);
+    // Session save from the LIVE runtime: shadow + shared-handle capture.
+    string sessionPath = Path.Combine(Path.GetTempPath(), "moonlitt-testbed.mlsession");
+    t.Check("runtime_save_session Ok",
+        NativeEngine.moonlitt_runtime_save_session(runtime, sessionPath) == Status.Ok);
+    t.Check("saved session deep-validates",
+        NativeEngine.moonlitt_session_validate_file(sessionPath) == Status.Ok);
+    string sessionJson = NativeEngine.ConsumeOwnedString(NativeEngine.moonlitt_session_read_json(sessionPath));
+    t.Check("saved session references the SF2", sessionJson.Contains(".sf2"));
 
     t.Check("runtime_stop_audio Ok", NativeEngine.moonlitt_runtime_stop_audio(runtime) == Status.Ok);
     t.Check("is_running == 0 after stop_audio", NativeEngine.moonlitt_runtime_is_running(runtime) == 0);

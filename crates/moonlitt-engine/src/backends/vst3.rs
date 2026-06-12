@@ -210,6 +210,13 @@ impl AudioBackend for Vst3Backend {
         true
     }
 
+    fn state_capture_handle(&self) -> Option<moonlitt_core::StateCaptureHandle> {
+        let plugin = self.plugin.as_ref()?.clone();
+        Some(std::sync::Arc::new(move || {
+            plugin.lock().get_state().map_err(|e| e.to_string())
+        }))
+    }
+
     fn save_state(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         match self.plugin.as_ref() {
             Some(p) => p

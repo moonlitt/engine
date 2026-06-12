@@ -522,3 +522,102 @@ fn test_session_validate_checks_referenced_paths() {
         "message should name the missing file: {msg}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Session save from a LIVE runtime (control-side shadow + shared-handle
+// state capture) — the first real save-from-runtime path in the project
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_runtime_save_session_roundtrip_sf2() {
+    let sf2 = "/Users/wangyan/Desktop/stardew valley mods/soundfonts/GeneralUser_GS.sf2";
+    if !std::path::Path::new(sf2).exists() {
+        eprintln!("SF2 not present — skipping");
+        return;
+    }
+    let e = moonlitt_engine_create(44100, 256);
+    let cpath = CString::new(sf2).unwrap();
+    assert_eq!(moonlitt_engine_load(e, cpath.as_ptr()), MOONLITT_OK);
+
+    let rt = moonlitt_runtime_create(e);
+    if rt.is_null() {
+        eprintln!("no audio device — skipping");
+        moonlitt_engine_destroy(e);
+        return;
+    }
+
+    // Mutate mixer state so the saved session must reflect the shadow.
+    assert_eq!(moonlitt_runtime_set_track_volume(rt, 0, 0.75), MOONLITT_OK);
+    assert_eq!(moonlitt_runtime_set_track_pan(rt, 0, 0.25), MOONLITT_OK);
+    assert_eq!(moonlitt_runtime_set_master_volume(rt, 0.5), MOONLITT_OK);
+
+    let dir = std::env::temp_dir().join("moonlitt-capi-session-save");
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("roundtrip.mlsession");
+    let cfile = CString::new(file.to_str().unwrap()).unwrap();
+
+    assert_eq!(
+        moonlitt_runtime_save_session(rt, cfile.as_ptr()),
+        MOONLITT_OK,
+        "save from a live runtime must succeed"
+    );
+    assert_eq!(
+        moonlitt_session_validate_file(cfile.as_ptr()),
+        MOONLITT_OK,
+        "the saved session must deep-validate"
+    );
+
+    let json_ptr = moonlitt_session_read_json(cfile.as_ptr());
+    assert!(!json_ptr.is_null());
+    let json = unsafe { CStr::from_ptr(json_ptr) }.to_string_lossy().to_string();
+    moonlitt_free_string(json_ptr);
+    assert!(json.contains("GeneralUser_GS.sf2"), "session must reference the SF2");
+    assert!(json.contains("0.75"), "track volume must be captured");
+    assert!(json.contains("0.25"), "track pan must be captured");
+    assert!(json.contains("0.5"), "master volume must be captured");
+
+    // And it restores into a working runtime.
+    let rt2 = moonlitt_session_load_from_file(cfile.as_ptr(), 256);
+    assert!(!rt2.is_null(), "saved session must load back into a runtime");
+
+    moonlitt_runtime_destroy(rt2);
+    moonlitt_runtime_destroy(rt);
+    moonlitt_engine_destroy(e);
+}
+
+#[test]
+fn test_pianoteq_session_save_captures_plugin_state() {
+    let Some(plugin) = find_pianoteq() else {
+        eprintln!("Pianoteq not installed — skipping");
+        return;
+    };
+    let e = moonlitt_engine_create(44100, 256);
+    let cplugin = CString::new(plugin.to_str().unwrap()).unwrap();
+    assert_eq!(moonlitt_engine_load(e, cplugin.as_ptr()), MOONLITT_OK);
+
+    let rt = moonlitt_runtime_create(e);
+    if rt.is_null() {
+        eprintln!("no audio device — skipping");
+        moonlitt_engine_destroy(e);
+        return;
+    }
+
+    let dir = std::env::temp_dir().join("moonlitt-capi-session-save");
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("pianoteq.mlsession");
+    let cfile = CString::new(file.to_str().unwrap()).unwrap();
+    assert_eq!(moonlitt_runtime_save_session(rt, cfile.as_ptr()), MOONLITT_OK);
+
+    // The VST3 state blob must be captured (base64 "state" field non-null).
+    let json_ptr = moonlitt_session_read_json(cfile.as_ptr());
+    let json = unsafe { CStr::from_ptr(json_ptr) }.to_string_lossy().to_string();
+    moonlitt_free_string(json_ptr);
+    let state_is_null = json.contains(r#""state":null"#) || json.contains(r#""state": null"#);
+    assert!(
+        json.contains("state") && !state_is_null,
+        "live plugin state must be captured into the session (state is null)"
+    );
+
+    moonlitt_runtime_destroy(rt);
+    moonlitt_engine_destroy(e);
+}

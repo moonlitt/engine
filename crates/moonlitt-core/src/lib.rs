@@ -16,6 +16,13 @@ pub use event::{AudioEvent, TimedEvent};
 pub use host::{AudioCallback, AudioHost};
 pub use null_backend::NullBackend;
 
+/// Thread-safe state-capture closure returned by
+/// [`AudioBackend::state_capture_handle`]. Calling it serialises the
+/// backend's current patch state; safe from any thread (the backend
+/// guards its own internals — e.g. a brief plugin mutex).
+pub type StateCaptureHandle =
+    std::sync::Arc<dyn Fn() -> Result<Vec<u8>, String> + Send + Sync>;
+
 /// All backends implement this trait. Public — community can extend.
 pub trait AudioBackend: Send {
     fn info(&self) -> BackendInfo;
@@ -62,6 +69,15 @@ pub trait AudioBackend: Send {
     /// lets the C API distinguish "unsupported" from "failed".
     fn supports_state(&self) -> bool {
         false
+    }
+    /// A cloneable, thread-safe closure that captures this back-end's
+    /// state from the control thread while the audio thread keeps
+    /// rendering. Back-ends whose state lives behind a shared handle
+    /// (VST3's `Arc<Mutex<Vst3Plugin>>`) return one; others return
+    /// `None`. This is what makes save-session-from-a-live-runtime
+    /// possible without stalling or reaching into the audio thread.
+    fn state_capture_handle(&self) -> Option<StateCaptureHandle> {
+        None
     }
     fn save_state(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         Err("not supported".into())

@@ -592,12 +592,18 @@ MoonlittStatus moonlitt_runtime_pause(struct RuntimeHandle *rt);
 MoonlittStatus moonlitt_runtime_stop(struct RuntimeHandle *rt);
 
 /**
- * Save the runtime's full session (mixer topology + plugin states +
- * transport) to a JSON file.
+ * Save the runtime's full session — mixer topology, levels, plugin
+ * patch states and transport flags — to a `.mlsession` JSON file that
+ * `moonlitt_session_load_from_file` restores.
  *
- * NOT IMPLEMENTED YET — always returns `MOONLITT_ERR_UNSUPPORTED`.
- * Lands with ABI 1.0 (Phase 2 of the core-polish plan); the shape of
- * the signature is already final so bindings can prepare for it.
+ * Plugin states are pulled through shared handles with a brief
+ * per-plugin lock; sample streamers (Spectrasonics) can hold that lock
+ * up to ~1 s, during which the audio thread renders silence rather
+ * than stalling. Save is a user-initiated, rare operation — schedule
+ * it accordingly.
+ *
+ * Errors: `INVALID_ARG` (NULL handle/path), `STATE` (a plugin failed
+ * to serialise — message names the track), `IO` (file write failed).
  */
 MoonlittStatus moonlitt_runtime_save_session(struct RuntimeHandle *rt, const char *path);
 
