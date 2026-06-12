@@ -7,7 +7,9 @@ use std::sync::Arc;
 /// Information about a single sample, ready for voice playback.
 #[derive(Debug, Clone)]
 pub struct SampleInfo {
-    pub name: String,
+    /// `Arc<str>` so cloning a `SampleInfo` at note-on never allocates
+    /// (the audio thread clones one per voice start).
+    pub name: std::sync::Arc<str>,
     /// Root key (MIDI note at which sample plays at original pitch).
     pub root_key: u8,
     /// Pitch correction in cents.
@@ -57,7 +59,7 @@ impl SamplePool {
                     .collect();
 
                 SampleInfo {
-                    name: h.name.clone(),
+                    name: h.name.as_str().into(),
                     root_key: h.origpitch,
                     pitch_correction: h.pitchadj,
                     sample_rate: h.sample_rate,

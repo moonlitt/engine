@@ -8,7 +8,7 @@ repository.workspace = true
 
 [dev-dependencies]
 moonlitt-resampler = { path = "../moonlitt-resampler" }
-moonlitt-engine = { path = "../moonlitt-engine", features = ["sf2", "vst3"] }
+moonlitt-engine = { path = "../moonlitt-engine", features = ["sf2", "sf2-sampler", "vst3"] }
 moonlitt-audio-io = { path = "../moonlitt-audio-io" }
 moonlitt-effects = { path = "../moonlitt-effects" }
 moonlitt-core = { path = "../moonlitt-core" }
