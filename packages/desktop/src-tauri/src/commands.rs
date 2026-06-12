@@ -259,6 +259,12 @@ pub fn cmd_default_set_instrument(
     let needs_patch = state
         .engine
         .set_default_instrument_with_state(&path, cached.as_deref())?;
+    // Mirror the seeded state into the window stash so the snapshot's
+    // patch-name lookup works before any GUI window ever opens.
+    #[cfg(target_os = "macos")]
+    if let Some(bytes) = &cached {
+        crate::plugin_window::stash_state(path.clone(), bytes.clone());
+    }
     let _ = app.emit(
         "default:instrument_changed",
         DefaultInstrumentChanged {
@@ -283,6 +289,10 @@ pub fn cmd_channel_set_override(
         state
             .engine
             .set_channel_override_with_state(channel, &path, cached.as_deref())?;
+    #[cfg(target_os = "macos")]
+    if let Some(bytes) = &cached {
+        crate::plugin_window::stash_state(path.clone(), bytes.clone());
+    }
     let _ = app.emit(
         "channel:override_added",
         ChannelOverrideAdded { o: ov, needs_patch },
@@ -800,4 +810,77 @@ pub fn cmd_render_to_wav(state: State<AppState>, path: String) -> Result<RenderR
 #[tauri::command]
 pub fn cmd_transport_seek(state: State<AppState>, ticks: f64) -> Result<(), String> {
     state.engine.seek(ticks)
+}
+
+// --- Spectrasonics patch library -------------------------------------------
+
+/// Enumerate the STEAM library patches for the instrument in `target`.
+/// Errors with a user-facing message when the slot isn't a
+/// Spectrasonics plug-in (or its library isn't installed).
+#[tauri::command]
+pub fn cmd_patch_library_list(
+    state: State<AppState>,
+    target: CmdViewTarget,
+) -> Result<Vec<crate::patch_library::PatchView>, String> {
+    let path = state.engine.instrument_path_for(target.into())?;
+    crate::patch_library::list(&path)
+}
+
+/// Load library patch `patch_id` (an id from `cmd_patch_library_list`)
+/// into the live plug-in: current state + patch file → assembled state
+/// → `set_state` on the same instance the audio thread renders. The
+/// sound fades in as the streamer loads samples — no rebuild, no
+/// warm-up button. Returns the parsed patch name.
+#[tauri::command]
+pub fn cmd_patch_library_load(
+    state: State<AppState>,
+    app: AppHandle,
+    target: CmdViewTarget,
+    patch_id: usize,
+) -> Result<Option<String>, String> {
+    let view_target: ViewTarget = target.into();
+    let path = state.engine.instrument_path_for(view_target)?;
+    let plugin = state
+        .engine
+        .vst3_plugin_handle(view_target)
+        .ok_or_else(|| "该槽位不是 VST3 乐器".to_string())?;
+
+    let patch = crate::patch_library::patch_at(&path, patch_id)?;
+    let patch_file = crate::patch_library::patch_bytes(&patch)?;
+
+    // One bounded lock: read current state, assemble, push. The audio
+    // thread's try_lock renders silence for these few milliseconds —
+    // same behaviour as picking a patch in the plug-in's own GUI.
+    let new_state = {
+        let mut p = plugin.lock();
+        let current = p.get_state().map_err(|e| format!("get_state: {e}"))?;
+        let assembled = crate::patch_library::assemble_state(&current, &patch_file)?;
+        p.set_state(&assembled).map_err(|e| format!("set_state: {e}"))?;
+        // Round-trip so caches hold the plug-in's own canonical bytes.
+        p.get_state().unwrap_or(assembled)
+    };
+
+    let patch_name =
+        crate::state_metadata::extract_patch_name(&new_state).or(Some(patch.name.clone()));
+
+    // Same bookkeeping as a GUI-window patch pick: refresh the session
+    // stash, remember as this plug-in's default, tell the UI.
+    #[cfg(target_os = "macos")]
+    crate::plugin_window::stash_state(path.clone(), new_state.clone());
+    crate::plugin_state_cache::store(&app, &path, &new_state);
+
+    #[derive(Serialize, Clone)]
+    #[serde(rename_all = "camelCase")]
+    struct PluginStateCaptured {
+        path: String,
+        patch_name: Option<String>,
+    }
+    let _ = app.emit(
+        "plugin_state_captured",
+        PluginStateCaptured {
+            path,
+            patch_name: patch_name.clone(),
+        },
+    );
+    Ok(patch_name)
 }

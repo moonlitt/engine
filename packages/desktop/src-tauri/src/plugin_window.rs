@@ -138,6 +138,7 @@ pub fn open_plugin_window(
         return Err("plugin's IPlugView does not support NSView embedding".to_string());
     }
     let (w, h) = view.get_size();
+    let resizable = view.can_resize();
 
     let label = format!(
         "plugin_gui_{}",
@@ -152,23 +153,66 @@ pub fn open_plugin_window(
     let window = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("about:blank".into()))
         .title(title)
         .inner_size(w as f64, h as f64)
-        .resizable(false)
+        .resizable(resizable)
         .build()
         .map_err(|e| format!("create window: {e}"))?;
+
+    // NOTE: deliberately NOT calling IPlugViewContentScaleSupport here.
+    // On macOS, NSView carries the backing scale natively and ViewRect
+    // stays in logical points; passing 2.0 makes Spectrasonics double
+    // its UI size (2320×1340 window). The call only belongs on a future
+    // Windows/Linux port.
+
+    // Host frame: plug-ins that discover their real editor size during
+    // attach (Spectrasonics reports a small default before, then asks
+    // for its real size — often huge when its UI zoom is cranked up)
+    // request it through IPlugFrame::resizeView. Fit-and-centre; the
+    // resulting Resized event negotiates the final size back through
+    // checkSizeConstraint/onSize below.
+    let frame_window = window.clone();
+    if let Err(e) = view.set_frame(move |fw, fh| {
+        fit_window_to_screen(&frame_window, fw, fh);
+    }) {
+        eprintln!("[plugin-window] set_frame failed (resize requests ignored): {e}");
+    }
 
     let ns_view_ptr = ns_view_ptr_from(&window)?;
     view.attach(ns_view_ptr, platform::NS_VIEW)
         .map_err(|e| format!("IPlugView::attached: {e}"))?;
-    let _ = view.on_size(w, h);
 
-    let close_label = label.clone();
-    let close_app = app.clone();
+    // Some plug-ins only report their true size once attached — sync
+    // the window to whatever the view settled on.
+    let (aw, ah) = view.get_size();
+    fit_window_to_screen(&window, aw, ah);
+    let _ = view.on_size(aw, ah);
+
+    let event_label = label.clone();
+    let event_app = app.clone();
+    let event_window = window.clone();
     window.on_window_event(move |event| {
-        if matches!(
-            event,
-            tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed
-        ) {
-            cleanup_window(&close_app, &close_label);
+        match event {
+            tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed => {
+                cleanup_window(&event_app, &event_label);
+            }
+            tauri::WindowEvent::Resized(size) => {
+                // User-driven resize: negotiate via checkSizeConstraint,
+                // then tell the plug-in. Plugin-initiated resizes echo
+                // through here too — the extra onSize with an identical
+                // rect is harmless per spec.
+                let scale = event_window.scale_factor().unwrap_or(1.0);
+                let logical: tauri::LogicalSize<f64> = size.to_logical(scale);
+                let (rw, rh) = (logical.width as i32, logical.height as i32);
+                let reg = registry().lock();
+                if let Some(entry) = reg.iter().find(|o| o.label == event_label) {
+                    let (cw, ch) = entry.view.check_size_constraint(rw, rh);
+                    if (cw, ch) != (rw, rh) {
+                        let _ = event_window
+                            .set_size(tauri::LogicalSize::new(cw as f64, ch as f64));
+                    }
+                    let _ = entry.view.on_size(cw, ch);
+                }
+            }
+            _ => {}
         }
     });
 
@@ -346,6 +390,34 @@ fn cleanup_window(app: &AppHandle, label: &str) {
         "plugin_state_captured",
         PluginStateCaptured { path, patch_name },
     );
+}
+
+/// Size the window to `(w, h)` logical points, clamped to the current
+/// monitor's dimensions (small margin for the title bar / dock), then
+/// centre it. Plug-ins with a cranked-up UI zoom can legitimately ask
+/// for editors wider than the screen — a clipped-off-screen editor is
+/// useless, so we cap and let checkSizeConstraint negotiate.
+fn fit_window_to_screen(window: &tauri::WebviewWindow, w: i32, h: i32) {
+    const MARGIN: f64 = 60.0;
+    let monitor = window.current_monitor().ok().flatten();
+    let Some(monitor) = monitor else {
+        let _ = window.set_size(tauri::LogicalSize::new(w as f64, h as f64));
+        return;
+    };
+    let scale = monitor.scale_factor();
+    let msize = monitor.size().to_logical::<f64>(scale);
+    let mpos = monitor.position().to_logical::<f64>(scale);
+
+    let fit_w = (w as f64).min(msize.width - MARGIN).max(200.0);
+    let fit_h = (h as f64).min(msize.height - MARGIN).max(150.0);
+    let _ = window.set_size(tauri::LogicalSize::new(fit_w, fit_h));
+
+    // Centre manually on THIS monitor — Tauri's `center()` spans the
+    // whole virtual desktop on multi-monitor setups, which can park a
+    // wide editor half-way across two screens.
+    let x = mpos.x + (msize.width - fit_w) / 2.0;
+    let y = mpos.y + (msize.height - fit_h) / 2.0;
+    let _ = window.set_position(tauri::LogicalPosition::new(x.max(mpos.x), y.max(mpos.y + 24.0)));
 }
 
 fn ns_view_ptr_from(window: &tauri::WebviewWindow) -> Result<*mut c_void, String> {

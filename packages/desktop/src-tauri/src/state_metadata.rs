@@ -37,16 +37,20 @@ fn extract_spectrasonics(state: &[u8]) -> Option<String> {
 
     // Prefer ENTRYDESCR name (current/user-chosen) over origPatchName
     // (the patch's original library name). They usually match; when
-    // they differ the user changed something.
-    if let Some(name) = find_xml_attr(state, b"<ENTRYDESCR", b"name") {
-        if !name.is_empty() && name != "default" {
-            return Some(name);
-        }
+    // they differ the user changed something. A state holds several
+    // ENTRYDESCRs — the master descriptor (often "default") plus one
+    // per part — so walk all of them, not just the first.
+    if let Some(name) = find_all_xml_attr(state, b"<ENTRYDESCR", b"name")
+        .into_iter()
+        .find(|n| !n.is_empty() && n != "default")
+    {
+        return Some(name);
     }
-    if let Some(name) = find_xml_attr(state, b"<SYNTHENG", b"origPatchName") {
-        if !name.is_empty() {
-            return Some(name);
-        }
+    if let Some(name) = find_all_xml_attr(state, b"<SYNTHENG", b"origPatchName")
+        .into_iter()
+        .find(|n| !n.is_empty())
+    {
+        return Some(name);
     }
     None
 }
@@ -56,20 +60,33 @@ fn extract_spectrasonics(state: &[u8]) -> Option<String> {
 /// the double-space pattern Spectrasonics uses) and stops at the first
 /// unescaped `"`. Returns `None` if either the tag or the attribute
 /// isn't found.
-fn find_xml_attr(haystack: &[u8], tag: &[u8], attr: &[u8]) -> Option<String> {
-    let tag_pos = find_subslice(haystack, tag)?;
-    // Scan from just after the tag for `attr="`.
-    let scan_from = tag_pos + tag.len();
+/// Every occurrence of `<tag … attr="value"` in document order. The
+/// attribute is searched only up to the tag's closing `>` so one tag's
+/// attributes never bleed into the next match.
+fn find_all_xml_attr(haystack: &[u8], tag: &[u8], attr: &[u8]) -> Vec<String> {
     let mut needle = Vec::with_capacity(attr.len() + 2);
     needle.extend_from_slice(attr);
     needle.extend_from_slice(b"=\"");
-    let local = &haystack[scan_from..];
-    let attr_pos = find_subslice(local, &needle)?;
-    let value_start = scan_from + attr_pos + needle.len();
-    // End of attribute = first `"` after value_start.
-    let end_rel = haystack[value_start..].iter().position(|&b| b == b'"')?;
-    let value = &haystack[value_start..value_start + end_rel];
-    Some(String::from_utf8_lossy(value).into_owned())
+
+    let mut out = Vec::new();
+    let mut pos = 0;
+    while let Some(rel) = find_subslice(&haystack[pos..], tag) {
+        let tag_pos = pos + rel;
+        let scan_from = tag_pos + tag.len();
+        let tag_end = haystack[scan_from..]
+            .iter()
+            .position(|&b| b == b'>')
+            .map(|e| scan_from + e)
+            .unwrap_or(haystack.len());
+        if let Some(attr_rel) = find_subslice(&haystack[scan_from..tag_end], &needle) {
+            let value_start = scan_from + attr_rel + needle.len();
+            if let Some(end_rel) = haystack[value_start..].iter().position(|&b| b == b'"') {
+                out.push(String::from_utf8_lossy(&haystack[value_start..value_start + end_rel]).into_owned());
+            }
+        }
+        pos = scan_from;
+    }
+    out
 }
 
 fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -119,8 +136,8 @@ mod tests {
     #[test]
     fn finds_attr_with_extra_whitespace() {
         let xml = b"<SYNTHENG  Vers=\"29\"  origPatchName=\"Bright Steinway\"  more=\"x\" >";
-        let v = find_xml_attr(xml, b"<SYNTHENG", b"origPatchName");
-        assert_eq!(v.as_deref(), Some("Bright Steinway"));
+        let v = find_all_xml_attr(xml, b"<SYNTHENG", b"origPatchName");
+        assert_eq!(v.first().map(String::as_str), Some("Bright Steinway"));
     }
 
     #[test]
@@ -132,6 +149,23 @@ mod tests {
         assert_eq!(
             extract_patch_name(xml).as_deref(),
             Some("User Custom Patch")
+        );
+    }
+
+    #[test]
+    fn skips_default_master_descriptor_and_reads_part_descriptor() {
+        // Shape of a state assembled from a library patch: the master
+        // ENTRYDESCR stays "default", origPatchName is empty (library
+        // files never carry it), and the real name lives on part 0's own
+        // ENTRYDESCR further in.
+        let xml = br#"<SynthMaster vers="1.5">
+            <ENTRYDESCR name="default" library="">
+            <SYNTHENG origPatchName="">
+            <SynthSubEngine><ENTRYDESCR name="Clavinet C - Brite Rhythm" library="Keyscape Library"></SynthSubEngine>
+        "#;
+        assert_eq!(
+            extract_patch_name(xml).as_deref(),
+            Some("Clavinet C - Brite Rhythm")
         );
     }
 

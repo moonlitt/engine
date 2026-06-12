@@ -6,6 +6,7 @@
 mod commands;
 mod engine;
 mod midi_analyze;
+mod patch_library;
 mod plugin_state_cache;
 #[cfg(target_os = "macos")]
 mod plugin_window;
@@ -75,6 +76,8 @@ pub fn run() {
             commands::cmd_load_midi,
             commands::cmd_open_plugin_gui,
             commands::cmd_save_plugin_state,
+            commands::cmd_patch_library_list,
+            commands::cmd_patch_library_load,
             commands::cmd_project_save_as,
             commands::cmd_project_open,
             commands::cmd_project_recent_list,

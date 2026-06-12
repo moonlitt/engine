@@ -6,6 +6,7 @@ import { MidiPanel } from './MidiPanel';
 import { DefaultInstrumentBar } from './DefaultInstrumentBar';
 import { ChannelRow } from './ChannelRow';
 import { SendBusRack } from './SendBusRack';
+import { PatchBrowser } from './PatchBrowser';
 
 export function PlayerView() {
   const connected = useSessionStore((s) => s.connected);
@@ -64,6 +65,8 @@ export function PlayerView() {
           )}
         </div>
       </main>
+
+      <PatchBrowser />
     </div>
   );
 }

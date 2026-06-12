@@ -5,6 +5,7 @@ import {
   openPluginGui,
   saveOpenPluginState,
 } from '../services/pluginGui';
+import { hasPatchLibrary } from '../services/patchLibrary';
 
 interface DefaultInstrumentBarProps {
   instrumentPath: string | null;
@@ -14,6 +15,8 @@ interface DefaultInstrumentBarProps {
 
 export function DefaultInstrumentBar({ instrumentPath, patchName }: DefaultInstrumentBarProps) {
   const open = useUiStore((s) => s.openInstrumentPicker);
+  const openPatchBrowser = useUiStore((s) => s.openPatchBrowser);
+  const libraryAvailable = hasPatchLibrary(instrumentPath);
   const name = instrumentPath ? (instrumentPath.split('/').pop() ?? instrumentPath) : null;
   const isVst3 = instrumentPath?.toLowerCase().endsWith('.vst3') ?? false;
   const guiSupported = isGuiSupported();
@@ -64,6 +67,16 @@ export function DefaultInstrumentBar({ instrumentPath, patchName }: DefaultInstr
             ? '所有未单独设置音色的通道都用它播放（GM SoundFont 内部会按 MIDI 的 Program Change 自动切换音色）'
             : 'SF2 / VST3 / CLAP — 推荐选 GeneralUser_GS 这类 GM SoundFont'}
         </div>
+        {libraryAvailable && (
+          <button
+            type="button"
+            onClick={() => openPatchBrowser({ kind: 'default' })}
+            className="text-[11px] px-2.5 py-1 rounded bg-daw-control hover:bg-daw-border text-daw-accent transition-colors"
+            title="浏览 STEAM 音色库（点击即加载，无需打开插件界面）"
+          >
+            音色库
+          </button>
+        )}
         {isVst3 && guiSupported && (
           <button
             type="button"

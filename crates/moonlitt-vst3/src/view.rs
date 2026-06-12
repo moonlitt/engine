@@ -10,10 +10,14 @@
 //! plugin's view to whatever native parent the caller provides.
 
 use std::ffi::{c_void, CStr};
+use std::sync::Mutex;
 
-use vst3::ComPtr;
 use vst3::Steinberg::Vst::IEditControllerTrait;
-use vst3::Steinberg::{kResultOk, IPlugView, IPlugViewTrait, ViewRect};
+use vst3::Steinberg::{
+    kInvalidArgument, kResultOk, kResultTrue, IPlugFrame, IPlugFrameTrait, IPlugView,
+    IPlugViewContentScaleSupport, IPlugViewContentScaleSupportTrait, IPlugViewTrait, ViewRect,
+};
+use vst3::{Class, ComPtr, ComRef, ComWrapper};
 
 use crate::{Error, Result, Vst3Plugin};
 
@@ -27,6 +31,41 @@ pub mod platform {
 /// Wrapper around an `IPlugView` returned by `IEditController::createView`.
 pub struct Vst3PluginView {
     view: ComPtr<IPlugView>,
+    /// Host-side `IPlugFrame` handed to the plug-in via `setFrame`.
+    /// Kept alive here for the view's lifetime; cleared on detach.
+    frame: Mutex<Option<ComWrapper<PlugFrame>>>,
+}
+
+/// Host-side `IPlugFrame`: receives the plug-in's resize requests.
+///
+/// Per the VST3 workflow the host resizes its window in `resizeView`
+/// and then confirms the final size back through `IPlugView::onSize`.
+/// Plug-ins that report a too-small pre-attach size (Spectrasonics)
+/// depend on this to reach their real editor size.
+struct PlugFrame {
+    on_resize: Box<dyn Fn(i32, i32) + Send + Sync>,
+}
+
+impl Class for PlugFrame {
+    type Interfaces = (IPlugFrame,);
+}
+
+impl IPlugFrameTrait for PlugFrame {
+    unsafe fn resizeView(&self, view: *mut IPlugView, new_size: *mut ViewRect) -> vst3::Steinberg::tresult {
+        if new_size.is_null() {
+            return kInvalidArgument;
+        }
+        let rect = *new_size;
+        let (w, h) = (rect.right - rect.left, rect.bottom - rect.top);
+        crate::trace::emit(&format!("PlugFrame::resizeView {w}x{h}"));
+        (self.on_resize)(w, h);
+        // Confirm the final size back to the plug-in.
+        if let Some(view) = ComRef::from_raw(view) {
+            let mut confirmed = rect;
+            view.onSize(&mut confirmed);
+        }
+        kResultOk
+    }
 }
 
 impl Vst3PluginView {
@@ -68,11 +107,65 @@ impl Vst3PluginView {
 
     /// Detach from the parent. Should be called before the parent is destroyed.
     pub fn detach(&self) -> Result<()> {
+        // Clear the frame first so the plug-in can't call back into a
+        // host window that is going away.
+        unsafe { self.view.setFrame(std::ptr::null_mut()) };
+        *self.frame.lock().unwrap_or_else(|e| e.into_inner()) = None;
         let r = unsafe { self.view.removed() };
         if r != kResultOk {
             return Err(Error::PluginError(r));
         }
         Ok(())
+    }
+
+    /// Does the plug-in support live resizing of its editor?
+    pub fn can_resize(&self) -> bool {
+        unsafe { self.view.canResize() == kResultTrue }
+    }
+
+    /// Ask the plug-in to adjust a prospective size to one it accepts.
+    /// Returns the input unchanged when the plug-in has no opinion.
+    pub fn check_size_constraint(&self, width: i32, height: i32) -> (i32, i32) {
+        let mut rect = ViewRect {
+            left: 0,
+            top: 0,
+            right: width,
+            bottom: height,
+        };
+        let r = unsafe { self.view.checkSizeConstraint(&mut rect) };
+        if r != kResultOk || rect.right <= rect.left || rect.bottom <= rect.top {
+            return (width, height);
+        }
+        (rect.right - rect.left, rect.bottom - rect.top)
+    }
+
+    /// Install a host frame so the plug-in can request editor resizes
+    /// (`IPlugFrame::resizeView`). `on_resize(width, height)` must
+    /// resize the native window that hosts the view; the final size is
+    /// confirmed back to the plug-in automatically. Call before
+    /// [`Self::attach`] so resize requests during attach are honoured.
+    pub fn set_frame(&self, on_resize: impl Fn(i32, i32) + Send + Sync + 'static) -> Result<()> {
+        let wrapper = ComWrapper::new(PlugFrame {
+            on_resize: Box::new(on_resize),
+        });
+        let ptr = wrapper
+            .to_com_ptr::<IPlugFrame>()
+            .ok_or(Error::InterfaceNotFound("IPlugFrame"))?;
+        let r = unsafe { self.view.setFrame(ptr.as_ptr()) };
+        if r != kResultOk {
+            return Err(Error::PluginError(r));
+        }
+        *self.frame.lock().unwrap_or_else(|e| e.into_inner()) = Some(wrapper);
+        Ok(())
+    }
+
+    /// Tell the plug-in the host window's backing scale (2.0 on Retina)
+    /// so it renders crisply. Best-effort: plug-ins without
+    /// `IPlugViewContentScaleSupport` ignore this.
+    pub fn set_content_scale(&self, factor: f32) {
+        if let Some(scale) = self.view.cast::<IPlugViewContentScaleSupport>() {
+            unsafe { scale.setContentScaleFactor(factor) };
+        }
     }
 
     /// Tell the plugin its frame was resized to `(width, height)` points.
@@ -102,7 +195,48 @@ impl Vst3Plugin {
             return None;
         }
         let view = unsafe { ComPtr::<IPlugView>::from_raw(raw) }?;
-        Some(Vst3PluginView { view })
+        Some(Vst3PluginView {
+            view,
+            frame: Mutex::new(None),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The PlugFrame COM object must translate ViewRect into a
+    /// (width, height) callback — including non-zero left/top origins.
+    #[test]
+    fn plug_frame_reports_dimensions_not_corners() {
+        let captured = std::sync::Arc::new(Mutex::new(None));
+        let c2 = captured.clone();
+        let wrapper = ComWrapper::new(PlugFrame {
+            on_resize: Box::new(move |w, h| {
+                *c2.lock().unwrap() = Some((w, h));
+            }),
+        });
+        let frame = wrapper.to_com_ptr::<IPlugFrame>().expect("IPlugFrame");
+        let mut rect = ViewRect {
+            left: 10,
+            top: 20,
+            right: 1103,
+            bottom: 738,
+        };
+        let r = unsafe { frame.resizeView(std::ptr::null_mut(), &mut rect) };
+        assert_eq!(r, kResultOk);
+        assert_eq!(*captured.lock().unwrap(), Some((1093, 718)));
+    }
+
+    #[test]
+    fn plug_frame_rejects_null_rect() {
+        let wrapper = ComWrapper::new(PlugFrame {
+            on_resize: Box::new(|_, _| {}),
+        });
+        let frame = wrapper.to_com_ptr::<IPlugFrame>().expect("IPlugFrame");
+        let r = unsafe { frame.resizeView(std::ptr::null_mut(), std::ptr::null_mut()) };
+        assert_eq!(r, kInvalidArgument);
     }
 }
 

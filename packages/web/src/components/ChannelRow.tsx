@@ -10,6 +10,7 @@ import { useUiStore } from '../stores/ui';
 import { useProjectStore } from '../stores/project';
 import { GM_PROGRAM_ZH, channelDisplayName } from '../i18n/gm-programs';
 import { isGuiSupported, openPluginGui } from '../services/pluginGui';
+import { hasPatchLibrary } from '../services/patchLibrary';
 import { ParamSlider } from './ParamSlider';
 import { Meter } from './Meter';
 
@@ -390,9 +391,11 @@ function EffectsBlock({ channel, inserts }: { channel: number; inserts: InsertSt
 function OverrideControls({ override }: { override: ChannelOverrideState }) {
   const send = useSessionStore((s) => s.send);
   const openPicker = useUiStore((s) => s.openInstrumentPicker);
+  const openPatchBrowser = useUiStore((s) => s.openPatchBrowser);
   const updateChannel = useProjectStore((s) => s.updateChannel);
   const isVst3 = override.instrumentPath.toLowerCase().endsWith('.vst3');
   const guiSupported = isGuiSupported();
+  const libraryAvailable = hasPatchLibrary(override.instrumentPath);
 
   return (
     <div className="flex items-center gap-1.5">
@@ -432,6 +435,14 @@ function OverrideControls({ override }: { override: ChannelOverrideState }) {
       >
         {override.instrumentName}
       </button>
+      {libraryAvailable && (
+        <button
+          type="button"
+          onClick={() => openPatchBrowser({ kind: 'override', channel: override.channel })}
+          className="text-[11px] px-2 py-1 rounded bg-daw-control hover:bg-daw-border text-daw-accent transition-colors"
+          title="浏览 STEAM 音色库（点击即加载）"
+        >音色库</button>
+      )}
       {isVst3 && guiSupported && (
         <button
           type="button"

@@ -13,6 +13,12 @@ interface UiStore {
   instrumentTarget: InstrumentTarget | null;
   openInstrumentPicker(target: InstrumentTarget): void;
   closeInstrumentPicker(): void;
+
+  /** Target the STEAM patch-library browser applies to (Spectrasonics
+   *  instruments only); null = closed. */
+  patchBrowserTarget: InstrumentTarget | null;
+  openPatchBrowser(target: InstrumentTarget): void;
+  closePatchBrowser(): void;
 }
 
 export const useUiStore = create<UiStore>((set) => ({
@@ -22,5 +28,13 @@ export const useUiStore = create<UiStore>((set) => ({
   },
   closeInstrumentPicker() {
     set({ instrumentTarget: null });
+  },
+
+  patchBrowserTarget: null,
+  openPatchBrowser(target) {
+    set({ patchBrowserTarget: target });
+  },
+  closePatchBrowser() {
+    set({ patchBrowserTarget: null });
   },
 }));

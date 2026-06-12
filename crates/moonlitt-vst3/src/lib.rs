@@ -27,6 +27,7 @@ mod parameter_changes;
 mod processor;
 mod scan_cache;
 mod scanner;
+pub mod spectrasonics;
 mod state_format;
 pub mod stream;
 mod trace;
