@@ -13,20 +13,31 @@ use moonlitt_vst3::{PluginScanCache, Vst3Host};
 fn temp_cache_path() -> PathBuf {
     let mut p = std::env::temp_dir();
     p.push(format!(
-        "moonlitt-vst3-scan-cache-{}-{}.json",
+        "moonlitt-vst3-scan-cache-{}-{}-{}.json",
         std::process::id(),
-        rand_id()
+        rand_id(),
+        unique_id(),
     ));
     p
 }
 
 fn rand_id() -> u64 {
-    // Tests run in parallel — avoid file path collisions without needing
-    // a rand dep by using nanoseconds since UNIX epoch.
+    // Cross-run uniqueness (stale leftovers from killed runs).
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or(Duration::ZERO)
         .as_nanos() as u64
+}
+
+fn unique_id() -> u64 {
+    // Intra-process uniqueness. Timestamps alone collide: parallel test
+    // threads can hit the same clock tick under load, making two tests
+    // share one cache path — and `save()`'s write-to-sibling-then-rename
+    // then races on the SHARED .json.tmp (one rename steals the other's
+    // temp file → spurious NotFound). This was a real once-in-many-runs
+    // CI/load flake.
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 #[test]
