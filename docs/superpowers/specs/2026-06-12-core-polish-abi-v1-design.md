@@ -150,3 +150,12 @@ Do conventions before adding functions, so Phase 2 additions land conformant onc
 - **No ABI aliases** for renames — user waived backward compatibility; in-repo consumers updated atomically; out-of-repo consumers (Stardew mod) adapt in the game round.
 - Param values standardize on **f64**.
 - Windows CI deferred post-v1; Linux included now.
+
+### Amendments from Phase 1 implementation (2026-06-12)
+
+- **cdylib renamed `libmoonlitt`** (was `libmoonlitt_capi`), matching `include/moonlitt.h`. Found and removed a stale March `libmoonlitt_ffi.dylib` that had been silently satisfying the testbed's DllImport — the testbed had been validating a 2.5-month-old binary.
+- `moonlitt_debug_trigger_panic()` is **always available** (documented diagnostics), not debug-only as drafted — feature-gated symbols would undermine "the header is the contract", and the probe is genuinely useful to binding authors.
+- `moonlitt_session_load_file` → **`moonlitt_session_read_json`** and moved to the session family; `moonlitt_session_save` → **`moonlitt_runtime_save_session(rt, path)`** with its final signature, returning `UNSUPPORTED` until Phase 2 implements it.
+- `mixer/runtime add_*` functions fold errors into the id space: **non-negative = id, negative = MoonlittStatus**.
+- Phase-1 scope extended into the Rust layer by necessity: `AudioEvent` param variants widened to f64 (compile-time size asserts still ≤16 bytes) and `Runtime` event methods now return `bool` (ring-buffer overflow detectable) — this also fixed silent f64→f32 truncation in the node and desktop callers.
+- Engine-level **arg validation precedes backend checks** (INVALID_ARG wins over NOT_LOADED), making range validation testable without audio assets.
