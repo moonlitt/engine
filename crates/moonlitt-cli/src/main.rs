@@ -470,6 +470,20 @@ fn parse_midi_file(path: &str) -> Result<(Vec<MidiNote>, Vec<ProgramChange>), St
     Ok((notes, program_changes))
 }
 
+/// Pump silent blocks through sample-streamer back-ends (Keyscape,
+/// Omnisphere) after a state/preset load. Streamers fill their audio
+/// caches asynchronously; rendering before they're ready produces
+/// silence. Mirrors the session-restore path in `moonlitt-session`.
+fn warm_up_if_recommended(backend: &mut dyn moonlitt_core::AudioBackend) {
+    let blocks = backend.recommended_warm_up_blocks();
+    if blocks > 0 {
+        println!("Warming up sample streamer ({blocks} blocks)…");
+        if let Err(e) = backend.warm_up(blocks) {
+            eprintln!("Warning: warm_up failed: {e}");
+        }
+    }
+}
+
 fn cmd_midi_live(midi_path: &str, sound_path: &str, use_sampler: bool, insert_specs: &[String], preset: Option<i32>, state_path: Option<&str>) {
     use moonlitt_audio_io::Runtime;
     use moonlitt_mixer::Mixer;
@@ -521,6 +535,8 @@ fn cmd_midi_live(midi_path: &str, sound_path: &str, use_sampler: bool, insert_sp
             println!("Loaded preset id={id}");
         }
     }
+
+    warm_up_if_recommended(backend.as_mut());
 
     // Send program changes BEFORE handing the backend to the mixer.
     let mut sent_programs = std::collections::HashSet::new();
@@ -645,6 +661,8 @@ fn cmd_midi_render(midi_path: &str, sound_path: &str, output: &str, use_sampler:
             println!("Loaded preset id={id}");
         }
     }
+
+    warm_up_if_recommended(backend.as_mut());
 
     // Send initial program changes BEFORE handing the backend to the mixer.
     let mut sent = std::collections::HashSet::new();
