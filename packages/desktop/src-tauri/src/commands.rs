@@ -11,7 +11,8 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::engine::{
-    ChannelOverrideState, Engine, InsertState, MidiState, PluginInfoView, ProjectState, ViewTarget,
+    ChannelOverrideState, Engine, InsertState, MidiState, PluginInfoView, ProjectState,
+    SendBusView, ViewTarget,
 };
 
 pub struct AppState {
@@ -29,6 +30,23 @@ struct TransportState {
 #[derive(Serialize, Clone)]
 struct TempoChanged {
     bpm: f64,
+}
+
+#[derive(Serialize, Clone)]
+struct LoopChanged {
+    looping: bool,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct MetronomeChanged {
+    enabled: bool,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct MasterUpdated {
+    volume_db: f64,
 }
 
 #[derive(Serialize, Clone)]
@@ -54,11 +72,29 @@ struct ChannelUpdated {
     #[serde(skip_serializing_if = "Option::is_none")]
     volume: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pan: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     muted: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     solo: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    color: Option<Option<String>>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "userProgram")]
     user_program: Option<u8>,
+}
+
+impl ChannelUpdated {
+    fn for_channel(channel: u8) -> Self {
+        Self {
+            channel,
+            volume: None,
+            pan: None,
+            muted: None,
+            solo: None,
+            color: None,
+            user_program: None,
+        }
+    }
 }
 
 #[derive(Serialize, Clone)]
@@ -72,6 +108,27 @@ struct InsertRemoved {
     channel: u8,
     #[serde(rename = "insertId")]
     insert_id: u32,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct InsertBypassChanged {
+    channel: u8,
+    insert_id: u32,
+    bypassed: bool,
+}
+
+#[derive(Serialize, Clone)]
+struct SendBusAdded {
+    bus: SendBusView,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ChannelSendLevelChanged {
+    channel: u8,
+    bus_id: u32,
+    level: f32,
 }
 
 #[derive(Serialize, Clone)]
@@ -120,6 +177,44 @@ pub fn cmd_transport_stop(state: State<AppState>, app: AppHandle) -> Result<(), 
 }
 
 #[tauri::command]
+pub fn cmd_transport_pause(state: State<AppState>, app: AppHandle) -> Result<(), String> {
+    state.engine.pause();
+    // Note: position stays at its current value — pause preserves it.
+    // We don't know the live tick here without reading from the sequencer,
+    // so the frontend infers position from the snapshot it already has.
+    let _ = app.emit(
+        "transport:state",
+        TransportState {
+            playing: false,
+            position: 0,
+        },
+    );
+    Ok(())
+}
+
+#[tauri::command]
+pub fn cmd_transport_set_loop(
+    state: State<AppState>,
+    app: AppHandle,
+    looping: bool,
+) -> Result<(), String> {
+    state.engine.set_loop(looping);
+    let _ = app.emit("transport:loop_changed", LoopChanged { looping });
+    Ok(())
+}
+
+#[tauri::command]
+pub fn cmd_transport_set_metronome(
+    state: State<AppState>,
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    state.engine.set_metronome_enabled(enabled);
+    let _ = app.emit("transport:metronome_changed", MetronomeChanged { enabled });
+    Ok(())
+}
+
+#[tauri::command]
 pub fn cmd_transport_set_bpm(
     state: State<AppState>,
     app: AppHandle,
@@ -133,8 +228,13 @@ pub fn cmd_transport_set_bpm(
 // --- Master ---------------------------------------------------------------
 
 #[tauri::command]
-pub fn cmd_master_set_volume(state: State<AppState>, db: f64) -> Result<(), String> {
+pub fn cmd_master_set_volume(
+    state: State<AppState>,
+    app: AppHandle,
+    db: f64,
+) -> Result<(), String> {
     state.engine.set_master_volume(db);
+    let _ = app.emit("master:updated", MasterUpdated { volume_db: db });
     Ok(())
 }
 
@@ -191,13 +291,22 @@ pub fn cmd_channel_set_volume(
     state.engine.set_channel_volume(channel, db)?;
     let _ = app.emit(
         "channel:updated",
-        ChannelUpdated {
-            channel,
-            volume: Some(db),
-            muted: None,
-            solo: None,
-            user_program: None,
-        },
+        ChannelUpdated { volume: Some(db), ..ChannelUpdated::for_channel(channel) },
+    );
+    Ok(())
+}
+
+#[tauri::command]
+pub fn cmd_channel_set_pan(
+    state: State<AppState>,
+    app: AppHandle,
+    channel: u8,
+    pan: f64,
+) -> Result<(), String> {
+    state.engine.set_channel_pan(channel, pan)?;
+    let _ = app.emit(
+        "channel:updated",
+        ChannelUpdated { pan: Some(pan), ..ChannelUpdated::for_channel(channel) },
     );
     Ok(())
 }
@@ -212,13 +321,7 @@ pub fn cmd_channel_set_mute(
     state.engine.set_channel_mute(channel, muted)?;
     let _ = app.emit(
         "channel:updated",
-        ChannelUpdated {
-            channel,
-            volume: None,
-            muted: Some(muted),
-            solo: None,
-            user_program: None,
-        },
+        ChannelUpdated { muted: Some(muted), ..ChannelUpdated::for_channel(channel) },
     );
     Ok(())
 }
@@ -233,13 +336,22 @@ pub fn cmd_channel_set_solo(
     state.engine.set_channel_solo(channel, solo)?;
     let _ = app.emit(
         "channel:updated",
-        ChannelUpdated {
-            channel,
-            volume: None,
-            muted: None,
-            solo: Some(solo),
-            user_program: None,
-        },
+        ChannelUpdated { solo: Some(solo), ..ChannelUpdated::for_channel(channel) },
+    );
+    Ok(())
+}
+
+#[tauri::command]
+pub fn cmd_channel_set_color(
+    state: State<AppState>,
+    app: AppHandle,
+    channel: u8,
+    color: Option<String>,
+) -> Result<(), String> {
+    state.engine.set_channel_color(channel, color.as_deref())?;
+    let _ = app.emit(
+        "channel:updated",
+        ChannelUpdated { color: Some(color), ..ChannelUpdated::for_channel(channel) },
     );
     Ok(())
 }
@@ -254,13 +366,7 @@ pub fn cmd_channel_set_program(
     state.engine.set_channel_program(channel, program)?;
     let _ = app.emit(
         "channel:updated",
-        ChannelUpdated {
-            channel,
-            volume: None,
-            muted: None,
-            solo: None,
-            user_program: Some(program),
-        },
+        ChannelUpdated { user_program: Some(program), ..ChannelUpdated::for_channel(channel) },
     );
     Ok(())
 }
@@ -314,6 +420,49 @@ pub fn cmd_insert_set_param(
     state
         .engine
         .set_insert_param(channel, insert_id, param_id, value)
+}
+
+#[tauri::command]
+pub fn cmd_send_bus_add(
+    state: State<AppState>,
+    app: AppHandle,
+    effect_type: String,
+) -> Result<SendBusView, String> {
+    let bus = state.engine.add_send_bus(&effect_type)?;
+    let _ = app.emit("send_bus:added", SendBusAdded { bus: bus.clone() });
+    Ok(bus)
+}
+
+#[tauri::command]
+pub fn cmd_channel_set_send_level(
+    state: State<AppState>,
+    app: AppHandle,
+    channel: u8,
+    bus_id: u32,
+    level: f32,
+) -> Result<(), String> {
+    state.engine.set_channel_send_level(channel, bus_id, level)?;
+    let _ = app.emit(
+        "channel:send_level_changed",
+        ChannelSendLevelChanged { channel, bus_id, level },
+    );
+    Ok(())
+}
+
+#[tauri::command]
+pub fn cmd_insert_set_bypass(
+    state: State<AppState>,
+    app: AppHandle,
+    channel: u8,
+    insert_id: u32,
+    bypassed: bool,
+) -> Result<(), String> {
+    state.engine.set_insert_bypass(channel, insert_id, bypassed)?;
+    let _ = app.emit(
+        "insert:bypass_changed",
+        InsertBypassChanged { channel, insert_id, bypassed },
+    );
+    Ok(())
 }
 
 // --- Plugin discovery ----------------------------------------------------
@@ -391,33 +540,20 @@ pub fn cmd_open_plugin_gui(
     {
         let view_target: ViewTarget = target.into();
         let path = state.engine.instrument_path_for(view_target)?;
-        let (sr, buf) = state.engine.audio_settings();
+        let plugin = state.engine.vst3_plugin_handle(view_target).ok_or_else(|| {
+            "selected slot does not host a VST3 instrument — GUI is only available for VST3"
+                .to_string()
+        })?;
         let window_target = match view_target {
             ViewTarget::Default => crate::plugin_window::WindowTarget::Default,
             ViewTarget::Channel(ch) => crate::plugin_window::WindowTarget::Channel(ch),
         };
-        crate::plugin_window::open_plugin_window(app, path, window_target, sr, buf)
+        crate::plugin_window::open_plugin_window(app, path, window_target, plugin)
     }
     #[cfg(not(target_os = "macos"))]
     {
         let _ = (state, app, target);
         Err("plugin GUI window currently only implemented on macOS".to_string())
-    }
-}
-
-/// Capture the current state of an open GUI window and push it to the
-/// audio engine WITHOUT closing the window — lets the user A/B patches
-/// in real time. Returns the new patch name if extractable.
-#[tauri::command]
-pub fn cmd_apply_open_plugin_state(app: AppHandle, label: String) -> Result<Option<String>, String> {
-    #[cfg(target_os = "macos")]
-    {
-        crate::plugin_window::apply_open_state_to_engine(app, &label)
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (app, label);
-        Err("plug-in state apply is only implemented on macOS".to_string())
     }
 }
 

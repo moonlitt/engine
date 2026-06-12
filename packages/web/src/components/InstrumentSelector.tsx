@@ -13,7 +13,7 @@ interface InstrumentSelectorProps {
 const FORMAT_META: Record<string, { label: string; badge: string }> = {
   Sf2: { label: 'SF2 SoundFont (推荐, 自带 128 套 GM 音色)', badge: 'bg-emerald-500/20 text-emerald-300' },
   Vst3: { label: 'VST3 插件 (无 GUI; 复杂插件如 Keyscape/Omnisphere/Kontakt 通常无法播放)', badge: 'bg-sky-500/20 text-sky-300' },
-  Clap: { label: 'CLAP 插件 (同上)', badge: 'bg-violet-500/20 text-violet-300' },
+  Clap: { label: 'CLAP 插件 (同上)', badge: 'bg-amber-500/20 text-amber-300' },
 };
 
 const FORMAT_ORDER: readonly string[] = ['Sf2', 'Vst3', 'Clap'];

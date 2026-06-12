@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useUiStore } from '../stores/ui';
 import {
-  applyOpenPluginState,
   isGuiSupported,
   openPluginGui,
   saveOpenPluginState,
@@ -21,7 +20,6 @@ export function DefaultInstrumentBar({ instrumentPath, patchName }: DefaultInstr
   const [guiError, setGuiError] = useState<string | null>(null);
   const [guiLabel, setGuiLabel] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
-  const [applying, setApplying] = useState(false);
 
   const defaultStateName = (() => {
     if (!name) return 'plugin-state.mlstate';
@@ -80,30 +78,6 @@ export function DefaultInstrumentBar({ instrumentPath, patchName }: DefaultInstr
             title="打开插件原生界面"
           >
             🎛 GUI
-          </button>
-        )}
-        {isVst3 && guiSupported && guiLabel !== null && (
-          <button
-            type="button"
-            disabled={applying}
-            onClick={async () => {
-              setGuiError(null);
-              setSaveStatus(null);
-              setApplying(true);
-              const result = await applyOpenPluginState(guiLabel);
-              setApplying(false);
-              if (result.ok) {
-                setSaveStatus(
-                  result.patchName ? `已应用 → ${result.patchName}` : '已应用音色到播放',
-                );
-              } else {
-                setGuiError(result.error);
-              }
-            }}
-            className="text-[11px] px-2.5 py-1 rounded bg-daw-control hover:bg-daw-border text-[#e0e0e0] transition-colors disabled:opacity-50"
-            title="把 GUI 里当前选好的音色应用到播放（约 1 秒，期间会有短暂静音）"
-          >
-            {applying ? '⏳ 应用中…' : '🎵 应用到播放'}
           </button>
         )}
         {isVst3 && guiSupported && guiLabel !== null && (

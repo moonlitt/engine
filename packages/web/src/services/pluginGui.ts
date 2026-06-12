@@ -43,30 +43,6 @@ export async function openPluginGui(target: PluginGuiTarget): Promise<OpenPlugin
  * Pops a save dialog so the user picks the destination. Returns the
  * number of bytes written, or an error string.
  */
-/**
- * Capture the open GUI's current state AND push it to the audio
- * back-end so the patch the user just picked starts producing sound,
- * WITHOUT closing the GUI window. Returns the new patch name when
- * the back-end can extract one (Spectrasonics plug-ins).
- *
- * Heavy (~1 s of warm-up on Spectrasonics) — caller should give
- * visual feedback.
- */
-export async function applyOpenPluginState(
-  label: string,
-): Promise<{ ok: true; patchName: string | null } | { ok: false; error: string }> {
-  if (!isGuiSupported()) {
-    return { ok: false, error: '仅 Tauri 桌面端可应用插件状态' };
-  }
-  try {
-    const core = await import('@tauri-apps/api/core');
-    const patchName = await core.invoke<string | null>('cmd_apply_open_plugin_state', { label });
-    return { ok: true, patchName };
-  } catch (err) {
-    return { ok: false, error: String(err) };
-  }
-}
-
 export async function saveOpenPluginState(
   label: string,
   defaultName: string,

@@ -5,10 +5,13 @@ import { TopBar } from './TopBar';
 import { MidiPanel } from './MidiPanel';
 import { DefaultInstrumentBar } from './DefaultInstrumentBar';
 import { ChannelRow } from './ChannelRow';
+import { SendBusRack } from './SendBusRack';
 
 export function PlayerView() {
   const connected = useSessionStore((s) => s.connected);
   const playing = useTransportStore((s) => s.playing);
+  const looping = useTransportStore((s) => s.looping);
+  const metronomeEnabled = useTransportStore((s) => s.metronomeEnabled);
   const position = useTransportStore((s) => s.position);
   const bpm = useTransportStore((s) => s.bpm);
   const send = useSessionStore((s) => s.send);
@@ -23,10 +26,14 @@ export function PlayerView() {
       <TopBar
         connected={connected}
         playing={playing}
+        looping={looping}
+        metronomeEnabled={metronomeEnabled}
         position={position}
         bpm={bpm}
-        onPlay={() => send({ type: playing ? 'transport.stop' : 'transport.play' })}
+        onPlay={() => send({ type: playing ? 'transport.pause' : 'transport.play' })}
         onStop={() => send({ type: 'transport.stop' })}
+        onLoopToggle={() => send({ type: 'transport.set_loop', looping: !looping })}
+        onMetronomeToggle={() => send({ type: 'transport.set_metronome', enabled: !metronomeEnabled })}
         onBpmChange={(v) => send({ type: 'transport.set_bpm', bpm: v })}
       />
 
@@ -39,6 +46,8 @@ export function PlayerView() {
               instrumentPath={defaultInstrumentPath}
               patchName={defaultPatchName}
             />
+
+            <SendBusRack />
 
             <section>
               <div className="text-[11px] uppercase tracking-widest text-[#888] font-semibold mb-2 px-1">

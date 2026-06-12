@@ -3,12 +3,17 @@ export default {
   theme: {
     extend: {
       colors: {
-        'daw-bg': '#12121e',
-        'daw-panel': '#1a1a2e',
-        'daw-surface': '#16162a',
-        'daw-control': '#252540',
-        'daw-border': '#2a2a40',
-        'daw-accent': '#7c4dff',
+        // Neutral warm-dark palette modelled after Logic Pro / Bitwig
+        // chrome. No blue/violet tint in the grays so the accent stays
+        // the only chromatic element on screen.
+        'daw-bg': '#1a1a1a',
+        'daw-panel': '#222222',
+        'daw-surface': '#1e1e1e',
+        'daw-control': '#2c2c2c',
+        'daw-border': '#3a3a3a',
+        // Soft DAW blue — distinct from mute red and solo yellow so the
+        // three status colors never collide on a strip.
+        'daw-accent': '#4a90d9',
       },
     },
   },

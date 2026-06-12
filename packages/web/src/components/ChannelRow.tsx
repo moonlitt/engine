@@ -10,11 +10,34 @@ import { useUiStore } from '../stores/ui';
 import { useProjectStore } from '../stores/project';
 import { GM_PROGRAM_ZH, channelDisplayName } from '../i18n/gm-programs';
 import { isGuiSupported, openPluginGui } from '../services/pluginGui';
+import { Meter } from './Meter';
 
 interface ChannelRowProps {
   info: MidiChannelInfo;
   override: ChannelOverrideState | null;
   defaultInstrumentPath: string | null;
+}
+
+// 8 muted-saturation DAW colours, in cycle order. Stays away from
+// "AI vibe" violet — picks distinguishable hues that read well on the
+// neutral-warm-grey background. Bitwig/Ableton-flavoured.
+const TRACK_COLORS: readonly string[] = [
+  '#c14d4d', // red
+  '#cf8a3c', // orange
+  '#c9b340', // yellow
+  '#5c9a5c', // green
+  '#4a9090', // teal
+  '#4a90d9', // blue (same as accent)
+  '#8866b3', // purple
+  '#b8688f', // pink
+];
+
+function nextTrackColor(current: string | null | undefined): string | null {
+  if (!current) return TRACK_COLORS[0];
+  const idx = TRACK_COLORS.indexOf(current);
+  if (idx < 0) return TRACK_COLORS[0];
+  if (idx === TRACK_COLORS.length - 1) return null; // wrap back to "no color"
+  return TRACK_COLORS[idx + 1];
 }
 
 const EFFECT_TYPES: readonly { label: string; value: string }[] = [
@@ -51,14 +74,35 @@ export function ChannelRow({ info, override, defaultInstrumentPath }: ChannelRow
     ? defaultInstrumentPath?.split('/').pop() ?? null
     : override.instrumentName;
 
+  const channelColor = override?.color ?? null;
+
   return (
-    <section className="bg-daw-panel border border-daw-border rounded-lg overflow-hidden">
-      {/* Header strip */}
-      <div className="flex items-center gap-3 px-3 py-2 border-b border-daw-border">
-        <div className={`w-8 text-center text-[10px] font-mono rounded px-1 py-0.5 ${
-          inherited ? 'bg-daw-control text-[#aaa]' : 'bg-daw-accent/30 text-daw-accent'
+    <section className="bg-daw-panel border border-daw-border rounded-lg overflow-hidden flex">
+      {/* Vertical colour stripe — Logic Pro-style track tint. Click to
+          cycle through the palette; null means no tint. */}
+      {!inherited && (
+        <button
+          type="button"
+          onClick={() =>
+            send({ type: 'channel.set_color', channel: info.channel, color: nextTrackColor(channelColor) })
+          }
+          className="w-1.5 shrink-0 transition-colors hover:opacity-80"
+          style={{ backgroundColor: channelColor ?? '#2c2c2c' }}
+          title="点击切换通道色"
+          aria-label="切换通道色"
+        />
+      )}
+    <div className="flex-1 min-w-0">
+      {/* Header strip — channel-strip aesthetic: prominent ch# tile,
+          tight padding, status colors only when an override is active. */}
+      <div className="flex items-center gap-3 px-3 py-2 border-b border-daw-border bg-daw-surface/40">
+        <div className={`w-10 h-8 flex flex-col items-center justify-center text-center font-mono rounded border ${
+          inherited
+            ? 'bg-daw-control border-daw-border text-[#9a9a9a]'
+            : 'bg-daw-accent/20 border-daw-accent/60 text-daw-accent'
         }`}>
-          ch{info.displayNumber}
+          <span className="text-[7px] uppercase tracking-wider leading-none opacity-70">ch</span>
+          <span className="text-[11px] font-semibold leading-none mt-0.5">{info.displayNumber}</span>
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-sm text-[#e0e0e0] truncate">{displayName}</div>
@@ -83,12 +127,18 @@ export function ChannelRow({ info, override, defaultInstrumentPath }: ChannelRow
             单独指定音色…
           </button>
         ) : (
-          <OverrideControls override={override} />
+          <>
+            {/* Live peak meter — only meaningful when an override owns
+                its own mixer track; inherited channels mix into master. */}
+            <Meter channel={info.channel} width={64} height={4} />
+            <OverrideControls override={override} />
+          </>
         )}
       </div>
 
       {/* Body — preset picker is universal; volume/effects only on overrides */}
       <ChannelBody info={info} override={override} send={send} />
+    </div>
     </section>
   );
 }
@@ -114,11 +164,94 @@ function ChannelBody({
       {isOverride && (
         <>
           <VolumeRow channel={info.channel} db={override.volume} />
+          <PanRow channel={info.channel} pan={override.pan} />
+          <SendsBlock channel={info.channel} sendLevels={override.sendLevels} />
           <EffectsBlock channel={info.channel} inserts={override.inserts} />
         </>
       )}
     </div>
   );
+}
+
+function SendsBlock({ channel, sendLevels }: { channel: number; sendLevels: number[] }) {
+  const buses = useProjectStore((s) => s.sendBuses);
+  const send = useSessionStore((s) => s.send);
+  if (buses.length === 0) return null;
+  return (
+    <div className="border-t border-daw-border pt-2 flex flex-col gap-1">
+      <div className="text-[10px] uppercase tracking-widest text-[#888]">
+        送出 ({buses.length})
+      </div>
+      {buses.map((bus) => {
+        const lvl = sendLevels[bus.id] ?? 0;
+        return (
+          <div key={bus.id} className="flex items-center gap-3 text-[11px] text-[#888]">
+            <span className="w-12 shrink-0 truncate" title={bus.name}>
+              <span className="text-[#666] mr-0.5">→</span>
+              {bus.name.slice(0, 6)}
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={1.5}
+              step={0.01}
+              value={lvl}
+              onChange={(e) =>
+                send({
+                  type: 'channel.set_send_level',
+                  channel,
+                  busId: bus.id,
+                  level: parseFloat(e.target.value),
+                })
+              }
+              onDoubleClick={() =>
+                send({ type: 'channel.set_send_level', channel, busId: bus.id, level: 0 })
+              }
+              title="双击归零"
+              className="flex-1 accent-daw-accent"
+            />
+            <span className="w-12 text-right tabular-nums font-mono">
+              {lvl < 0.005 ? '·' : `${Math.round(lvl * 100)}%`}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function PanRow({ channel, pan }: { channel: number; pan: number }) {
+  const send = useSessionStore((s) => s.send);
+  const updateChannel = useProjectStore((s) => s.updateChannel);
+  const apply = (v: number) => {
+    updateChannel(channel, { pan: v });
+    send({ type: 'channel.set_pan', channel, pan: v });
+  };
+  return (
+    <div className="flex items-center gap-3 text-[11px] text-[#888]">
+      <span className="w-12 shrink-0">声像</span>
+      <span className="text-[10px] text-[#666] w-3 text-right">L</span>
+      <input
+        type="range"
+        min={-1}
+        max={1}
+        step={0.02}
+        value={pan}
+        onChange={(e) => apply(parseFloat(e.target.value))}
+        onDoubleClick={() => apply(0)}
+        title="双击居中"
+        className="flex-1 accent-daw-accent"
+      />
+      <span className="text-[10px] text-[#666] w-3">R</span>
+      <span className="w-12 text-right tabular-nums font-mono">{formatPan(pan)}</span>
+    </div>
+  );
+}
+
+function formatPan(pan: number): string {
+  if (Math.abs(pan) < 0.005) return 'C';
+  const n = Math.round(pan * 100);
+  return n < 0 ? `L${-n}` : `R${n}`;
 }
 
 function PresetPicker({
@@ -240,6 +373,9 @@ function EffectsBlock({ channel, inserts }: { channel: number; inserts: InsertSt
             removeInsertLocal(channel, insert.id);
             send({ type: 'insert.remove', channel, insertId: insert.id });
           }}
+          onBypass={(bypassed) => {
+            send({ type: 'insert.set_bypass', channel, insertId: insert.id, bypassed });
+          }}
           onParam={(paramId, value) => {
             setInsertParamLocal(channel, insert.id, paramId, value);
             send({ type: 'insert.set_param', channel, insertId: insert.id, paramId, value });
@@ -266,8 +402,10 @@ function OverrideControls({ override }: { override: ChannelOverrideState }) {
           updateChannel(override.channel, { muted: next });
           send({ type: 'channel.set_mute', channel: override.channel, muted: next });
         }}
-        className={`w-6 h-6 text-[10px] font-bold rounded transition-colors ${
-          override.muted ? 'bg-red-500/80 text-white' : 'bg-daw-bg text-[#666] hover:text-white'
+        className={`w-7 h-7 text-[11px] font-bold rounded border transition-colors ${
+          override.muted
+            ? 'bg-red-500/80 border-red-400/60 text-white'
+            : 'bg-daw-bg border-daw-border text-[#777] hover:text-white hover:border-[#555]'
         }`}
         title="静音"
       >M</button>
@@ -278,8 +416,10 @@ function OverrideControls({ override }: { override: ChannelOverrideState }) {
           updateChannel(override.channel, { solo: next });
           send({ type: 'channel.set_solo', channel: override.channel, solo: next });
         }}
-        className={`w-6 h-6 text-[10px] font-bold rounded transition-colors ${
-          override.solo ? 'bg-yellow-500/80 text-black' : 'bg-daw-bg text-[#666] hover:text-white'
+        className={`w-7 h-7 text-[11px] font-bold rounded border transition-colors ${
+          override.solo
+            ? 'bg-yellow-500/80 border-yellow-400/60 text-black'
+            : 'bg-daw-bg border-daw-border text-[#777] hover:text-white hover:border-[#555]'
         }`}
         title="独奏"
       >S</button>
@@ -312,23 +452,41 @@ function OverrideControls({ override }: { override: ChannelOverrideState }) {
 }
 
 function InsertCard({
-  insert, onRemove, onParam,
+  insert, onRemove, onBypass, onParam,
 }: {
   insert: InsertState;
   onRemove(): void;
+  onBypass(bypassed: boolean): void;
   onParam(paramId: number, value: number): void;
 }) {
   const [open, setOpen] = useState(true);
+  const bypassed = insert.bypassed;
   return (
-    <div className="rounded border border-daw-border bg-daw-control/40">
+    <div className={`rounded border bg-daw-control/40 transition-colors ${
+      bypassed ? 'border-daw-border/50 opacity-60' : 'border-daw-border'
+    }`}>
       <div className="flex items-center gap-2 px-2.5 py-1.5">
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
           className="w-3 text-[10px] text-[#888] hover:text-[#ccc]"
         >{open ? '▾' : '▸'}</button>
-        <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
-        <span className="text-xs text-[#e0e0e0] flex-1 truncate">{insert.name}</span>
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+          bypassed ? 'bg-[#555]' : 'bg-green-400'
+        }`} />
+        <span className={`text-xs flex-1 truncate ${
+          bypassed ? 'text-[#888] line-through decoration-[#666]' : 'text-[#e0e0e0]'
+        }`}>{insert.name}</span>
+        <button
+          type="button"
+          onClick={() => onBypass(!bypassed)}
+          className={`text-[9px] px-1.5 py-0.5 rounded border font-mono tracking-wider transition-colors ${
+            bypassed
+              ? 'bg-[#3a3a1a] border-yellow-700/60 text-yellow-300'
+              : 'bg-daw-bg border-daw-border text-[#777] hover:text-[#ccc]'
+          }`}
+          title="切换旁通（音频绕过此效果）"
+        >BYP</button>
         <button
           type="button"
           onClick={onRemove}
@@ -337,7 +495,9 @@ function InsertCard({
         >×</button>
       </div>
       {open && insert.params.length > 0 && (
-        <div className="px-2.5 pb-2.5 pt-0.5 flex flex-col gap-1.5 border-t border-daw-border">
+        <div className={`px-2.5 pb-2.5 pt-0.5 flex flex-col gap-1.5 border-t border-daw-border ${
+          bypassed ? 'pointer-events-none' : ''
+        }`}>
           {insert.params.map((p) => (
             <ParamSlider key={p.id} param={p} onChange={(v) => onParam(p.id, v)} />
           ))}

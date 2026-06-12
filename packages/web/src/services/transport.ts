@@ -15,6 +15,7 @@ import { isTauri } from '@tauri-apps/api/core';
 import { useProjectStore } from '../stores/project';
 import { useTransportStore } from '../stores/transport';
 import { usePluginsStore } from '../stores/plugins';
+import { useMetersStore, type MeterSnapshot } from '../stores/meters';
 
 export interface Transport {
   /** Connection / availability flag; mirrors session.connected. */
@@ -68,6 +69,8 @@ export function dispatchEvent(event: ServerEvent): void {
       project.setProject(event.project);
       transport.setBpm(event.project.bpm);
       transport.setPlaying(event.project.playing);
+      transport.setLooping(event.project.looping);
+      transport.setMetronomeEnabled(event.project.metronomeEnabled);
       break;
     case 'transport.state':
       transport.setPlaying(event.playing);
@@ -75,6 +78,15 @@ export function dispatchEvent(event: ServerEvent): void {
       break;
     case 'transport.tempo_changed':
       transport.setBpm(event.bpm);
+      break;
+    case 'transport.loop_changed':
+      transport.setLooping(event.looping);
+      break;
+    case 'transport.metronome_changed':
+      transport.setMetronomeEnabled(event.enabled);
+      break;
+    case 'master.updated':
+      project.setMasterVolume(event.volumeDb);
       break;
     case 'midi.loaded':
       project.setMidi(event.midi);
@@ -91,8 +103,10 @@ export function dispatchEvent(event: ServerEvent): void {
     case 'channel.updated':
       project.updateChannel(event.channel, {
         volume: event.volume,
+        pan: event.pan,
         muted: event.muted,
         solo: event.solo,
+        color: event.color,
       });
       break;
     case 'insert.added':
@@ -100,6 +114,15 @@ export function dispatchEvent(event: ServerEvent): void {
       break;
     case 'insert.removed':
       project.removeInsert(event.channel, event.insertId);
+      break;
+    case 'insert.bypass_changed':
+      project.setInsertBypass(event.channel, event.insertId, event.bypassed);
+      break;
+    case 'send_bus.added':
+      project.addSendBus(event.bus);
+      break;
+    case 'channel.send_level_changed':
+      project.setChannelSendLevel(event.channel, event.busId, event.level);
       break;
     case 'plugins.list':
       usePluginsStore.getState().setList(event.plugins);
@@ -262,11 +285,20 @@ function createTauriTransport(): Transport {
       case 'transport.play':
         await invoke('cmd_transport_play');
         return;
+      case 'transport.pause':
+        await invoke('cmd_transport_pause');
+        return;
       case 'transport.stop':
         await invoke('cmd_transport_stop');
         return;
       case 'transport.set_bpm':
         await invoke('cmd_transport_set_bpm', { bpm: cmd.bpm });
+        return;
+      case 'transport.set_loop':
+        await invoke('cmd_transport_set_loop', { looping: cmd.looping });
+        return;
+      case 'transport.set_metronome':
+        await invoke('cmd_transport_set_metronome', { enabled: cmd.enabled });
         return;
       case 'master.set_volume':
         await invoke('cmd_master_set_volume', { db: cmd.db });
@@ -286,11 +318,17 @@ function createTauriTransport(): Transport {
       case 'channel.set_volume':
         await invoke('cmd_channel_set_volume', { channel: cmd.channel, db: cmd.db });
         return;
+      case 'channel.set_pan':
+        await invoke('cmd_channel_set_pan', { channel: cmd.channel, pan: cmd.pan });
+        return;
       case 'channel.set_mute':
         await invoke('cmd_channel_set_mute', { channel: cmd.channel, muted: cmd.muted });
         return;
       case 'channel.set_solo':
         await invoke('cmd_channel_set_solo', { channel: cmd.channel, solo: cmd.solo });
+        return;
+      case 'channel.set_color':
+        await invoke('cmd_channel_set_color', { channel: cmd.channel, color: cmd.color });
         return;
       case 'channel.set_program':
         await invoke('cmd_channel_set_program', { channel: cmd.channel, program: cmd.program });
@@ -300,6 +338,23 @@ function createTauriTransport(): Transport {
         return;
       case 'insert.remove':
         await invoke('cmd_insert_remove', { channel: cmd.channel, insertId: cmd.insertId });
+        return;
+      case 'insert.set_bypass':
+        await invoke('cmd_insert_set_bypass', {
+          channel: cmd.channel,
+          insertId: cmd.insertId,
+          bypassed: cmd.bypassed,
+        });
+        return;
+      case 'send_bus.add':
+        await invoke('cmd_send_bus_add', { effectType: cmd.effectType });
+        return;
+      case 'channel.set_send_level':
+        await invoke('cmd_channel_set_send_level', {
+          channel: cmd.channel,
+          busId: cmd.busId,
+          level: cmd.level,
+        });
         return;
       case 'insert.set_param':
         await invoke('cmd_insert_set_param', {
@@ -356,6 +411,15 @@ function createTauriTransport(): Transport {
       const onTempo = await e.listen('transport:tempo_changed', (m: Wrap<{ bpm: number }>) => {
         dispatchEvent({ type: 'transport.tempo_changed', bpm: m.payload.bpm });
       });
+      const onLoop = await e.listen('transport:loop_changed', (m: Wrap<{ looping: boolean }>) => {
+        dispatchEvent({ type: 'transport.loop_changed', looping: m.payload.looping });
+      });
+      const onMet = await e.listen('transport:metronome_changed', (m: Wrap<{ enabled: boolean }>) => {
+        dispatchEvent({ type: 'transport.metronome_changed', enabled: m.payload.enabled });
+      });
+      const onMaster = await e.listen('master:updated', (m: Wrap<{ volumeDb: number }>) => {
+        dispatchEvent({ type: 'master.updated', volumeDb: m.payload.volumeDb });
+      });
       const onMidi = await e.listen('midi:loaded', (m: Wrap<{ midi: import('@moonlitt/protocol').MidiState }>) => {
         dispatchEvent({ type: 'midi.loaded', midi: m.payload.midi });
       });
@@ -368,13 +432,15 @@ function createTauriTransport(): Transport {
       const onRm = await e.listen('channel:override_removed', (m: Wrap<{ channel: number }>) => {
         dispatchEvent({ type: 'channel.override_removed', channel: m.payload.channel });
       });
-      const onUpd = await e.listen('channel:updated', (m: Wrap<{ channel: number; volume?: number; muted?: boolean; solo?: boolean; userProgram?: number | null }>) => {
+      const onUpd = await e.listen('channel:updated', (m: Wrap<{ channel: number; volume?: number; pan?: number; muted?: boolean; solo?: boolean; color?: string | null; userProgram?: number | null }>) => {
         dispatchEvent({
           type: 'channel.updated',
           channel: m.payload.channel,
           volume: m.payload.volume,
+          pan: m.payload.pan,
           muted: m.payload.muted,
           solo: m.payload.solo,
+          color: m.payload.color,
           userProgram: m.payload.userProgram,
         });
       });
@@ -384,8 +450,33 @@ function createTauriTransport(): Transport {
       const onInsRm = await e.listen('insert:removed', (m: Wrap<{ channel: number; insertId: number }>) => {
         dispatchEvent({ type: 'insert.removed', channel: m.payload.channel, insertId: m.payload.insertId });
       });
+      const onInsBypass = await e.listen('insert:bypass_changed', (m: Wrap<{ channel: number; insertId: number; bypassed: boolean }>) => {
+        dispatchEvent({
+          type: 'insert.bypass_changed',
+          channel: m.payload.channel,
+          insertId: m.payload.insertId,
+          bypassed: m.payload.bypassed,
+        });
+      });
+      const onSendBusAdded = await e.listen('send_bus:added', (m: Wrap<{ bus: import('@moonlitt/protocol').SendBusView }>) => {
+        dispatchEvent({ type: 'send_bus.added', bus: m.payload.bus });
+      });
+      const onSendLevel = await e.listen('channel:send_level_changed', (m: Wrap<{ channel: number; busId: number; level: number }>) => {
+        dispatchEvent({
+          type: 'channel.send_level_changed',
+          channel: m.payload.channel,
+          busId: m.payload.busId,
+          level: m.payload.level,
+        });
+      });
       const onPlugins = await e.listen('plugins:list', (m: Wrap<{ plugins: import('@moonlitt/protocol').PluginInfo[] }>) => {
         dispatchEvent({ type: 'plugins.list', plugins: m.payload.plugins });
+      });
+      // High-frequency meter event — fed straight into the meters store.
+      // Components subscribe imperatively via canvas + rAF, so this
+      // doesn't kick the React tree at 60 Hz.
+      const onMeter = await e.listen<MeterSnapshot>('meter', (m) => {
+        useMetersStore.getState().apply(m.payload);
       });
       // When a plug-in GUI window closes, the backend captures its
       // state into the stash and emits this event. Re-pull the snapshot
@@ -403,8 +494,9 @@ function createTauriTransport(): Transport {
         },
       );
       unsubs.push(
-        onTransportState, onTempo, onMidi, onDefault,
-        onAdd, onRm, onUpd, onIns, onInsRm, onPlugins, onPluginStateCaptured,
+        onTransportState, onTempo, onLoop, onMet, onMaster, onMidi, onDefault,
+        onAdd, onRm, onUpd, onIns, onInsRm, onInsBypass, onSendBusAdded, onSendLevel,
+        onPlugins, onMeter, onPluginStateCaptured,
       );
 
       // Pull the initial snapshot.

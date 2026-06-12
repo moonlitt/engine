@@ -19,6 +19,12 @@ use crate::commands::AppState;
 use crate::engine::Engine;
 
 const METER_INTERVAL: Duration = Duration::from_millis(16);
+/// How often we sample the live plug-in state of open GUI windows to
+/// detect patch picks. 500 ms balances "feels live" against the cost
+/// of `getState` on heavy plug-ins (Spectrasonics returns the full
+/// patch identifier blob each call).
+#[cfg(target_os = "macos")]
+const PATCH_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -32,28 +38,41 @@ pub fn run() {
             let app_handle = app.handle().clone();
             std::thread::spawn(move || meter_loop(app_handle));
 
+            #[cfg(target_os = "macos")]
+            {
+                let patch_handle = app.handle().clone();
+                std::thread::spawn(move || patch_poll_loop(patch_handle));
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::cmd_snapshot,
             commands::cmd_transport_play,
+            commands::cmd_transport_pause,
             commands::cmd_transport_stop,
             commands::cmd_transport_set_bpm,
+            commands::cmd_transport_set_loop,
+            commands::cmd_transport_set_metronome,
             commands::cmd_master_set_volume,
             commands::cmd_default_set_instrument,
             commands::cmd_channel_set_override,
             commands::cmd_channel_remove_override,
             commands::cmd_channel_set_volume,
+            commands::cmd_channel_set_pan,
             commands::cmd_channel_set_mute,
             commands::cmd_channel_set_solo,
+            commands::cmd_channel_set_color,
             commands::cmd_channel_set_program,
             commands::cmd_insert_add,
             commands::cmd_insert_remove,
             commands::cmd_insert_set_param,
+            commands::cmd_insert_set_bypass,
+            commands::cmd_send_bus_add,
+            commands::cmd_channel_set_send_level,
             commands::cmd_plugins_scan,
             commands::cmd_load_midi,
             commands::cmd_open_plugin_gui,
-            commands::cmd_apply_open_plugin_state,
             commands::cmd_save_plugin_state,
             commands::cmd_project_save_as,
             commands::cmd_project_open,
@@ -77,5 +96,47 @@ fn meter_loop(app: tauri::AppHandle) {
         let snap = state.engine.meter_snapshot();
         // Emit as JSON array — small, simple, decodes everywhere.
         let _ = app.emit("meter", snap);
+    }
+}
+
+/// Background loop that keeps the UI's patch-name display in sync with
+/// the live plug-in state while a GUI window is open. Picks the patch
+/// inside the plug-in's native UI never goes through any Tauri command,
+/// so without this poll the bar would only refresh on window close.
+///
+/// Uses `try_lock` inside `plugin_window::poll_patch_name_updates` so the
+/// audio thread is never blocked. Skips entirely when no GUI is open.
+#[cfg(target_os = "macos")]
+fn patch_poll_loop(app: tauri::AppHandle) {
+    use std::collections::HashMap;
+    use serde::Serialize;
+
+    #[derive(Serialize, Clone)]
+    #[serde(rename_all = "camelCase")]
+    struct PluginStateCaptured {
+        path: String,
+        patch_name: Option<String>,
+    }
+
+    let mut last_seen: HashMap<String, Option<String>> = HashMap::new();
+    loop {
+        std::thread::sleep(PATCH_POLL_INTERVAL);
+        if plugin_window::open_window_count() == 0 {
+            continue;
+        }
+        for (path, patch_name) in plugin_window::poll_patch_name_updates() {
+            let changed = match last_seen.get(&path) {
+                Some(prev) => prev != &patch_name,
+                None => true,
+            };
+            if !changed {
+                continue;
+            }
+            last_seen.insert(path.clone(), patch_name.clone());
+            let _ = app.emit(
+                "plugin_state_captured",
+                PluginStateCaptured { path, patch_name },
+            );
+        }
     }
 }
