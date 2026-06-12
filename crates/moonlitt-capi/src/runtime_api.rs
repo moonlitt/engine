@@ -127,7 +127,9 @@ pub extern "C" fn moonlitt_runtime_create(engine_handle: *mut EngineHandle) -> *
         let backend = match handle.backend.take() {
             Some(b) => b,
             None => {
-                set_last_error_static(c"engine handle has no backend (never loaded, or already consumed)");
+                set_last_error_static(
+                    c"engine handle has no backend (never loaded, or already consumed)",
+                );
                 return std::ptr::null_mut();
             }
         };
@@ -242,7 +244,10 @@ pub extern "C" fn moonlitt_runtime_note_on_delayed(
                 return Err(MOONLITT_ERR_INVALID_ARG);
             }
             let h = rt_mut(rt)?;
-            queued(h.runtime.note_on_delayed(ch, note, vel, delay_samples as u32))
+            queued(
+                h.runtime
+                    .note_on_delayed(ch, note, vel, delay_samples as u32),
+            )
         })())
     })
 }
@@ -430,7 +435,10 @@ pub extern "C" fn moonlitt_runtime_set_insert_param(
             }
             let value = not_nan_f64(value)?;
             let h = rt_mut(rt)?;
-            queued(h.runtime.set_insert_param(track, insert, param_id as u16, value))
+            queued(
+                h.runtime
+                    .set_insert_param(track, insert, param_id as u16, value),
+            )
         })())
     })
 }
@@ -613,8 +621,14 @@ pub extern "C" fn moonlitt_runtime_set_insert_bypass(
         status((|| {
             let (track, insert) = (id_u8(track_id)?, id_u8(insert_id)?);
             let h = rt_mut(rt)?;
-            queued(h.runtime.mixer_set_insert_bypass(track, insert, bypass != 0))
-                .inspect(|_| h.shadow.set_insert_bypass(track as u32, insert as u32, bypass != 0))
+            queued(
+                h.runtime
+                    .mixer_set_insert_bypass(track, insert, bypass != 0),
+            )
+            .inspect(|_| {
+                h.shadow
+                    .set_insert_bypass(track as u32, insert as u32, bypass != 0)
+            })
         })())
     })
 }

@@ -96,13 +96,7 @@ impl AudioBackend for StereoWidth {
     // -- Audio: generator render is a no-op (this is an effect) --
     fn render(&mut self, _left: &mut [f32], _right: &mut [f32]) {}
 
-    fn process_effect(
-        &mut self,
-        in_l: &[f32],
-        in_r: &[f32],
-        out_l: &mut [f32],
-        out_r: &mut [f32],
-    ) {
+    fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
         let len = in_l.len();
 
         // Bypass: bit-exact copy
@@ -344,7 +338,9 @@ mod tests {
             assert!(
                 diff < 1e-6,
                 "width=0: L and R should be equal at sample {} (L={}, R={})",
-                i, out_l[i], out_r[i]
+                i,
+                out_l[i],
+                out_r[i]
             );
         }
     }
@@ -376,12 +372,18 @@ mod tests {
             assert!(
                 diff_l < 1e-6,
                 "width=1: L sample {} differs by {} (in={}, out={})",
-                i, diff_l, in_l[i], out_l[i]
+                i,
+                diff_l,
+                in_l[i],
+                out_l[i]
             );
             assert!(
                 diff_r < 1e-6,
                 "width=1: R sample {} differs by {} (in={}, out={})",
-                i, diff_r, in_r[i], out_r[i]
+                i,
+                diff_r,
+                in_r[i],
+                out_r[i]
             );
         }
     }
@@ -396,9 +398,9 @@ mod tests {
         // Test 1: Boost mid by +6 dB with a mono signal -> level should increase
         {
             let mut sw = StereoWidth::new(sr);
-            sw.set_param(0, 1.0);  // width = 1
-            sw.set_param(1, 6.0);  // mid_gain = +6 dB
-            sw.set_param(2, 0.0);  // side_gain = 0 dB
+            sw.set_param(0, 1.0); // width = 1
+            sw.set_param(1, 6.0); // mid_gain = +6 dB
+            sw.set_param(2, 0.0); // side_gain = 0 dB
             sw.width_smoother.reset(1.0);
             sw.mid_gain_smoother.reset(6.0);
             sw.side_gain_smoother.reset(0.0);
@@ -416,7 +418,9 @@ mod tests {
                 assert!(
                     diff < 1e-5,
                     "mid boost: sample {} expected ~{:.4}, got {}",
-                    i, expected, out_l[i]
+                    i,
+                    expected,
+                    out_l[i]
                 );
             }
         }
@@ -425,9 +429,9 @@ mod tests {
         // (mono signal has zero side content)
         {
             let mut sw = StereoWidth::new(sr);
-            sw.set_param(0, 1.0);  // width = 1
-            sw.set_param(1, 0.0);  // mid_gain = 0 dB
-            sw.set_param(2, 6.0);  // side_gain = +6 dB
+            sw.set_param(0, 1.0); // width = 1
+            sw.set_param(1, 0.0); // mid_gain = 0 dB
+            sw.set_param(2, 6.0); // side_gain = +6 dB
             sw.width_smoother.reset(1.0);
             sw.mid_gain_smoother.reset(0.0);
             sw.side_gain_smoother.reset(6.0);
@@ -444,7 +448,9 @@ mod tests {
                 assert!(
                     diff < 1e-6,
                     "side boost on mono: sample {} should be unchanged (in={}, out={})",
-                    i, mono_signal[i], out_l[i]
+                    i,
+                    mono_signal[i],
+                    out_l[i]
                 );
             }
         }
@@ -460,7 +466,11 @@ mod tests {
             assert!(info.is_some(), "param_info({}) should return Some", i);
             let info = info.unwrap();
             assert_eq!(info.id, i);
-            assert!(!info.name.is_empty(), "param {} name should not be empty", i);
+            assert!(
+                !info.name.is_empty(),
+                "param {} name should not be empty",
+                i
+            );
             assert!(
                 !info.group.is_empty(),
                 "param {} group should not be empty",

@@ -159,9 +159,7 @@ fn system_vst3_dirs() -> Vec<PathBuf> {
     {
         dirs.push(PathBuf::from("/Library/Audio/Plug-Ins/VST3"));
         if let Ok(home) = std::env::var("HOME") {
-            dirs.push(PathBuf::from(format!(
-                "{home}/Library/Audio/Plug-Ins/VST3"
-            )));
+            dirs.push(PathBuf::from(format!("{home}/Library/Audio/Plug-Ins/VST3")));
         }
     }
 

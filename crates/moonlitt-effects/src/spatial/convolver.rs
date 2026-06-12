@@ -140,13 +140,7 @@ impl AudioBackend for Convolver {
 
     fn render(&mut self, _left: &mut [f32], _right: &mut [f32]) {}
 
-    fn process_effect(
-        &mut self,
-        in_l: &[f32],
-        in_r: &[f32],
-        out_l: &mut [f32],
-        out_r: &mut [f32],
-    ) {
+    fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
         let len = in_l.len().min(in_r.len()).min(out_l.len()).min(out_r.len());
 
         // Bypass: bit-exact passthrough
@@ -605,7 +599,9 @@ mod tests {
         let ir = [1.0f32];
         let mut conv = Convolver::from_ir(&ir, 48000, block_size);
 
-        let input: Vec<f32> = (0..block_size).map(|i| (i as f32 + 1.0) / block_size as f32).collect();
+        let input: Vec<f32> = (0..block_size)
+            .map(|i| (i as f32 + 1.0) / block_size as f32)
+            .collect();
         let tol = fft_tolerance(fft_size, 1.0);
         let mut out_l = vec![0.0f32; block_size];
         let mut out_r = vec![0.0f32; block_size];
@@ -647,21 +643,18 @@ mod tests {
             let len = end - start;
             let mut out_l = vec![0.0f32; len];
             let mut out_r = vec![0.0f32; len];
-            conv.process_effect(
-                &in_l[start..end],
-                &in_r[start..end],
-                &mut out_l,
-                &mut out_r,
-            );
+            conv.process_effect(&in_l[start..end], &in_r[start..end], &mut out_l, &mut out_r);
 
             for i in 0..len {
                 assert_eq!(
-                    out_l[i], in_l[start + i],
+                    out_l[i],
+                    in_l[start + i],
                     "bypass L must be bit-exact at sample {}",
                     start + i
                 );
                 assert_eq!(
-                    out_r[i], in_r[start + i],
+                    out_r[i],
+                    in_r[start + i],
                     "bypass R must be bit-exact at sample {}",
                     start + i
                 );

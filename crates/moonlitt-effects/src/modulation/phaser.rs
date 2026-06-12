@@ -218,13 +218,7 @@ impl AudioBackend for Phaser {
     // -- Audio: generator render is a no-op (this is an effect) --
     fn render(&mut self, _left: &mut [f32], _right: &mut [f32]) {}
 
-    fn process_effect(
-        &mut self,
-        in_l: &[f32],
-        in_r: &[f32],
-        out_l: &mut [f32],
-        out_r: &mut [f32],
-    ) {
+    fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
         let len = in_l.len();
 
         // Bypass: bit-exact copy
@@ -674,7 +668,7 @@ mod tests {
         phaser_4.set_param(0, 0.5); // rate
         phaser_4.set_param(1, 1.0); // full depth
         phaser_4.set_param(3, 0.5); // feedback
-        // Jump smoothers
+                                    // Jump smoothers
         phaser_4.rate_smoother.reset(0.5);
         phaser_4.depth_smoother.reset(1.0);
         phaser_4.feedback_smoother.reset(0.5);
@@ -777,9 +771,7 @@ mod tests {
 
         // Generate a 1 kHz sine
         let input: Vec<f32> = (0..num_samples)
-            .map(|i| {
-                ((i as f64 / sr as f64) * 1000.0 * std::f64::consts::TAU).sin() as f32
-            })
+            .map(|i| ((i as f64 / sr as f64) * 1000.0 * std::f64::consts::TAU).sin() as f32)
             .collect();
 
         // --- Low range (100-500 Hz) ---
@@ -830,14 +822,14 @@ mod tests {
 
         for i in 0..11 {
             let info = phaser.param_info(i);
-            assert!(
-                info.is_some(),
-                "param_info({}) should return Some",
-                i
-            );
+            assert!(info.is_some(), "param_info({}) should return Some", i);
             let info = info.unwrap();
             assert_eq!(info.id, i);
-            assert!(!info.name.is_empty(), "param {} name should not be empty", i);
+            assert!(
+                !info.name.is_empty(),
+                "param {} name should not be empty",
+                i
+            );
             assert!(
                 !info.group.is_empty(),
                 "param {} group should not be empty",

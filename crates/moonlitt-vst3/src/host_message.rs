@@ -22,10 +22,11 @@ use std::ffi::{c_char, c_void, CStr, CString};
 use std::sync::Mutex;
 
 use vst3::Steinberg::Vst::{
-    IAttributeList, IAttributeListTrait, IAttributeList_::AttrID, IMessage, IMessageTrait,
-    TChar,
+    IAttributeList, IAttributeListTrait, IAttributeList_::AttrID, IMessage, IMessageTrait, TChar,
 };
-use vst3::Steinberg::{int64, kInvalidArgument, kResultFalse, kResultOk, tresult, uint32, FIDString};
+use vst3::Steinberg::{
+    int64, kInvalidArgument, kResultFalse, kResultOk, tresult, uint32, FIDString,
+};
 use vst3::{Class, ComWrapper};
 
 #[derive(Clone, Debug)]
@@ -63,7 +64,9 @@ fn attr_id_to_cstring(id: AttrID) -> Option<CString> {
 
 impl IAttributeListTrait for HostAttributeList {
     unsafe fn setInt(&self, id: AttrID, value: int64) -> tresult {
-        let Some(key) = attr_id_to_cstring(id) else { return kInvalidArgument };
+        let Some(key) = attr_id_to_cstring(id) else {
+            return kInvalidArgument;
+        };
         if let Ok(mut m) = self.map.lock() {
             m.insert(key, AttrValue::Int(value));
             kResultOk
@@ -76,8 +79,12 @@ impl IAttributeListTrait for HostAttributeList {
         if value.is_null() {
             return kInvalidArgument;
         }
-        let Some(key) = attr_id_to_cstring(id) else { return kInvalidArgument };
-        let Ok(m) = self.map.lock() else { return kResultFalse };
+        let Some(key) = attr_id_to_cstring(id) else {
+            return kInvalidArgument;
+        };
+        let Ok(m) = self.map.lock() else {
+            return kResultFalse;
+        };
         match m.get(&key) {
             Some(AttrValue::Int(v)) => {
                 std::ptr::write(value, *v);
@@ -88,7 +95,9 @@ impl IAttributeListTrait for HostAttributeList {
     }
 
     unsafe fn setFloat(&self, id: AttrID, value: f64) -> tresult {
-        let Some(key) = attr_id_to_cstring(id) else { return kInvalidArgument };
+        let Some(key) = attr_id_to_cstring(id) else {
+            return kInvalidArgument;
+        };
         if let Ok(mut m) = self.map.lock() {
             m.insert(key, AttrValue::Float(value));
             kResultOk
@@ -101,8 +110,12 @@ impl IAttributeListTrait for HostAttributeList {
         if value.is_null() {
             return kInvalidArgument;
         }
-        let Some(key) = attr_id_to_cstring(id) else { return kInvalidArgument };
-        let Ok(m) = self.map.lock() else { return kResultFalse };
+        let Some(key) = attr_id_to_cstring(id) else {
+            return kInvalidArgument;
+        };
+        let Ok(m) = self.map.lock() else {
+            return kResultFalse;
+        };
         match m.get(&key) {
             Some(AttrValue::Float(v)) => {
                 std::ptr::write(value, *v);
@@ -113,7 +126,9 @@ impl IAttributeListTrait for HostAttributeList {
     }
 
     unsafe fn setString(&self, id: AttrID, string: *const TChar) -> tresult {
-        let Some(key) = attr_id_to_cstring(id) else { return kInvalidArgument };
+        let Some(key) = attr_id_to_cstring(id) else {
+            return kInvalidArgument;
+        };
         if string.is_null() {
             return kInvalidArgument;
         }
@@ -131,18 +146,19 @@ impl IAttributeListTrait for HostAttributeList {
         }
     }
 
-    unsafe fn getString(
-        &self,
-        id: AttrID,
-        string: *mut TChar,
-        size_in_bytes: uint32,
-    ) -> tresult {
+    unsafe fn getString(&self, id: AttrID, string: *mut TChar, size_in_bytes: uint32) -> tresult {
         if string.is_null() {
             return kInvalidArgument;
         }
-        let Some(key) = attr_id_to_cstring(id) else { return kInvalidArgument };
-        let Ok(m) = self.map.lock() else { return kResultFalse };
-        let Some(AttrValue::String(buf)) = m.get(&key) else { return kResultFalse };
+        let Some(key) = attr_id_to_cstring(id) else {
+            return kInvalidArgument;
+        };
+        let Ok(m) = self.map.lock() else {
+            return kResultFalse;
+        };
+        let Some(AttrValue::String(buf)) = m.get(&key) else {
+            return kResultFalse;
+        };
 
         // size_in_bytes is bytes, but TChar is 2 bytes. Reserve one slot
         // for the trailing zero.
@@ -157,13 +173,10 @@ impl IAttributeListTrait for HostAttributeList {
         kResultOk
     }
 
-    unsafe fn setBinary(
-        &self,
-        id: AttrID,
-        data: *const c_void,
-        size_in_bytes: uint32,
-    ) -> tresult {
-        let Some(key) = attr_id_to_cstring(id) else { return kInvalidArgument };
+    unsafe fn setBinary(&self, id: AttrID, data: *const c_void, size_in_bytes: uint32) -> tresult {
+        let Some(key) = attr_id_to_cstring(id) else {
+            return kInvalidArgument;
+        };
         if data.is_null() && size_in_bytes != 0 {
             return kInvalidArgument;
         }
@@ -189,9 +202,15 @@ impl IAttributeListTrait for HostAttributeList {
         if data.is_null() || size_in_bytes.is_null() {
             return kInvalidArgument;
         }
-        let Some(key) = attr_id_to_cstring(id) else { return kInvalidArgument };
-        let Ok(m) = self.map.lock() else { return kResultFalse };
-        let Some(AttrValue::Binary(bytes)) = m.get(&key) else { return kResultFalse };
+        let Some(key) = attr_id_to_cstring(id) else {
+            return kInvalidArgument;
+        };
+        let Ok(m) = self.map.lock() else {
+            return kResultFalse;
+        };
+        let Some(AttrValue::Binary(bytes)) = m.get(&key) else {
+            return kResultFalse;
+        };
 
         // Per spec: pointer remains valid until the list is destroyed or
         // the value is overwritten. The HashMap entry owns the Vec, so
@@ -323,7 +342,10 @@ mod tests {
             assert_eq!(api.setString(key.as_ptr(), payload.as_ptr()), kResultOk);
             let mut buf = vec![0u16; 32];
             let cap_bytes = (buf.len() * 2) as uint32;
-            assert_eq!(api.getString(key.as_ptr(), buf.as_mut_ptr(), cap_bytes), kResultOk);
+            assert_eq!(
+                api.getString(key.as_ptr(), buf.as_mut_ptr(), cap_bytes),
+                kResultOk
+            );
             let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
             let recovered = String::from_utf16_lossy(&buf[..end]);
             assert_eq!(recovered, "Moonlitt");
@@ -339,7 +361,11 @@ mod tests {
 
         unsafe {
             assert_eq!(
-                api.setBinary(key.as_ptr(), payload.as_ptr() as *const c_void, payload.len() as uint32),
+                api.setBinary(
+                    key.as_ptr(),
+                    payload.as_ptr() as *const c_void,
+                    payload.len() as uint32
+                ),
                 kResultOk
             );
             let mut data: *const c_void = ptr::null();

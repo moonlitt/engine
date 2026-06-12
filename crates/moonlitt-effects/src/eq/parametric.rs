@@ -36,9 +36,7 @@ impl Default for Band {
 // Default frequency layout (classic console EQ)
 // ---------------------------------------------------------------------------
 
-const DEFAULT_FREQS: [f64; 8] = [
-    60.0, 170.0, 400.0, 1000.0, 2500.0, 6000.0, 12000.0, 16000.0,
-];
+const DEFAULT_FREQS: [f64; 8] = [60.0, 170.0, 400.0, 1000.0, 2500.0, 6000.0, 12000.0, 16000.0];
 
 // ---------------------------------------------------------------------------
 // ParametricEq
@@ -136,13 +134,7 @@ impl AudioBackend for ParametricEq {
     // -- Audio: generator render is a no-op (this is an effect) --
     fn render(&mut self, _left: &mut [f32], _right: &mut [f32]) {}
 
-    fn process_effect(
-        &mut self,
-        in_l: &[f32],
-        in_r: &[f32],
-        out_l: &mut [f32],
-        out_r: &mut [f32],
-    ) {
+    fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
         let len = in_l.len();
 
         // Bypass: bit-exact copy
@@ -302,7 +294,11 @@ impl AudioBackend for ParametricEq {
 
     fn param_display(&self, id: u32, value: f64) -> Option<String> {
         if id == 32 {
-            return Some(if value >= 0.5 { "On".into() } else { "Off".into() });
+            return Some(if value >= 0.5 {
+                "On".into()
+            } else {
+                "Off".into()
+            });
         }
         if id >= 32 {
             return None;

@@ -22,7 +22,11 @@ struct Xorshift64 {
 impl Xorshift64 {
     fn new(seed: u64) -> Self {
         Self {
-            state: if seed == 0 { 0x1234_5678_9ABC_DEF0 } else { seed },
+            state: if seed == 0 {
+                0x1234_5678_9ABC_DEF0
+            } else {
+                seed
+            },
         }
     }
 
@@ -64,10 +68,10 @@ pub struct Bitcrusher {
 
     // Parameters
     bit_depth: u32,      // 1..24
-    rate_reduction: f64,  // 1..100
-    dither: f64,          // 0..1
-    dry_wet: f64,         // 0..1
-    jitter: f64,          // 0..1
+    rate_reduction: f64, // 1..100
+    dither: f64,         // 0..1
+    dry_wet: f64,        // 0..1
+    jitter: f64,         // 0..1
     bypass: bool,
 
     // Parameter smoothers
@@ -128,12 +132,7 @@ impl Bitcrusher {
     /// Process one sample through sample & hold, returning the held value.
     /// `counter` and `held` are per-channel state.
     #[inline]
-    fn sample_and_hold(
-        &mut self,
-        input: f64,
-        counter: &mut f64,
-        held: &mut f64,
-    ) -> f64 {
+    fn sample_and_hold(&mut self, input: f64, counter: &mut f64, held: &mut f64) -> f64 {
         let rate = self.rate_reduction;
 
         if rate <= 1.0 {
@@ -199,13 +198,7 @@ impl AudioBackend for Bitcrusher {
     // Audio: generator render is a no-op (this is an effect)
     fn render(&mut self, _left: &mut [f32], _right: &mut [f32]) {}
 
-    fn process_effect(
-        &mut self,
-        in_l: &[f32],
-        in_r: &[f32],
-        out_l: &mut [f32],
-        out_r: &mut [f32],
-    ) {
+    fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
         let len = in_l.len();
 
         // Bypass: bit-exact copy
@@ -374,7 +367,11 @@ impl AudioBackend for Bitcrusher {
             2 => Some(format!("{:.0}%", value * 100.0)),
             3 => Some(format!("{:.0}%", value * 100.0)),
             4 => Some(format!("{:.0}%", value * 100.0)),
-            5 => Some(if value >= 0.5 { "On".into() } else { "Off".into() }),
+            5 => Some(if value >= 0.5 {
+                "On".into()
+            } else {
+                "Off".into()
+            }),
             _ => None,
         }
     }
@@ -461,10 +458,10 @@ mod tests {
         let sr = 44100;
         let mut bc = Bitcrusher::new(sr);
         bc.set_param(0, 24.0); // 24 bit
-        bc.set_param(1, 1.0);  // no rate reduction
-        bc.set_param(2, 0.0);  // no dither
-        bc.set_param(3, 1.0);  // 100% wet
-        bc.set_param(4, 0.0);  // no jitter
+        bc.set_param(1, 1.0); // no rate reduction
+        bc.set_param(2, 0.0); // no dither
+        bc.set_param(3, 1.0); // 100% wet
+        bc.set_param(4, 0.0); // no jitter
 
         let num_samples = 1024;
         let input: Vec<f32> = (0..num_samples)
@@ -506,10 +503,10 @@ mod tests {
         let sr = 44100;
         let mut bc = Bitcrusher::new(sr);
         bc.set_param(0, 24.0); // 24 bit
-        bc.set_param(1, 1.0);  // no rate reduction
-        bc.set_param(2, 0.0);  // no dither
-        bc.set_param(3, 1.0);  // 100% wet
-        bc.set_param(4, 0.0);  // no jitter
+        bc.set_param(1, 1.0); // no rate reduction
+        bc.set_param(2, 0.0); // no dither
+        bc.set_param(3, 1.0); // 100% wet
+        bc.set_param(4, 0.0); // no jitter
 
         let num_samples = 1024;
         let input: Vec<f32> = (0..num_samples)

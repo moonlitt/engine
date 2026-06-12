@@ -87,15 +87,15 @@ fn hf_energy(buf: &[f32], _cutoff_hz: f64) -> f64 {
 #[test]
 fn af1_envelope_frequency_tracking() {
     let mut af = AutoFilter::new(SR);
-    af.set_param(0, 0.0);     // source = Envelope
-    af.set_param(1, 0.0);     // filter_type = LP
-    af.set_param(2, 200.0);   // min_freq = 200 Hz
-    af.set_param(3, 8000.0);  // max_freq = 8000 Hz
-    af.set_param(4, 1.0);     // resonance = moderate
-    af.set_param(5, 1.0);     // sensitivity = max
-    af.set_param(6, 1.0);     // attack = 1 ms
-    af.set_param(7, 10.0);    // release = 10 ms
-    af.set_param(10, 1.0);    // dry_wet = 100%
+    af.set_param(0, 0.0); // source = Envelope
+    af.set_param(1, 0.0); // filter_type = LP
+    af.set_param(2, 200.0); // min_freq = 200 Hz
+    af.set_param(3, 8000.0); // max_freq = 8000 Hz
+    af.set_param(4, 1.0); // resonance = moderate
+    af.set_param(5, 1.0); // sensitivity = max
+    af.set_param(6, 1.0); // attack = 1 ms
+    af.set_param(7, 10.0); // release = 10 ms
+    af.set_param(10, 1.0); // dry_wet = 100%
 
     let block_size = SR as usize / 10; // 100ms blocks
     let loud_amplitude = 0.8;
@@ -135,7 +135,8 @@ fn af1_envelope_frequency_tracking() {
         loud_normalized > quiet_normalized,
         "af1: loud blocks should have more HF content (filter opened by envelope): \
          loud_hf_normalized={:.6}, quiet_hf_normalized={:.6}",
-        loud_normalized, quiet_normalized
+        loud_normalized,
+        quiet_normalized
     );
 }
 
@@ -150,14 +151,14 @@ fn af1_envelope_frequency_tracking() {
 #[test]
 fn af2_resonance_peak() {
     let mut af = AutoFilter::new(SR);
-    af.set_param(0, 1.0);      // source = LFO
-    af.set_param(1, 0.0);      // filter_type = LP
-    af.set_param(2, 1000.0);   // min_freq = 1000 Hz
-    af.set_param(3, 1000.0);   // max_freq = 1000 Hz (static)
-    af.set_param(4, 15.0);     // resonance = 15 (high Q)
-    af.set_param(5, 1.0);      // sensitivity = 1.0
-    af.set_param(8, 0.05);     // lfo_rate = near minimum (nearly static)
-    af.set_param(10, 1.0);     // dry_wet = 100%
+    af.set_param(0, 1.0); // source = LFO
+    af.set_param(1, 0.0); // filter_type = LP
+    af.set_param(2, 1000.0); // min_freq = 1000 Hz
+    af.set_param(3, 1000.0); // max_freq = 1000 Hz (static)
+    af.set_param(4, 15.0); // resonance = 15 (high Q)
+    af.set_param(5, 1.0); // sensitivity = 1.0
+    af.set_param(8, 0.05); // lfo_rate = near minimum (nearly static)
+    af.set_param(10, 1.0); // dry_wet = 100%
 
     let num_samples = SR as usize * 2;
     let input = pseudo_noise(num_samples, 0.3);
@@ -181,7 +182,9 @@ fn af2_resonance_peak() {
         peak_db - ref_db > 10.0,
         "af2: resonance peak at 1 kHz should be >10 dB above neighbors: \
          peak={:.1} dB, reference={:.1} dB, diff={:.1} dB",
-        peak_db, ref_db, peak_db - ref_db
+        peak_db,
+        ref_db,
+        peak_db - ref_db
     );
 }
 
@@ -198,14 +201,14 @@ fn af3_filter_type_response() {
     // Helper to create a static-cutoff auto-filter at 2 kHz
     let create_af = |filter_type: f64| -> AutoFilter {
         let mut af = AutoFilter::new(SR);
-        af.set_param(0, 1.0);      // source = LFO
+        af.set_param(0, 1.0); // source = LFO
         af.set_param(1, filter_type);
-        af.set_param(2, 2000.0);   // min_freq = 2000 Hz
-        af.set_param(3, 2000.0);   // max_freq = 2000 Hz (static)
-        af.set_param(4, 1.0);      // resonance = moderate
-        af.set_param(5, 1.0);      // sensitivity
-        af.set_param(8, 0.05);     // lfo_rate = nearly static
-        af.set_param(10, 1.0);     // dry_wet = 100%
+        af.set_param(2, 2000.0); // min_freq = 2000 Hz
+        af.set_param(3, 2000.0); // max_freq = 2000 Hz (static)
+        af.set_param(4, 1.0); // resonance = moderate
+        af.set_param(5, 1.0); // sensitivity
+        af.set_param(8, 0.05); // lfo_rate = nearly static
+        af.set_param(10, 1.0); // dry_wet = 100%
         af
     };
 
@@ -266,12 +269,14 @@ fn af3_filter_type_response() {
         assert!(
             center_db > low_db,
             "af3 BP: center (2kHz) should be above 500Hz: center={:.1} dB, low={:.1} dB",
-            center_db, low_db
+            center_db,
+            low_db
         );
         assert!(
             center_db > high_db,
             "af3 BP: center (2kHz) should be above 8kHz: center={:.1} dB, high={:.1} dB",
-            center_db, high_db
+            center_db,
+            high_db
         );
     }
 }
@@ -288,15 +293,15 @@ fn af3_filter_type_response() {
 #[test]
 fn af4_lfo_sweep_period() {
     let mut af = AutoFilter::new(SR);
-    af.set_param(0, 1.0);      // source = LFO
-    af.set_param(1, 0.0);      // filter_type = LP
-    af.set_param(2, 200.0);    // min_freq = 200 Hz
-    af.set_param(3, 8000.0);   // max_freq = 8000 Hz
-    af.set_param(4, 1.0);      // resonance = moderate
-    af.set_param(5, 1.0);      // sensitivity = 1.0
-    af.set_param(8, 2.0);      // lfo_rate = 2.0 Hz
-    af.set_param(9, 0.0);      // lfo_shape = Sine
-    af.set_param(10, 1.0);     // dry_wet = 100%
+    af.set_param(0, 1.0); // source = LFO
+    af.set_param(1, 0.0); // filter_type = LP
+    af.set_param(2, 200.0); // min_freq = 200 Hz
+    af.set_param(3, 8000.0); // max_freq = 8000 Hz
+    af.set_param(4, 1.0); // resonance = moderate
+    af.set_param(5, 1.0); // sensitivity = 1.0
+    af.set_param(8, 2.0); // lfo_rate = 2.0 Hz
+    af.set_param(9, 0.0); // lfo_shape = Sine
+    af.set_param(10, 1.0); // dry_wet = 100%
 
     let total_samples = SR as usize * 2; // 2 seconds
     let input = pseudo_noise(total_samples, 0.3);
@@ -333,6 +338,7 @@ fn af4_lfo_sweep_period() {
     assert!(
         (2..=6).contains(&peak_count),
         "af4: expected ~4 HF energy peaks in 2 seconds at 2Hz LFO, got {}: {:?}",
-        peak_count, hf_values
+        peak_count,
+        hf_values
     );
 }

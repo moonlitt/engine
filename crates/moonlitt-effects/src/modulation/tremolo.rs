@@ -159,13 +159,7 @@ impl AudioBackend for Tremolo {
     // -- Audio: generator render is a no-op (this is an effect) --
     fn render(&mut self, _left: &mut [f32], _right: &mut [f32]) {}
 
-    fn process_effect(
-        &mut self,
-        in_l: &[f32],
-        in_r: &[f32],
-        out_l: &mut [f32],
-        out_r: &mut [f32],
-    ) {
+    fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
         let len = in_l.len();
 
         // Bypass: bit-exact copy
@@ -517,7 +511,7 @@ mod tests {
     fn test_depth_zero_passthrough() {
         let mut trem = Tremolo::new(44100);
         trem.set_param(1, 0.0); // depth = 0
-        // Jump smoother to target immediately
+                                // Jump smoother to target immediately
         trem.depth_smoother.reset(0.0);
 
         let input: Vec<f32> = (0..1024)
@@ -548,7 +542,7 @@ mod tests {
         trem.set_param(0, 1.0); // rate = 1 Hz
         trem.set_param(1, 1.0); // depth = 1.0 (full)
         trem.set_param(2, 0.0); // Sine LFO
-        // Jump smoothers to target immediately
+                                // Jump smoothers to target immediately
         trem.depth_smoother.reset(1.0);
         trem.rate_smoother.reset(1.0);
 
@@ -563,10 +557,7 @@ mod tests {
         // With depth=1 and sine LFO, the gain should reach near-zero
         // when the LFO is at its minimum (-1 -> mapped gain = 0).
         // Find the minimum output sample magnitude.
-        let min_output = out_l
-            .iter()
-            .map(|s| s.abs())
-            .fold(f32::MAX, f32::min);
+        let min_output = out_l.iter().map(|s| s.abs()).fold(f32::MAX, f32::min);
 
         assert!(
             min_output < 0.01,
@@ -583,7 +574,7 @@ mod tests {
         trem.set_param(1, 1.0); // depth = 1.0 (full)
         trem.set_param(2, 0.0); // Sine LFO
         trem.set_param(3, 1.0); // Stereo mode
-        // Jump smoothers to target immediately
+                                // Jump smoothers to target immediately
         trem.depth_smoother.reset(1.0);
         trem.rate_smoother.reset(2.0);
 
@@ -626,15 +617,19 @@ mod tests {
 
         for i in 0..8 {
             let info = trem.param_info(i);
-            assert!(
-                info.is_some(),
-                "param_info({}) should return Some",
-                i
-            );
+            assert!(info.is_some(), "param_info({}) should return Some", i);
             let info = info.unwrap();
             assert_eq!(info.id, i);
-            assert!(!info.name.is_empty(), "param {} name should not be empty", i);
-            assert!(!info.group.is_empty(), "param {} group should not be empty", i);
+            assert!(
+                !info.name.is_empty(),
+                "param {} name should not be empty",
+                i
+            );
+            assert!(
+                !info.group.is_empty(),
+                "param {} group should not be empty",
+                i
+            );
         }
 
         // No param beyond 7

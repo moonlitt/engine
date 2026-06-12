@@ -173,7 +173,15 @@ fn print_matrix(rows: &[PluginAudit]) {
         let vendor_trunc: String = r.vendor.chars().take(18).collect();
         println!(
             "  {:<22} {:<11} {:<18} {:<6} {:<5} {:<8} {:<14} {:<14} {}",
-            r.name, kind_str, vendor_trunc, load_str, r.bus_count, r.latency, tail_str, audio_str, state_str
+            r.name,
+            kind_str,
+            vendor_trunc,
+            load_str,
+            r.bus_count,
+            r.latency,
+            tail_str,
+            audio_str,
+            state_str
         );
     }
     println!();

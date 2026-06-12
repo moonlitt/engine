@@ -86,9 +86,7 @@ fn system_clap_dirs() -> Vec<PathBuf> {
     {
         dirs.push(PathBuf::from("/Library/Audio/Plug-Ins/CLAP"));
         if let Ok(home) = std::env::var("HOME") {
-            dirs.push(PathBuf::from(format!(
-                "{home}/Library/Audio/Plug-Ins/CLAP"
-            )));
+            dirs.push(PathBuf::from(format!("{home}/Library/Audio/Plug-Ins/CLAP")));
         }
     }
 
@@ -96,7 +94,9 @@ fn system_clap_dirs() -> Vec<PathBuf> {
     {
         dirs.push(PathBuf::from(r"C:\Program Files\Common Files\CLAP"));
         if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
-            dirs.push(PathBuf::from(format!("{localappdata}\\Programs\\Common\\CLAP")));
+            dirs.push(PathBuf::from(format!(
+                "{localappdata}\\Programs\\Common\\CLAP"
+            )));
         }
     }
 

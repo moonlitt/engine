@@ -70,11 +70,7 @@ fn u1_gain_db_to_linear_precision() {
     let block = 2048;
     let input = sine_f32(1000.0, 0.5, block);
 
-    let test_cases: &[(f64, f64)] = &[
-        (6.0206, 2.0),
-        (-6.0206, 0.5),
-        (0.0, 1.0),
-    ];
+    let test_cases: &[(f64, f64)] = &[(6.0206, 2.0), (-6.0206, 0.5), (0.0, 1.0)];
 
     for &(gain_db, expected_ratio) in test_cases {
         let mut gain = Gain::new(SR);
@@ -111,8 +107,8 @@ fn u2_polarity_invert_bitexact() {
     let input = sine_f32(1000.0, 0.5, block);
 
     let mut gain = Gain::new(SR);
-    gain.set_param(0, 0.0);   // unity gain
-    gain.set_param(1, 1.0);   // polarity invert
+    gain.set_param(0, 0.0); // unity gain
+    gain.set_param(1, 1.0); // polarity invert
 
     // Settle the smoother
     settle(&mut gain, block, 20);
@@ -157,8 +153,8 @@ fn u3_mono_sum_energy() {
     // --- Correlated case: L = R = sin ---
     {
         let mut gain = Gain::new(SR);
-        gain.set_param(0, 0.0);  // 0 dB
-        gain.set_param(2, 1.0);  // mono on
+        gain.set_param(0, 0.0); // 0 dB
+        gain.set_param(2, 1.0); // mono on
         settle(&mut gain, block, 20);
 
         let mut out_l = vec![0.0f32; block];
@@ -209,7 +205,7 @@ fn u4_stereo_width_zero_mono() {
 
     let mut sw = StereoWidth::new(SR);
     sw.set_param(0, 0.0); // width = 0
-    // Leave mid_gain and side_gain at defaults (0 dB)
+                          // Leave mid_gain and side_gain at defaults (0 dB)
 
     // Settle smoothers
     settle(&mut sw, block, 20);
@@ -224,7 +220,8 @@ fn u4_stereo_width_zero_mono() {
         assert!(
             diff_lr < 1e-6,
             "sample {i}: width=0 but L ({}) != R ({}), diff={diff_lr}",
-            out_l[i], out_r[i]
+            out_l[i],
+            out_r[i]
         );
         let diff_mid = (out_l[i] as f64 - expected_mid).abs();
         assert!(
@@ -266,9 +263,9 @@ fn u5_mid_side_orthogonality() {
     // --- Test: side_gain = +12 dB ---
     let boosted_rms = {
         let mut sw = StereoWidth::new(SR);
-        sw.set_param(0, 1.0);   // width = 1
-        sw.set_param(1, 0.0);   // mid_gain = 0 dB
-        sw.set_param(2, 12.0);  // side_gain = +12 dB
+        sw.set_param(0, 1.0); // width = 1
+        sw.set_param(1, 0.0); // mid_gain = 0 dB
+        sw.set_param(2, 12.0); // side_gain = +12 dB
         settle(&mut sw, block, 20);
 
         let mut out_l = vec![0.0f32; block];

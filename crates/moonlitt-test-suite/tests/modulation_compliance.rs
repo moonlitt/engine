@@ -289,7 +289,8 @@ fn m4_chorus_no_aliasing() {
     let fund_bin = (10000.0 / bin_hz).round() as usize;
 
     // Peak energy around the fundamental (+/-5 bins to catch modulation sidebands)
-    let fund_energy = spectrum[fund_bin.saturating_sub(200)..=(fund_bin + 200).min(spectrum.len() - 1)]
+    let fund_energy = spectrum
+        [fund_bin.saturating_sub(200)..=(fund_bin + 200).min(spectrum.len() - 1)]
         .iter()
         .cloned()
         .fold(0.0f64, f64::max);
@@ -626,8 +627,8 @@ fn m9_phaser_notch_count() {
 
         // Compute standard deviation of the log-magnitude spectrum
         let mean: f64 = tf_db.iter().sum::<f64>() / tf_db.len() as f64;
-        let variance: f64 = tf_db.iter().map(|v| (v - mean).powi(2)).sum::<f64>()
-            / tf_db.len() as f64;
+        let variance: f64 =
+            tf_db.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / tf_db.len() as f64;
         variance.sqrt()
     };
 
@@ -697,10 +698,7 @@ fn m10_phaser_sweep_range() {
             let mut min_energy = f64::MAX;
             let mut min_bin = min_analysis_bin;
 
-            for (b, &energy) in spectrum[min_analysis_bin..=end_bin]
-                .iter()
-                .enumerate()
-            {
+            for (b, &energy) in spectrum[min_analysis_bin..=end_bin].iter().enumerate() {
                 if energy < min_energy {
                     min_energy = energy;
                     min_bin = min_analysis_bin + b;

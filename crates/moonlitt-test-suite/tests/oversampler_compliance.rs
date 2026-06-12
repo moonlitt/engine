@@ -130,7 +130,9 @@ fn os1_alias_rejection_96db() {
         rejection > 40.0,
         "os1: alias rejection should be >40 dB: signal={:.1} dB, alias_leak={:.1} dB, \
          rejection={:.1} dB",
-        ref_db, diff_db, rejection
+        ref_db,
+        diff_db,
+        rejection
     );
 }
 
@@ -179,7 +181,10 @@ fn os2_passband_ripple() {
                 deviation_db < 0.5,
                 "os2: passband ripple at {:.0} Hz should be <0.5 dB, got {:.3} dB \
                  (input_rms={:.6}, output_rms={:.6})",
-                freq, deviation_db, input_rms, output_rms
+                freq,
+                deviation_db,
+                input_rms,
+                output_rms
             );
         }
         // Above 0.4 * Nyquist: rolloff is expected, just log it
@@ -251,7 +256,8 @@ fn os3_phase_linearity() {
         max_asym < 0.01,
         "os3: half-band FIR impulse response should be symmetric: \
          max asymmetry = {:.6} at peak_idx={}",
-        max_asym, peak_idx
+        max_asym,
+        peak_idx
     );
 }
 
@@ -340,6 +346,8 @@ fn os4_cascade_equivalence() {
         snr_db > 60.0,
         "os4: 4x vs 2x+2x cascade SNR should be >60 dB, got {:.1} dB \
          (signal={:.1} dB, diff={:.1} dB)",
-        snr_db, to_db(signal_rms), to_db(diff_rms)
+        snr_db,
+        to_db(signal_rms),
+        to_db(diff_rms)
     );
 }

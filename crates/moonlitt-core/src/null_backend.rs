@@ -42,7 +42,13 @@ impl AudioBackend for NullBackend {
         right.fill(0.0);
     }
 
-    fn process_effect(&mut self, _in_l: &[f32], _in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
+    fn process_effect(
+        &mut self,
+        _in_l: &[f32],
+        _in_r: &[f32],
+        out_l: &mut [f32],
+        out_r: &mut [f32],
+    ) {
         out_l.fill(0.0);
         out_r.fill(0.0);
     }

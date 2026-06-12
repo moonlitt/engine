@@ -51,15 +51,13 @@ impl ClapModule {
                 .init
                 .ok_or(Error::LoadFailed("clap_entry.init is null".into()))?;
             if !init_fn(plugin_path.as_ptr()) {
-                return Err(Error::LoadFailed(
-                    "clap_entry.init() returned false".into(),
-                ));
+                return Err(Error::LoadFailed("clap_entry.init() returned false".into()));
             }
 
             // Get the plugin factory
-            let get_factory = (*entry).get_factory.ok_or(Error::LoadFailed(
-                "clap_entry.get_factory is null".into(),
-            ))?;
+            let get_factory = (*entry)
+                .get_factory
+                .ok_or(Error::LoadFailed("clap_entry.get_factory is null".into()))?;
             let factory_raw = get_factory(CLAP_PLUGIN_FACTORY_ID.as_ptr());
             if factory_raw.is_null() {
                 if let Some(deinit_fn) = (*entry).deinit {
@@ -83,9 +81,9 @@ impl ClapModule {
     /// Number of plugins in this bundle.
     pub fn plugin_count(&self) -> u32 {
         unsafe {
-            let count_fn = (*self.factory).get_plugin_count.expect(
-                "get_plugin_count is null",
-            );
+            let count_fn = (*self.factory)
+                .get_plugin_count
+                .expect("get_plugin_count is null");
             count_fn(self.factory)
         }
     }
@@ -147,8 +145,7 @@ fn cstr_to_string(ptr: *const std::ffi::c_char) -> String {
 /// Returns (handle, symbol pointer).
 #[cfg(not(target_os = "windows"))]
 fn load_shared_library(binary_path: &str) -> Result<(*mut c_void, *mut c_void)> {
-    let c_path =
-        CString::new(binary_path).map_err(|e| Error::LoadFailed(e.to_string()))?;
+    let c_path = CString::new(binary_path).map_err(|e| Error::LoadFailed(e.to_string()))?;
 
     unsafe {
         let handle = libc::dlopen(c_path.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL);

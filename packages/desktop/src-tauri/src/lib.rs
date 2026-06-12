@@ -108,8 +108,8 @@ fn meter_loop(app: tauri::AppHandle) {
 /// audio thread is never blocked. Skips entirely when no GUI is open.
 #[cfg(target_os = "macos")]
 fn patch_poll_loop(app: tauri::AppHandle) {
-    use std::collections::HashMap;
     use serde::Serialize;
+    use std::collections::HashMap;
 
     #[derive(Serialize, Clone)]
     #[serde(rename_all = "camelCase")]

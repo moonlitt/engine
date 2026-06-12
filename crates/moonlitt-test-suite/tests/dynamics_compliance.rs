@@ -6,8 +6,8 @@
 //!
 //! Zero tolerance: all assertions use machine epsilon.
 
-use moonlitt_effects::{Compressor, EnvelopeFollower};
 use moonlitt_core::AudioBackend;
+use moonlitt_effects::{Compressor, EnvelopeFollower};
 use std::f64::consts::PI;
 
 const SR: u32 = 44100;

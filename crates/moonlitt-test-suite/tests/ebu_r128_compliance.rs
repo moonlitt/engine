@@ -70,13 +70,7 @@ fn pre_filter_48k() -> KWeightBiquad {
 /// Revised Low-frequency B-weighting filter.
 /// Coefficients from Table 2 of BS.1770-5 for fs = 48kHz.
 fn rlb_filter_48k() -> KWeightBiquad {
-    KWeightBiquad::new(
-        1.0,
-        -2.0,
-        1.0,
-        -1.99004745483398,
-        0.99007225036621,
-    )
+    KWeightBiquad::new(1.0, -2.0, 1.0, -1.99004745483398, 0.99007225036621)
 }
 
 /// Apply K-weighting (two cascaded biquads) to a signal buffer.
@@ -117,9 +111,8 @@ fn k_weight_magnitude_squared(freq: f64, sample_rate: f64) -> f64 {
     let s1_num_im = -(s1.b1 * sin_w + s1.b2 * sin_2w);
     let s1_den_re = 1.0 + s1.a1 * cos_w + s1.a2 * cos_2w;
     let s1_den_im = -(s1.a1 * sin_w + s1.a2 * sin_2w);
-    let s1_mag_sq =
-        (s1_num_re * s1_num_re + s1_num_im * s1_num_im) /
-        (s1_den_re * s1_den_re + s1_den_im * s1_den_im);
+    let s1_mag_sq = (s1_num_re * s1_num_re + s1_num_im * s1_num_im)
+        / (s1_den_re * s1_den_re + s1_den_im * s1_den_im);
 
     // Stage 2: RLB high-pass
     let s2 = rlb_filter_48k();
@@ -127,9 +120,8 @@ fn k_weight_magnitude_squared(freq: f64, sample_rate: f64) -> f64 {
     let s2_num_im = -(s2.b1 * sin_w + s2.b2 * sin_2w);
     let s2_den_re = 1.0 + s2.a1 * cos_w + s2.a2 * cos_2w;
     let s2_den_im = -(s2.a1 * sin_w + s2.a2 * sin_2w);
-    let s2_mag_sq =
-        (s2_num_re * s2_num_re + s2_num_im * s2_num_im) /
-        (s2_den_re * s2_den_re + s2_den_im * s2_den_im);
+    let s2_mag_sq = (s2_num_re * s2_num_re + s2_num_im * s2_num_im)
+        / (s2_den_re * s2_den_re + s2_den_im * s2_den_im);
 
     s1_mag_sq * s2_mag_sq
 }
@@ -318,7 +310,10 @@ fn l04_k_weighting_filter_coefficients() {
 fn l05_momentary_loudness_400ms() {
     // EBU R128 §3.1: 400ms window at 48kHz = 19200 samples
     let window_samples = (SAMPLE_RATE as f64 * 0.4) as usize;
-    assert_eq!(window_samples, 19200, "400ms at 48kHz must be 19200 samples");
+    assert_eq!(
+        window_samples, 19200,
+        "400ms at 48kHz must be 19200 samples"
+    );
 
     // Generate 1kHz sine at 0 dBFS, with extra lead-in for filter settling.
     // Use 2 seconds total, measure the last 400ms after transient is gone.
@@ -354,7 +349,9 @@ fn l05_momentary_loudness_400ms() {
     );
     eprintln!(
         "L5: LUFS={:.6}, expected={:.6}, delta={:.6}",
-        lufs, expected_lufs, (lufs - expected_lufs).abs()
+        lufs,
+        expected_lufs,
+        (lufs - expected_lufs).abs()
     );
 
     // Verify the LUFS formula math with f64 precision.
@@ -450,7 +447,9 @@ fn l06_short_term_loudness_3s() {
     assert!(
         delta_windows < 0.001,
         "3s and 400ms LUFS must agree for constant signal: 3s={:.6}, 400ms={:.6}, delta={:.10}",
-        lufs_3s, lufs_400ms, delta_windows
+        lufs_3s,
+        lufs_400ms,
+        delta_windows
     );
 
     // Verify against analytically expected LUFS

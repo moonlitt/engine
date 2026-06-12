@@ -61,10 +61,7 @@ fn run_blocks(plugin: &mut Vst3Plugin, blocks: usize, label: &str) -> f32 {
         if max > 1e-4 && i < 10 {
             println!(
                 "  [{label}] block {i}: bus-peaks {:?}",
-                peaks
-                    .iter()
-                    .map(|p| format!("{p:.4}"))
-                    .collect::<Vec<_>>()
+                peaks.iter().map(|p| format!("{p:.4}")).collect::<Vec<_>>()
             );
         }
     }
@@ -188,7 +185,9 @@ fn keyscape_state_fixture_produces_audio() {
 
     let host = Vst3Host::new(44100, 256).unwrap();
     let mut plugin = host.load(&info).unwrap();
-    plugin.set_state(&state).expect("set_state should accept captured blob");
+    plugin
+        .set_state(&state)
+        .expect("set_state should accept captured blob");
 
     // Sample-streamer patches load asynchronously after set_state. The
     // plug-in needs many process cycles before it can produce audio for

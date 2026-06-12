@@ -33,11 +33,7 @@ fn scanned_plugins_carry_subcategories_vendor_version() {
             "{} has no subcategories — getClassInfo2 returned nothing",
             info.name
         );
-        assert!(
-            info.vendor.is_some(),
-            "{} has no vendor",
-            info.name
-        );
+        assert!(info.vendor.is_some(), "{} has no vendor", info.name);
     }
 }
 

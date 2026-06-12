@@ -200,9 +200,8 @@ impl GranularEngine {
             if let Some(grain) = self.grains.iter_mut().find(|g| !g.active) {
                 // Start position: current write_pos minus grain_length, with jitter
                 let jitter = (self.rng.next_f64() - 0.5) * 0.2 * self.grain_length as f64;
-                let start_pos =
-                    (self.write_pos as f64 - self.grain_length as f64 + jitter)
-                        .rem_euclid(buf_len as f64);
+                let start_pos = (self.write_pos as f64 - self.grain_length as f64 + jitter)
+                    .rem_euclid(buf_len as f64);
                 grain.start(start_pos, self.grain_length);
             }
         }
@@ -325,9 +324,7 @@ impl PhaseVocoderEngine {
         // When we have accumulated a hop's worth of new samples, run analysis+synthesis.
         // Guard: don't run the first hop until we have at least fft_size samples
         // buffered, otherwise the frame extraction wraps into uninitialized data.
-        if self.input_samples_since_hop >= self.hop_size
-            && self.input_write_pos >= self.fft_size
-        {
+        if self.input_samples_since_hop >= self.hop_size && self.input_write_pos >= self.fft_size {
             self.input_samples_since_hop = 0;
             self.process_hop(pitch_ratio);
             self.primed = true;
@@ -357,10 +354,8 @@ impl PhaseVocoderEngine {
         let frame_start = self.input_write_pos - n;
         for i in 0..n {
             let idx = (frame_start + i) % in_buf_len;
-            self.fft_scratch[i] = Complex::new(
-                self.input_buffer[idx] * self.analysis_window[i],
-                0.0,
-            );
+            self.fft_scratch[i] =
+                Complex::new(self.input_buffer[idx] * self.analysis_window[i], 0.0);
         }
 
         // 2. Forward FFT
@@ -371,7 +366,8 @@ impl PhaseVocoderEngine {
             .get_inplace_scratch_len()
             .max(ifft.get_inplace_scratch_len());
         if self.fft_work.len() < required_scratch {
-            self.fft_work.resize(required_scratch, Complex::new(0.0, 0.0));
+            self.fft_work
+                .resize(required_scratch, Complex::new(0.0, 0.0));
         }
         fft.process_with_scratch(&mut self.fft_scratch, &mut self.fft_work);
 
@@ -422,10 +418,8 @@ impl PhaseVocoderEngine {
 
             // Reconstruct complex value from magnitude and synthesis phase
             let synth_phase = self.synthesis_phase[out_bin];
-            self.ifft_scratch[out_bin] = Complex::new(
-                mag * synth_phase.cos(),
-                mag * synth_phase.sin(),
-            );
+            self.ifft_scratch[out_bin] =
+                Complex::new(mag * synth_phase.cos(), mag * synth_phase.sin());
 
             // Mirror for negative frequencies (except DC and Nyquist)
             if out_bin > 0 && out_bin < n / 2 {
@@ -497,7 +491,7 @@ pub struct PitchShifter {
     // Parameters
     semitones: f64,
     cents: f64,
-    mode: u32,           // 0 = Granular, 1 = Vocoder
+    mode: u32, // 0 = Granular, 1 = Vocoder
     grain_size_ms: f64,
     fft_size_index: u32, // 0=1024, 1=2048, 2=4096
     dry_wet: f64,
@@ -605,13 +599,7 @@ impl AudioBackend for PitchShifter {
     // -- Audio: generator render is a no-op (this is an effect) --
     fn render(&mut self, _left: &mut [f32], _right: &mut [f32]) {}
 
-    fn process_effect(
-        &mut self,
-        in_l: &[f32],
-        in_r: &[f32],
-        out_l: &mut [f32],
-        out_r: &mut [f32],
-    ) {
+    fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
         let len = in_l.len();
 
         // Bypass: bit-exact copy
@@ -984,7 +972,7 @@ mod tests {
         ps.set_param(1, 0.0); // cents = 0
         ps.set_param(2, 0.0); // granular
         ps.set_param(5, 1.0); // 100% wet
-        // Jump smoother
+                              // Jump smoother
         ps.mix_smoother.reset(1.0);
 
         let input = sine_wave(440.0, 0.5, sr, num_samples);
@@ -1032,10 +1020,10 @@ mod tests {
 
         let mut ps = PitchShifter::new(sr);
         ps.set_param(0, 12.0); // +12 semitones = 1 octave up
-        ps.set_param(1, 0.0);  // cents = 0
-        ps.set_param(2, 0.0);  // granular mode
-        ps.set_param(5, 1.0);  // 100% wet
-        // Jump smoother
+        ps.set_param(1, 0.0); // cents = 0
+        ps.set_param(2, 0.0); // granular mode
+        ps.set_param(5, 1.0); // 100% wet
+                              // Jump smoother
         ps.mix_smoother.reset(1.0);
 
         let input = sine_wave(freq, 0.5, sr, num_samples);
@@ -1074,14 +1062,14 @@ mod tests {
 
         for i in 0..8 {
             let info = ps.param_info(i);
-            assert!(
-                info.is_some(),
-                "param_info({}) should return Some",
-                i
-            );
+            assert!(info.is_some(), "param_info({}) should return Some", i);
             let info = info.unwrap();
             assert_eq!(info.id, i);
-            assert!(!info.name.is_empty(), "param {} name should not be empty", i);
+            assert!(
+                !info.name.is_empty(),
+                "param {} name should not be empty",
+                i
+            );
             assert!(
                 !info.group.is_empty(),
                 "param {} group should not be empty",

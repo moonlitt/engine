@@ -47,7 +47,11 @@ impl IPlugInterfaceSupportTrait for HostApp {
         crate::trace::emit(&format!(
             "HostApp::isPlugInterfaceSupported iid={} -> {}",
             crate::trace::iid_name(&bytes),
-            if supported { "kResultOk" } else { "kResultFalse" }
+            if supported {
+                "kResultOk"
+            } else {
+                "kResultFalse"
+            }
         ));
         result
     }
@@ -58,15 +62,8 @@ impl IHostApplicationTrait for HostApp {
         crate::trace::emit("HostApp::getName -> \"Moonlitt\"");
         // Write "Moonlitt" as UTF-16 into the String128 buffer
         let host_name: &[u16] = &[
-            'M' as u16,
-            'o' as u16,
-            'o' as u16,
-            'n' as u16,
-            'l' as u16,
-            'i' as u16,
-            't' as u16,
-            't' as u16,
-            0,
+            'M' as u16, 'o' as u16, 'o' as u16, 'n' as u16, 'l' as u16, 'i' as u16, 't' as u16,
+            't' as u16, 0,
         ];
         let buf = &mut *name;
         buf.fill(0);
@@ -87,7 +84,8 @@ impl IHostApplicationTrait for HostApp {
         // plug-in (these aren't first-class classes registered with the
         // factory). We support the two interfaces the spec calls out:
         // IMessage and IAttributeList.
-        let result = if tuid_matches::<IMessage>(&cid_bytes) || tuid_matches::<IMessage>(&iid_bytes) {
+        let result = if tuid_matches::<IMessage>(&cid_bytes) || tuid_matches::<IMessage>(&iid_bytes)
+        {
             // Hand the plug-in a fresh IMessage. We move ownership into a
             // ComPtr so the released-by-plugin path correctly drops it.
             let wrapper = new_host_message();
@@ -144,9 +142,7 @@ unsafe fn read_tuid(ptr: *mut TUID) -> [u8; 16] {
 fn tuid_matches<I: Interface>(bytes: &[u8; 16]) -> bool {
     // Interface::IID is a Guid (newtype around [u8; 16] with a stable
     // memory layout). Compare bytewise.
-    let iid: &[u8; 16] = unsafe {
-        &*(I::IID.as_ref() as *const _ as *const [u8; 16])
-    };
+    let iid: &[u8; 16] = unsafe { &*(I::IID.as_ref() as *const _ as *const [u8; 16]) };
     iid == bytes
 }
 

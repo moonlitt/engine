@@ -81,21 +81,45 @@ impl fmt::Display for Report {
             self.channels, self.sample_rate, self.frames, self.duration_sec
         )?;
         writeln!(f, "─────────────────────────────────────────────")?;
-        writeln!(f, "Sample peak  L {:>7.2} dBFS  R {:>7.2} dBFS",
-            self.peak.sample_peak_l_dbfs, self.peak.sample_peak_r_dbfs)?;
-        writeln!(f, "True peak    L {:>7.2} dBTP   R {:>7.2} dBTP",
-            self.peak.true_peak_l_dbtp, self.peak.true_peak_r_dbtp)?;
-        writeln!(f, "RMS          L {:>7.2} dBFS  R {:>7.2} dBFS",
-            self.rms.l_dbfs, self.rms.r_dbfs)?;
+        writeln!(
+            f,
+            "Sample peak  L {:>7.2} dBFS  R {:>7.2} dBFS",
+            self.peak.sample_peak_l_dbfs, self.peak.sample_peak_r_dbfs
+        )?;
+        writeln!(
+            f,
+            "True peak    L {:>7.2} dBTP   R {:>7.2} dBTP",
+            self.peak.true_peak_l_dbtp, self.peak.true_peak_r_dbtp
+        )?;
+        writeln!(
+            f,
+            "RMS          L {:>7.2} dBFS  R {:>7.2} dBFS",
+            self.rms.l_dbfs, self.rms.r_dbfs
+        )?;
         writeln!(f, "Crest factor   {:>7.2} dB", self.crest_factor_db())?;
         writeln!(f, "─────────────────────────────────────────────")?;
-        writeln!(f, "Integrated     {:>7.2} LUFS", self.loudness.integrated_lufs)?;
-        writeln!(f, "Short-term max {:>7.2} LUFS", self.loudness.short_term_max_lufs)?;
-        writeln!(f, "Momentary max  {:>7.2} LUFS", self.loudness.momentary_max_lufs)?;
-        writeln!(f, "Loudness range {:>7.2} LU",   self.loudness.lra_lu)?;
+        writeln!(
+            f,
+            "Integrated     {:>7.2} LUFS",
+            self.loudness.integrated_lufs
+        )?;
+        writeln!(
+            f,
+            "Short-term max {:>7.2} LUFS",
+            self.loudness.short_term_max_lufs
+        )?;
+        writeln!(
+            f,
+            "Momentary max  {:>7.2} LUFS",
+            self.loudness.momentary_max_lufs
+        )?;
+        writeln!(f, "Loudness range {:>7.2} LU", self.loudness.lra_lu)?;
         writeln!(f, "─────────────────────────────────────────────")?;
-        writeln!(f, "DC offset    L {:+.6}  R {:+.6}",
-            self.anomalies.dc_offset_l, self.anomalies.dc_offset_r)?;
+        writeln!(
+            f,
+            "DC offset    L {:+.6}  R {:+.6}",
+            self.anomalies.dc_offset_l, self.anomalies.dc_offset_r
+        )?;
         writeln!(f, "NaN samples    {}", self.anomalies.nan_count)?;
         writeln!(f, "Inf samples    {}", self.anomalies.inf_count)?;
         writeln!(f, "Denormals      {}", self.anomalies.denormal_count)?;

@@ -143,7 +143,9 @@ pub fn create_bitcrusher(sample_rate: u32) -> Backend {
 #[napi]
 pub fn create_multiband_compressor(sample_rate: u32) -> Backend {
     Backend {
-        inner: Some(Box::new(moonlitt_effects::MultibandCompressor::new(sample_rate))),
+        inner: Some(Box::new(moonlitt_effects::MultibandCompressor::new(
+            sample_rate,
+        ))),
     }
 }
 

@@ -28,10 +28,7 @@ fn pianoteq_reports_latency_and_tail() {
     // ringing rather than reporting a global tail, so it returns kNoTail.
     // We don't pin a specific tail value; just verify the API works.
     let latency = plugin.latency_samples();
-    assert!(
-        latency >= 0,
-        "latency must be non-negative, got {latency}"
-    );
+    assert!(latency >= 0, "latency must be non-negative, got {latency}");
     let _tail = plugin.tail_samples();
 }
 

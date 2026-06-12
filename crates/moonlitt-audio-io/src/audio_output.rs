@@ -1,5 +1,5 @@
-use moonlitt_session::AudioThread;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use moonlitt_session::AudioThread;
 
 pub(crate) struct AudioOutput {
     stream: cpal::Stream,

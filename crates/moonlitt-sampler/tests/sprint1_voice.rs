@@ -24,7 +24,10 @@ fn has_sf2() -> bool {
 
 #[test]
 fn t1_load_sf2_sample_pool() {
-    if !has_sf2() { eprintln!("SF2 not found, skipping"); return; }
+    if !has_sf2() {
+        eprintln!("SF2 not found, skipping");
+        return;
+    }
 
     let pool = moonlitt_sampler::SamplePool::from_file(SF2_PATH).unwrap();
 
@@ -43,18 +46,29 @@ fn t1_load_sf2_sample_pool() {
 
 #[test]
 fn t2_find_sample_for_note() {
-    if !has_sf2() { return; }
+    if !has_sf2() {
+        return;
+    }
 
     let pool = moonlitt_sampler::SamplePool::from_file(SF2_PATH).unwrap();
 
     // Preset 0, Bank 0 = Acoustic Grand Piano
     // Note 60 (C4) should map to a sample
     let sample_info = pool.find_sample(0, 0, C4_NOTE, 100);
-    assert!(sample_info.is_some(), "Should find sample for C4 in Grand Piano");
+    assert!(
+        sample_info.is_some(),
+        "Should find sample for C4 in Grand Piano"
+    );
 
     let info = sample_info.unwrap();
-    eprintln!("Sample for C4: '{}', root={}, pitchadj={} cents, rate={}Hz, len={} samples",
-        info.name, info.root_key, info.pitch_correction, info.sample_rate, info.len());
+    eprintln!(
+        "Sample for C4: '{}', root={}, pitchadj={} cents, rate={}Hz, len={} samples",
+        info.name,
+        info.root_key,
+        info.pitch_correction,
+        info.sample_rate,
+        info.len()
+    );
 
     // Verify: if root_key=60 and note=60, expected freq depends on pitch_correction
     let correction_semitones = info.pitch_correction as f64 / 100.0;
@@ -71,10 +85,14 @@ fn t2_find_sample_for_note() {
 
 #[test]
 fn t3_voice_renders_audio() {
-    if !has_sf2() { return; }
+    if !has_sf2() {
+        return;
+    }
 
     let pool = moonlitt_sampler::SamplePool::from_file(SF2_PATH).unwrap();
-    let sample = pool.find_sample(0, 0, C4_NOTE, 100).expect("Should find C4 sample");
+    let sample = pool
+        .find_sample(0, 0, C4_NOTE, 100)
+        .expect("Should find C4 sample");
     let mut voice = moonlitt_sampler::Voice::new(&pool, SAMPLE_RATE);
 
     voice.note_on(sample, C4_NOTE, 100);
@@ -93,10 +111,14 @@ fn t3_voice_renders_audio() {
 
 #[test]
 fn t4_no_nan_inf_clipping() {
-    if !has_sf2() { return; }
+    if !has_sf2() {
+        return;
+    }
 
     let pool = moonlitt_sampler::SamplePool::from_file(SF2_PATH).unwrap();
-    let sample = pool.find_sample(0, 0, C4_NOTE, 100).expect("Should find C4 sample");
+    let sample = pool
+        .find_sample(0, 0, C4_NOTE, 100)
+        .expect("Should find C4 sample");
     let mut voice = moonlitt_sampler::Voice::new(&pool, SAMPLE_RATE);
 
     voice.note_on(sample, C4_NOTE, 100);
@@ -109,10 +131,16 @@ fn t4_no_nan_inf_clipping() {
     let mut peak = 0.0f32;
 
     for &s in &output {
-        if s.is_nan() { nan_count += 1; }
-        if s.is_infinite() { inf_count += 1; }
+        if s.is_nan() {
+            nan_count += 1;
+        }
+        if s.is_infinite() {
+            inf_count += 1;
+        }
         let a = s.abs();
-        if a > peak { peak = a; }
+        if a > peak {
+            peak = a;
+        }
     }
 
     assert_eq!(nan_count, 0, "No NaN samples allowed");
@@ -127,10 +155,14 @@ fn t4_no_nan_inf_clipping() {
 
 #[test]
 fn t5_correct_pitch_fft() {
-    if !has_sf2() { return; }
+    if !has_sf2() {
+        return;
+    }
 
     let pool = moonlitt_sampler::SamplePool::from_file(SF2_PATH).unwrap();
-    let sample = pool.find_sample(0, 0, C4_NOTE, 100).expect("Should find C4 sample");
+    let sample = pool
+        .find_sample(0, 0, C4_NOTE, 100)
+        .expect("Should find C4 sample");
     let mut voice = moonlitt_sampler::Voice::new(&pool, SAMPLE_RATE);
 
     voice.note_on(sample, C4_NOTE, 100);
@@ -148,26 +180,43 @@ fn t5_correct_pitch_fft() {
     let fft = planner.plan_fft_forward(n);
 
     // Apply Hann window
-    let mut buffer: Vec<Complex<f64>> = output.iter().enumerate().map(|(i, &s)| {
-        let w = 0.5 * (1.0 - (2.0 * std::f64::consts::PI * i as f64 / n as f64).cos());
-        Complex::new(s as f64 * w, 0.0)
-    }).collect();
+    let mut buffer: Vec<Complex<f64>> = output
+        .iter()
+        .enumerate()
+        .map(|(i, &s)| {
+            let w = 0.5 * (1.0 - (2.0 * std::f64::consts::PI * i as f64 / n as f64).cos());
+            Complex::new(s as f64 * w, 0.0)
+        })
+        .collect();
 
     fft.process(&mut buffer);
 
     // Find peak in magnitude spectrum (skip DC, only first half)
-    let magnitudes: Vec<f64> = buffer[1..n/2].iter()
+    let magnitudes: Vec<f64> = buffer[1..n / 2]
+        .iter()
         .map(|c| (c.re * c.re + c.im * c.im).sqrt())
         .collect();
 
-    let peak_bin = magnitudes.iter().enumerate()
+    let peak_bin = magnitudes
+        .iter()
+        .enumerate()
         .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-        .unwrap().0 + 1;
+        .unwrap()
+        .0
+        + 1;
 
     // Parabolic interpolation for sub-bin accuracy
-    let alpha = if peak_bin > 1 { magnitudes[peak_bin - 2].ln() } else { 0.0 };
+    let alpha = if peak_bin > 1 {
+        magnitudes[peak_bin - 2].ln()
+    } else {
+        0.0
+    };
     let beta = magnitudes[peak_bin - 1].ln();
-    let gamma = if peak_bin < magnitudes.len() { magnitudes[peak_bin].ln() } else { 0.0 };
+    let gamma = if peak_bin < magnitudes.len() {
+        magnitudes[peak_bin].ln()
+    } else {
+        0.0
+    };
     let p = 0.5 * (alpha - gamma) / (alpha - 2.0 * beta + gamma);
     let precise_bin = peak_bin as f64 + p;
     let precise_freq = precise_bin * SAMPLE_RATE as f64 / n as f64;
@@ -176,7 +225,9 @@ fn t5_correct_pitch_fft() {
     let bin_resolution = SAMPLE_RATE as f64 / n as f64;
 
     eprintln!("FFT resolution: {bin_resolution:.2}Hz/bin");
-    eprintln!("Detected frequency: {precise_freq:.3}Hz (expected {C4_FREQ}Hz, error {freq_error:.3}Hz)");
+    eprintln!(
+        "Detected frequency: {precise_freq:.3}Hz (expected {C4_FREQ}Hz, error {freq_error:.3}Hz)"
+    );
 
     assert!(
         freq_error < 0.5,
@@ -190,7 +241,9 @@ fn t5_correct_pitch_fft() {
 
 #[test]
 fn t6_uses_sinc72_interpolation() {
-    if !has_sf2() { return; }
+    if !has_sf2() {
+        return;
+    }
 
     let pool = moonlitt_sampler::SamplePool::from_file(SF2_PATH).unwrap();
 

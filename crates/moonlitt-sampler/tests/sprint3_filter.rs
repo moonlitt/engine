@@ -18,7 +18,9 @@ const SAMPLE_RATE: u32 = 44100;
 
 /// Generate sine wave at given frequency
 fn sine(freq: f32, sr: u32, n: usize) -> Vec<f32> {
-    (0..n).map(|i| (2.0 * PI * freq * i as f32 / sr as f32).sin()).collect()
+    (0..n)
+        .map(|i| (2.0 * PI * freq * i as f32 / sr as f32).sin())
+        .collect()
 }
 
 /// Measure RMS of a signal
@@ -78,7 +80,9 @@ fn t2_lowpass_attenuates() {
     let rms_high = rms(&output_high[1024..]);
 
     let attenuation_db = 20.0 * (rms_high / rms_low).log10();
-    eprintln!("500Hz RMS: {rms_low:.4}, 5kHz RMS: {rms_high:.4}, attenuation: {attenuation_db:.1}dB");
+    eprintln!(
+        "500Hz RMS: {rms_low:.4}, 5kHz RMS: {rms_high:.4}, attenuation: {attenuation_db:.1}dB"
+    );
 
     assert!(
         attenuation_db < -12.0,
@@ -134,11 +138,11 @@ fn t4_stability() {
 
     // Test extreme parameters
     let test_cases = [
-        (20.0, 0.0),       // very low cutoff
-        (20000.0, 0.0),    // very high cutoff
-        (1000.0, 96.0),    // extreme resonance
-        (100.0, 50.0),     // low cutoff + high Q
-        (20000.0, 96.0),   // high cutoff + high Q
+        (20.0, 0.0),     // very low cutoff
+        (20000.0, 0.0),  // very high cutoff
+        (1000.0, 96.0),  // extreme resonance
+        (100.0, 50.0),   // low cutoff + high Q
+        (20000.0, 96.0), // high cutoff + high Q
     ];
 
     for (cutoff, q) in test_cases {
@@ -151,8 +155,12 @@ fn t4_stability() {
         for i in 0..10000 {
             let input = if i == 0 { 1.0 } else { 0.0 };
             let out = filter.process(input);
-            if out.is_nan() { nan_count += 1; }
-            if out.is_infinite() { inf_count += 1; }
+            if out.is_nan() {
+                nan_count += 1;
+            }
+            if out.is_infinite() {
+                inf_count += 1;
+            }
         }
 
         assert_eq!(nan_count, 0, "NaN at cutoff={cutoff}, Q={q}");
@@ -232,9 +240,24 @@ fn t6_cookbook_coefficients() {
     let (fb0, fb1, fb2, fa1, fa2) = filter.coefficients(fc as f32, q_db as f32);
 
     let eps = 1e-6;
-    assert!((fb0 as f64 - b0n).abs() < eps, "b0: got {fb0}, expected {b0n}");
-    assert!((fb1 as f64 - b1n).abs() < eps, "b1: got {fb1}, expected {b1n}");
-    assert!((fb2 as f64 - b2n).abs() < eps, "b2: got {fb2}, expected {b2n}");
-    assert!((fa1 as f64 - a1n).abs() < eps, "a1: got {fa1}, expected {a1n}");
-    assert!((fa2 as f64 - a2n).abs() < eps, "a2: got {fa2}, expected {a2n}");
+    assert!(
+        (fb0 as f64 - b0n).abs() < eps,
+        "b0: got {fb0}, expected {b0n}"
+    );
+    assert!(
+        (fb1 as f64 - b1n).abs() < eps,
+        "b1: got {fb1}, expected {b1n}"
+    );
+    assert!(
+        (fb2 as f64 - b2n).abs() < eps,
+        "b2: got {fb2}, expected {b2n}"
+    );
+    assert!(
+        (fa1 as f64 - a1n).abs() < eps,
+        "a1: got {fa1}, expected {a1n}"
+    );
+    assert!(
+        (fa2 as f64 - a2n).abs() < eps,
+        "a2: got {fa2}, expected {a2n}"
+    );
 }

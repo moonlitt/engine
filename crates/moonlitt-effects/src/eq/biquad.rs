@@ -95,12 +95,12 @@ impl BiquadCoeffs {
                 // A = 10^(dBgain/40)  — note /40 for peaking EQ
                 let a_lin = 10.0_f64.powf(gain_db / 40.0);
                 (
-                    1.0 + alpha * a_lin,        // b0
-                    -2.0 * cos_w0,              // b1
-                    1.0 - alpha * a_lin,        // b2
-                    1.0 + alpha / a_lin,        // a0
-                    -2.0 * cos_w0,              // a1
-                    1.0 - alpha / a_lin,        // a2
+                    1.0 + alpha * a_lin, // b0
+                    -2.0 * cos_w0,       // b1
+                    1.0 - alpha * a_lin, // b2
+                    1.0 + alpha / a_lin, // a0
+                    -2.0 * cos_w0,       // a1
+                    1.0 - alpha / a_lin, // a2
                 )
             }
 

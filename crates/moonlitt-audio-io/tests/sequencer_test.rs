@@ -20,7 +20,10 @@ fn sequencer_load_and_advance() {
     }
 
     // Should have received at least the first note
-    assert!(!events.is_empty(), "should have events after advancing 0.5s");
+    assert!(
+        !events.is_empty(),
+        "should have events after advancing 0.5s"
+    );
     assert!(matches!(events[0], AudioEvent::NoteOn { note: 60, .. }));
 }
 
@@ -37,7 +40,11 @@ fn sequencer_pause_stops_advancing() {
     seq.pause();
     events.clear();
     seq.advance(256, 44100, &mut events, None, false);
-    assert_eq!(events.len(), 0, "paused sequencer should not produce events");
+    assert_eq!(
+        events.len(),
+        0,
+        "paused sequencer should not produce events"
+    );
 }
 
 #[test]

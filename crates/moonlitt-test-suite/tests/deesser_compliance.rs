@@ -74,11 +74,11 @@ fn d1_sibilance_attenuation_ratio() {
     let input = sine_f32(6000.0, amplitude, block);
 
     let mut ds = DeEsser::new(SR);
-    ds.set_param(0, -20.0);   // threshold = -20 dB
-    ds.set_param(1, 6000.0);  // frequency = 6kHz
-    ds.set_param(2, 2.0);     // bandwidth Q = 2
-    ds.set_param(3, 10.0);    // ratio = 10:1
-    ds.set_param(4, 0.0);     // wideband mode
+    ds.set_param(0, -20.0); // threshold = -20 dB
+    ds.set_param(1, 6000.0); // frequency = 6kHz
+    ds.set_param(2, 2.0); // bandwidth Q = 2
+    ds.set_param(3, 10.0); // ratio = 10:1
+    ds.set_param(4, 0.0); // wideband mode
 
     // Settle: 10 blocks
     settle_with_signal(&mut ds, &input, 10);
@@ -114,11 +114,11 @@ fn d2_non_sibilant_passthrough_splitband() {
     let input = sine_f32(200.0, amplitude, block);
 
     let mut ds = DeEsser::new(SR);
-    ds.set_param(0, -20.0);   // threshold
-    ds.set_param(1, 6000.0);  // frequency
-    ds.set_param(2, 2.0);     // bandwidth Q
-    ds.set_param(3, 10.0);    // ratio
-    ds.set_param(4, 1.0);     // split-band mode
+    ds.set_param(0, -20.0); // threshold
+    ds.set_param(1, 6000.0); // frequency
+    ds.set_param(2, 2.0); // bandwidth Q
+    ds.set_param(3, 10.0); // ratio
+    ds.set_param(4, 1.0); // split-band mode
 
     // Settle
     settle_with_signal(&mut ds, &input, 10);
@@ -160,9 +160,9 @@ fn d3_listen_mode_is_bandpass() {
         .collect();
 
     let mut ds = DeEsser::new(SR);
-    ds.set_param(1, 6000.0);  // frequency
-    ds.set_param(2, 2.0);     // bandwidth Q
-    ds.set_param(5, 1.0);     // listen mode ON
+    ds.set_param(1, 6000.0); // frequency
+    ds.set_param(2, 2.0); // bandwidth Q
+    ds.set_param(5, 1.0); // listen mode ON
 
     // Settle filters
     settle_with_signal(&mut ds, &input, 10);
@@ -212,11 +212,11 @@ fn d4_wideband_vs_splitband_low_freq() {
     // --- Wideband mode ---
     let wideband_200hz_rms = {
         let mut ds = DeEsser::new(SR);
-        ds.set_param(0, -20.0);  // threshold
+        ds.set_param(0, -20.0); // threshold
         ds.set_param(1, 6000.0); // frequency
-        ds.set_param(2, 2.0);    // Q
-        ds.set_param(3, 10.0);   // ratio
-        ds.set_param(4, 0.0);    // wideband
+        ds.set_param(2, 2.0); // Q
+        ds.set_param(3, 10.0); // ratio
+        ds.set_param(4, 0.0); // wideband
 
         settle_with_signal(&mut ds, &input, 10);
 
@@ -237,7 +237,7 @@ fn d4_wideband_vs_splitband_low_freq() {
         ds.set_param(1, 6000.0);
         ds.set_param(2, 2.0);
         ds.set_param(3, 10.0);
-        ds.set_param(4, 1.0);  // split-band
+        ds.set_param(4, 1.0); // split-band
 
         settle_with_signal(&mut ds, &input, 10);
 
@@ -279,11 +279,11 @@ fn d5_frequency_tracking() {
     // --- frequency=4000 → should attenuate 4kHz ---
     let rms_at_4k = {
         let mut ds = DeEsser::new(SR);
-        ds.set_param(0, -20.0);   // threshold
-        ds.set_param(1, 4000.0);  // frequency = 4kHz (matches input)
-        ds.set_param(2, 2.0);     // Q
-        ds.set_param(3, 10.0);    // ratio
-        ds.set_param(4, 0.0);     // wideband
+        ds.set_param(0, -20.0); // threshold
+        ds.set_param(1, 4000.0); // frequency = 4kHz (matches input)
+        ds.set_param(2, 2.0); // Q
+        ds.set_param(3, 10.0); // ratio
+        ds.set_param(4, 0.0); // wideband
 
         settle_with_signal(&mut ds, &input_4k, 10);
 
@@ -296,11 +296,11 @@ fn d5_frequency_tracking() {
     // --- frequency=8000 → should NOT attenuate 4kHz ---
     let rms_at_8k = {
         let mut ds = DeEsser::new(SR);
-        ds.set_param(0, -20.0);   // threshold
-        ds.set_param(1, 8000.0);  // frequency = 8kHz (does NOT match input)
-        ds.set_param(2, 2.0);     // Q
-        ds.set_param(3, 10.0);    // ratio
-        ds.set_param(4, 0.0);     // wideband
+        ds.set_param(0, -20.0); // threshold
+        ds.set_param(1, 8000.0); // frequency = 8kHz (does NOT match input)
+        ds.set_param(2, 2.0); // Q
+        ds.set_param(3, 10.0); // ratio
+        ds.set_param(4, 0.0); // wideband
 
         settle_with_signal(&mut ds, &input_4k, 10);
 

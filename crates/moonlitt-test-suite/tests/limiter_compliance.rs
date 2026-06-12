@@ -71,10 +71,7 @@ fn l1_true_peak_never_exceeds_ceiling() {
     // 1 measurement block
     lim.process_effect(&input, &input, &mut out_l, &mut out_r);
 
-    let max_peak = out_l
-        .iter()
-        .map(|s| s.abs())
-        .fold(0.0f32, f32::max);
+    let max_peak = out_l.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
 
     let tolerance = 0.01;
     assert!(
@@ -111,7 +108,7 @@ fn l2_attack_timing_precision() {
     lim.set_param(0, -20.0); // threshold = -20 dB
     lim.set_param(4, attack_ms); // attack = 5.0 ms
     lim.set_param(6, 0.0); // auto_release = off
-    // Use slow release so it doesn't interfere with attack measurement
+                           // Use slow release so it doesn't interfere with attack measurement
     lim.set_param(2, 1000.0); // release = 1000 ms
 
     let block_size = 4410;
@@ -152,9 +149,7 @@ fn l2_attack_timing_precision() {
         }
     }
 
-    let crossing = crossing_sample.expect(
-        "L2: gain reduction never reached 63.2% of final value",
-    );
+    let crossing = crossing_sample.expect("L2: gain reduction never reached 63.2% of final value");
 
     // Allow 30% tolerance or minimum 20 samples to account for parameter
     // smoother convergence and nonlinearities in the gain computation path.
@@ -248,9 +243,8 @@ fn l3_release_timing_precision() {
         }
     }
 
-    let crossing = crossing_sample.expect(
-        "L3: gain reduction never decayed to 36.8% of engaged value",
-    );
+    let crossing =
+        crossing_sample.expect("L3: gain reduction never decayed to 36.8% of engaged value");
 
     // Allow 25% tolerance, minimum 50 samples
     let tolerance = (release_samples as f64 * 0.25).max(50.0) as usize;
@@ -519,10 +513,7 @@ fn l7_oversampling_reduces_intersample_overshoot() {
         &mut out_1x_r,
     );
 
-    let peak_1x = out_1x_l
-        .iter()
-        .map(|s| s.abs())
-        .fold(0.0f32, f32::max);
+    let peak_1x = out_1x_l.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
 
     // --- 2x oversampling ---
     let mut lim_2x = Limiter::new(SR);
@@ -550,15 +541,9 @@ fn l7_oversampling_reduces_intersample_overshoot() {
         &mut out_2x_r,
     );
 
-    let peak_2x = out_2x_l
-        .iter()
-        .map(|s| s.abs())
-        .fold(0.0f32, f32::max);
+    let peak_2x = out_2x_l.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
 
-    eprintln!(
-        "L7: peak_1x = {:.6}, peak_2x = {:.6}",
-        peak_1x, peak_2x
-    );
+    eprintln!("L7: peak_1x = {:.6}, peak_2x = {:.6}", peak_1x, peak_2x);
 
     assert!(
         peak_2x <= peak_1x,

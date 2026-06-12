@@ -15,9 +15,9 @@ pub fn read_stereo(path: &Path) -> Result<(Vec<f32>, Vec<f32>, u32), AnalyzeErro
     }
 
     let interleaved: Vec<f32> = match (spec.bits_per_sample, spec.sample_format) {
-        (32, hound::SampleFormat::Float) => reader
-            .samples::<f32>()
-            .collect::<Result<Vec<_>, _>>()?,
+        (32, hound::SampleFormat::Float) => {
+            reader.samples::<f32>().collect::<Result<Vec<_>, _>>()?
+        }
         (16, hound::SampleFormat::Int) => reader
             .samples::<i16>()
             .map(|s| s.map(|v| v as f32 / i16::MAX as f32))
@@ -26,7 +26,12 @@ pub fn read_stereo(path: &Path) -> Result<(Vec<f32>, Vec<f32>, u32), AnalyzeErro
             .samples::<i32>()
             .map(|s| s.map(|v| v as f32 / (1u32 << (spec.bits_per_sample - 1)) as f32))
             .collect::<Result<Vec<_>, _>>()?,
-        _ => return Err(AnalyzeError::UnsupportedFormat(spec.bits_per_sample, spec.sample_format)),
+        _ => {
+            return Err(AnalyzeError::UnsupportedFormat(
+                spec.bits_per_sample,
+                spec.sample_format,
+            ))
+        }
     };
 
     let frames = interleaved.len() / 2;

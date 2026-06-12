@@ -7,9 +7,8 @@
 //! Zero tolerance: all assertions use machine epsilon (f32::EPSILON / f64::EPSILON).
 //! No human-chosen tolerance values permitted.
 
-
-use moonlitt_core::AudioBackend;
 use moonlitt_audio_io::mixer::Mixer;
+use moonlitt_core::AudioBackend;
 use std::path::Path;
 
 const SF2_PATH: &str = "/Users/wangyan/Desktop/stardew valley mods/mods/piano-block/assets/soundfonts/GeneralUser_GS.sf2";
@@ -30,7 +29,10 @@ fn load_sf2_engine() -> Option<Box<dyn AudioBackend>> {
 }
 
 /// Render multiple blocks directly from a backend, collecting all output samples.
-fn render_engine_blocks(engine: &mut Box<dyn AudioBackend>, num_blocks: usize) -> (Vec<f32>, Vec<f32>) {
+fn render_engine_blocks(
+    engine: &mut Box<dyn AudioBackend>,
+    num_blocks: usize,
+) -> (Vec<f32>, Vec<f32>) {
     let mut all_left = Vec::with_capacity(num_blocks * BUFFER_SIZE);
     let mut all_right = Vec::with_capacity(num_blocks * BUFFER_SIZE);
     let mut left = vec![0.0f32; BUFFER_SIZE];
@@ -178,7 +180,8 @@ fn m02_velocity_zero_equals_note_off() {
 
     // Compare RMS of the last 16 blocks
     let tail_start = 48 * BUFFER_SIZE;
-    let rms_sustain = rms_dbfs(&left_sustain[tail_start..]).max(rms_dbfs(&right_sustain[tail_start..]));
+    let rms_sustain =
+        rms_dbfs(&left_sustain[tail_start..]).max(rms_dbfs(&right_sustain[tail_start..]));
     let rms_vel0 = rms_dbfs(&left_vel0[tail_start..]).max(rms_dbfs(&right_vel0[tail_start..]));
 
     eprintln!("m02: RMS sustain (last 16 blocks) = {rms_sustain:.2} dBFS");
@@ -281,9 +284,7 @@ fn m05_pitch_bend_14bit() {
     let bin_baseline = dominant_bin(&spectrum_baseline);
     let bin_bent = dominant_bin(&spectrum_bent);
 
-    eprintln!(
-        "m05: Baseline dominant bin = {bin_baseline}, Pitch-bent dominant bin = {bin_bent}"
-    );
+    eprintln!("m05: Baseline dominant bin = {bin_baseline}, Pitch-bent dominant bin = {bin_bent}");
 
     // Pitch bend up should shift the dominant frequency higher
     assert!(
@@ -370,7 +371,8 @@ fn m07_all_notes_off_cc123() {
 
     // Check the last 32 blocks of each
     let tail_start = 224 * BUFFER_SIZE;
-    let rms_sustain = rms_dbfs(&left_sustain[tail_start..]).max(rms_dbfs(&right_sustain[tail_start..]));
+    let rms_sustain =
+        rms_dbfs(&left_sustain[tail_start..]).max(rms_dbfs(&right_sustain[tail_start..]));
     let rms_cc123 = rms_dbfs(&left_cc123[tail_start..]).max(rms_dbfs(&right_cc123[tail_start..]));
 
     eprintln!("m07: RMS sustain (last 32 blocks) = {rms_sustain:.2} dBFS");
@@ -430,7 +432,8 @@ fn m08_all_sound_off_cc120() {
 
     // Compare last 32 blocks
     let tail_start = 224 * BUFFER_SIZE;
-    let rms_sustain = rms_dbfs(&left_sustain[tail_start..]).max(rms_dbfs(&right_sustain[tail_start..]));
+    let rms_sustain =
+        rms_dbfs(&left_sustain[tail_start..]).max(rms_dbfs(&right_sustain[tail_start..]));
     let rms_cc120 = rms_dbfs(&left_cc120[tail_start..]).max(rms_dbfs(&right_cc120[tail_start..]));
 
     eprintln!("m08: RMS sustain (last 32 blocks) = {rms_sustain:.2} dBFS");
@@ -544,9 +547,7 @@ fn m10_cc7_volume_linear() {
     let actual_db_diff = rms_half - rms_full;
 
     eprintln!("m10: RMS full={rms_full:.2} dBFS, half={rms_half:.2} dBFS");
-    eprintln!(
-        "m10: Expected dB diff = {expected_db_diff:.4}, actual = {actual_db_diff:.4}"
-    );
+    eprintln!("m10: Expected dB diff = {expected_db_diff:.4}, actual = {actual_db_diff:.4}");
 
     // CC7 in SF2 uses a concave curve (not linear), so exact match is not expected.
     // The key requirement is that CC7=64 is quieter than CC7=127.

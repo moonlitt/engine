@@ -24,7 +24,9 @@ use moonlitt_sampler::SamplePool;
 
 #[test]
 fn t1_polyphony() {
-    if !has_sf2() { return; }
+    if !has_sf2() {
+        return;
+    }
 
     let pool = SamplePool::from_file(SF2_PATH).unwrap();
     let mut vp = VoicePool::new(16, SAMPLE_RATE);
@@ -51,7 +53,9 @@ fn t1_polyphony() {
 
 #[test]
 fn t2_voice_stealing() {
-    if !has_sf2() { return; }
+    if !has_sf2() {
+        return;
+    }
 
     let pool = SamplePool::from_file(SF2_PATH).unwrap();
     let mut vp = VoicePool::new(4, SAMPLE_RATE); // Only 4 voices
@@ -80,7 +84,9 @@ fn t2_voice_stealing() {
 
 #[test]
 fn t3_note_off() {
-    if !has_sf2() { return; }
+    if !has_sf2() {
+        return;
+    }
 
     let pool = SamplePool::from_file(SF2_PATH).unwrap();
     let mut vp = VoicePool::new(16, SAMPLE_RATE);
@@ -108,7 +114,9 @@ fn t3_note_off() {
 
 #[test]
 fn t4_all_notes_off() {
-    if !has_sf2() { return; }
+    if !has_sf2() {
+        return;
+    }
 
     let pool = SamplePool::from_file(SF2_PATH).unwrap();
     let mut vp = VoicePool::new(16, SAMPLE_RATE);
@@ -136,7 +144,9 @@ fn t4_all_notes_off() {
 
 #[test]
 fn t5_bounded_voices() {
-    if !has_sf2() { return; }
+    if !has_sf2() {
+        return;
+    }
 
     let pool = SamplePool::from_file(SF2_PATH).unwrap();
     let max_voices = 8;
@@ -150,7 +160,8 @@ fn t5_bounded_voices() {
     assert!(
         vp.active_count() <= max_voices,
         "Active voices {} should never exceed pool size {}",
-        vp.active_count(), max_voices
+        vp.active_count(),
+        max_voices
     );
 }
 
@@ -160,7 +171,9 @@ fn t5_bounded_voices() {
 
 #[test]
 fn t6_no_clipping() {
-    if !has_sf2() { return; }
+    if !has_sf2() {
+        return;
+    }
 
     let pool = SamplePool::from_file(SF2_PATH).unwrap();
     let mut vp = VoicePool::new(16, SAMPLE_RATE);
@@ -174,7 +187,9 @@ fn t6_no_clipping() {
     let mut right = vec![0.0f32; 4096];
     vp.render(&mut left, &mut right);
 
-    let peak = left.iter().chain(right.iter())
+    let peak = left
+        .iter()
+        .chain(right.iter())
         .map(|s| s.abs())
         .fold(0.0f32, f32::max);
 

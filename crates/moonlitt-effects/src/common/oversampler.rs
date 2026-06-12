@@ -77,9 +77,7 @@ fn design_halfband_taps(half_order: usize, beta: f64) -> Vec<f64> {
     // Normalize for unity DC gain while preserving the half-band property.
     // Center tap is fixed at 0.5. Only scale the odd taps so that
     // 0.5 + 2 * sum(odd_taps) = 1.0, i.e., sum(odd_taps) = 0.25.
-    let odd_sum: f64 = (1..=half_order)
-        .map(|k| taps[center + (2 * k - 1)])
-        .sum();
+    let odd_sum: f64 = (1..=half_order).map(|k| taps[center + (2 * k - 1)]).sum();
     if odd_sum.abs() > 1e-15 {
         let scale = 0.25 / odd_sum;
         for k in 1..=half_order {
@@ -168,14 +166,8 @@ impl HalfBandStage {
         let mut sum = f64x4::ZERO;
         for c in 0..chunks {
             let off = c * 4;
-            let d = f64x4::new(
-                self.delay[base + off..base + off + 4]
-                    .try_into()
-                    .unwrap(),
-            );
-            let t = f64x4::new(
-                self.taps[off..off + 4].try_into().unwrap(),
-            );
+            let d = f64x4::new(self.delay[base + off..base + off + 4].try_into().unwrap());
+            let t = f64x4::new(self.taps[off..off + 4].try_into().unwrap());
             sum += d * t;
         }
 
@@ -635,9 +627,7 @@ mod tests {
         let mut os = Oversampler::new(2, block_size);
 
         // Process some audio (loud sine)
-        let input: Vec<f32> = (0..block_size)
-            .map(|i| (i as f32 * 0.3).sin())
-            .collect();
+        let input: Vec<f32> = (0..block_size).map(|i| (i as f32 * 0.3).sin()).collect();
         let mut output = vec![0.0f32; block_size];
         for _ in 0..10 {
             os.process(&input, &mut output, |_buf| {});

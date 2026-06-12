@@ -220,7 +220,9 @@ impl AudioBackend for Vst3Backend {
     }
 
     fn presets(&self) -> Vec<PresetInfo> {
-        let Some(p) = self.plugin.as_ref() else { return vec![] };
+        let Some(p) = self.plugin.as_ref() else {
+            return vec![];
+        };
         match p.lock().presets() {
             Ok(presets) => presets
                 .into_iter()
@@ -234,19 +236,32 @@ impl AudioBackend for Vst3Backend {
     }
 
     fn param_count(&self) -> u32 {
-        self.plugin.as_ref().map(|p| p.lock().param_count()).unwrap_or(0)
+        self.plugin
+            .as_ref()
+            .map(|p| p.lock().param_count())
+            .unwrap_or(0)
     }
 
     fn param_info(&self, index: u32) -> Option<ParamInfo> {
         let p = self.plugin.as_ref()?;
         let vinfo = p.lock().param_info(index)?;
         let mut flags = ParamFlags::empty();
-        if vinfo.is_hidden || vinfo.is_program_change { flags |= ParamFlags::HIDDEN; }
-        if vinfo.is_readonly { flags |= ParamFlags::READONLY; }
-        if vinfo.step_count > 0 { flags |= ParamFlags::STEPPED; }
+        if vinfo.is_hidden || vinfo.is_program_change {
+            flags |= ParamFlags::HIDDEN;
+        }
+        if vinfo.is_readonly {
+            flags |= ParamFlags::READONLY;
+        }
+        if vinfo.step_count > 0 {
+            flags |= ParamFlags::STEPPED;
+        }
         Some(ParamInfo {
             id: vinfo.id,
-            name: if vinfo.name.is_empty() { vinfo.short_name.clone() } else { vinfo.name },
+            name: if vinfo.name.is_empty() {
+                vinfo.short_name.clone()
+            } else {
+                vinfo.name
+            },
             group: String::new(), // VST3 units could be mapped here
             min: 0.0,
             max: 1.0, // VST3 uses normalized 0-1

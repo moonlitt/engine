@@ -33,10 +33,8 @@ fn find_peak_frequency(buf: &[f32]) -> (f64, f64) {
     let mut planner = FftPlanner::<f64>::new();
     let fft = planner.plan_fft_forward(n);
 
-    let mut spectrum: Vec<Complex<f64>> = buf
-        .iter()
-        .map(|&s| Complex::new(s as f64, 0.0))
-        .collect();
+    let mut spectrum: Vec<Complex<f64>> =
+        buf.iter().map(|&s| Complex::new(s as f64, 0.0)).collect();
     fft.process(&mut spectrum);
 
     let bin_width = SR as f64 / n as f64;
@@ -78,10 +76,10 @@ fn find_peak_frequency(buf: &[f32]) -> (f64, f64) {
 #[test]
 fn ps1_granular_pitch_ratio() {
     let mut ps = PitchShifter::new(SR);
-    ps.set_param(0, 12.0);   // semitones = +12
-    ps.set_param(1, 0.0);    // cents = 0
-    ps.set_param(2, 0.0);    // mode = Granular
-    ps.set_param(5, 1.0);    // dry_wet = 100%
+    ps.set_param(0, 12.0); // semitones = +12
+    ps.set_param(1, 0.0); // cents = 0
+    ps.set_param(2, 0.0); // mode = Granular
+    ps.set_param(5, 1.0); // dry_wet = 100%
 
     let num_samples = SR as usize * 2; // 2 seconds
     let input = sine_f32(440.0, 0.5, num_samples);
@@ -104,7 +102,8 @@ fn ps1_granular_pitch_ratio() {
     assert!(
         (peak_freq - expected).abs() < tolerance,
         "ps1: granular +12 semitones: expected peak at {:.0} Hz ±10%, got {:.1} Hz",
-        expected, peak_freq
+        expected,
+        peak_freq
     );
 }
 
@@ -115,11 +114,11 @@ fn ps1_granular_pitch_ratio() {
 #[test]
 fn ps2_vocoder_pitch_ratio() {
     let mut ps = PitchShifter::new(SR);
-    ps.set_param(0, 12.0);   // semitones = +12
-    ps.set_param(1, 0.0);    // cents = 0
-    ps.set_param(2, 1.0);    // mode = Vocoder
-    ps.set_param(4, 1.0);    // fft_size = 2048
-    ps.set_param(5, 1.0);    // dry_wet = 100%
+    ps.set_param(0, 12.0); // semitones = +12
+    ps.set_param(1, 0.0); // cents = 0
+    ps.set_param(2, 1.0); // mode = Vocoder
+    ps.set_param(4, 1.0); // fft_size = 2048
+    ps.set_param(5, 1.0); // dry_wet = 100%
 
     // The vocoder has a known overflow bug when input_write_pos < fft_size
     // during the first hop. Prime it with enough silent blocks to advance
@@ -169,7 +168,8 @@ fn ps2_vocoder_pitch_ratio() {
     assert!(
         (peak_freq - expected).abs() < tolerance,
         "ps2: vocoder +12 semitones: expected peak at {:.0} Hz ±5%, got {:.1} Hz",
-        expected, peak_freq
+        expected,
+        peak_freq
     );
 }
 
@@ -180,10 +180,10 @@ fn ps2_vocoder_pitch_ratio() {
 #[test]
 fn ps3_zero_shift_passthrough() {
     let mut ps = PitchShifter::new(SR);
-    ps.set_param(0, 0.0);    // semitones = 0
-    ps.set_param(1, 0.0);    // cents = 0
-    ps.set_param(2, 0.0);    // mode = Granular
-    ps.set_param(5, 1.0);    // dry_wet = 100%
+    ps.set_param(0, 0.0); // semitones = 0
+    ps.set_param(1, 0.0); // cents = 0
+    ps.set_param(2, 0.0); // mode = Granular
+    ps.set_param(5, 1.0); // dry_wet = 100%
 
     let num_samples = SR as usize; // 1 second
     let input = sine_f32(1000.0, 0.5, num_samples);
@@ -230,7 +230,9 @@ fn ps3_zero_shift_passthrough() {
         error_db < 6.0,
         "ps3: zero-shift output level should be within 6 dB of input: \
          input={:.2} dB, output={:.2} dB, error={:.2} dB",
-        input_db, output_db, error_db
+        input_db,
+        output_db,
+        error_db
     );
 }
 
@@ -246,10 +248,10 @@ fn ps4_latency_matches_report() {
     // to find effective latency. For vocoder, process in blocks.
     for mode in [0u32, 1] {
         let mut ps = PitchShifter::new(SR);
-        ps.set_param(0, 0.0);              // semitones = 0
-        ps.set_param(1, 0.0);              // cents = 0
-        ps.set_param(2, mode as f64);      // mode
-        ps.set_param(5, 1.0);              // dry_wet = 100%
+        ps.set_param(0, 0.0); // semitones = 0
+        ps.set_param(1, 0.0); // cents = 0
+        ps.set_param(2, mode as f64); // mode
+        ps.set_param(5, 1.0); // dry_wet = 100%
 
         let reported_latency = ps.latency();
         let mode_name = if mode == 0 { "granular" } else { "vocoder" };
@@ -318,7 +320,10 @@ fn ps4_latency_matches_report() {
                 effective_latency <= tolerance,
                 "ps4 {}: output onset at +{} samples after signal start, \
                  reported latency={}, tolerance={}",
-                mode_name, effective_latency, reported_latency, tolerance
+                mode_name,
+                effective_latency,
+                reported_latency,
+                tolerance
             );
         }
         // If no onset found, the signal may be too quiet (acceptable for
@@ -342,10 +347,10 @@ fn ps4_latency_matches_report() {
 #[test]
 fn ps5_granular_no_clicks() {
     let mut ps = PitchShifter::new(SR);
-    ps.set_param(0, 5.0);    // semitones = +5
-    ps.set_param(1, 0.0);    // cents = 0
-    ps.set_param(2, 0.0);    // mode = Granular
-    ps.set_param(5, 1.0);    // dry_wet = 100%
+    ps.set_param(0, 5.0); // semitones = +5
+    ps.set_param(1, 0.0); // cents = 0
+    ps.set_param(2, 0.0); // mode = Granular
+    ps.set_param(5, 1.0); // dry_wet = 100%
 
     let num_samples = SR as usize; // 1 second
     let input = sine_f32(440.0, 0.5, num_samples);

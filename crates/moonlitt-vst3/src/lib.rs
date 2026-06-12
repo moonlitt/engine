@@ -324,7 +324,7 @@ impl Vst3Plugin {
             self.pending_events.push(MidiEvent {
                 kind: MidiEventKind::CC {
                     channel,
-                    cc: 123,  // All Notes Off
+                    cc: 123, // All Notes Off
                     value: 0,
                 },
                 sample_offset: 0,
@@ -418,8 +418,7 @@ impl Vst3Plugin {
         // Bus 0 → caller's buffers (zero copy), buses 1..N → scratch.
         let (head, tail) = self.bus_scratches.split_first_mut().expect("nb > 0");
         let _ = head; // bus 0 scratch is unused this call.
-        let mut outputs: Vec<processor::OutputBus<'_>> =
-            Vec::with_capacity(1 + tail.len());
+        let mut outputs: Vec<processor::OutputBus<'_>> = Vec::with_capacity(1 + tail.len());
         outputs.push(processor::OutputBus {
             left: &mut left[..num_frames],
             right: &mut right[..num_frames],
@@ -512,11 +511,8 @@ impl Vst3Plugin {
         }
 
         let raw_events: Vec<MidiEvent> = std::mem::take(&mut self.pending_events);
-        let mapped = midi_mapping::split_for_param_routing(
-            self.inner.midi_mapping.as_ref(),
-            0,
-            raw_events,
-        );
+        let mapped =
+            midi_mapping::split_for_param_routing(self.inner.midi_mapping.as_ref(), 0, raw_events);
         let events = mapped.events;
         let mut pending_params = match &self.inner.param_queue {
             Some(q) => component_handler::drain(q),
@@ -624,10 +620,8 @@ impl Vst3Plugin {
 
     /// List factory presets via IUnitInfo (if the plugin supports it).
     pub fn presets(&self) -> Result<Vec<PresetInfo>> {
-        use vst3::Steinberg::Vst::{
-            IUnitInfo, IUnitInfoTrait, ProgramListInfo, String128,
-        };
         use vst3::Steinberg::kResultOk;
+        use vst3::Steinberg::Vst::{IUnitInfo, IUnitInfoTrait, ProgramListInfo, String128};
 
         // Try to get IUnitInfo from controller, then component
         let unit_info: Option<vst3::ComPtr<IUnitInfo>> = self
@@ -637,8 +631,7 @@ impl Vst3Plugin {
             .and_then(|c| c.cast::<IUnitInfo>())
             .or_else(|| self.inner.component.cast::<IUnitInfo>());
 
-        let unit_info =
-            unit_info.ok_or(Error::NotSupported)?;
+        let unit_info = unit_info.ok_or(Error::NotSupported)?;
 
         let list_count = unsafe { unit_info.getProgramListCount() };
         let mut presets = Vec::new();
@@ -652,9 +645,7 @@ impl Vst3Plugin {
 
             for pi in 0..list_info.programCount {
                 let mut name128: String128 = [0u16; 128];
-                if unsafe {
-                    unit_info.getProgramName(list_info.id, pi, &mut name128)
-                } != kResultOk
+                if unsafe { unit_info.getProgramName(list_info.id, pi, &mut name128) } != kResultOk
                 {
                     continue;
                 }
@@ -677,16 +668,12 @@ impl Vst3Plugin {
     }
 
     fn load_preset_inner(&mut self, id: i32) -> Result<()> {
+        use vst3::Steinberg::kResultOk;
         use vst3::Steinberg::Vst::{
             IEditControllerTrait, ParameterInfo, ParameterInfo_::ParameterFlags_,
         };
-        use vst3::Steinberg::kResultOk;
 
-        let ctrl = self
-            .inner
-            .controller
-            .as_ref()
-            .ok_or(Error::NotSupported)?;
+        let ctrl = self.inner.controller.as_ref().ok_or(Error::NotSupported)?;
 
         let param_count = unsafe { ctrl.getParameterCount() };
 
@@ -791,12 +778,16 @@ impl Vst3Plugin {
     }
 
     fn set_state_inner(&mut self, data: &[u8]) -> Result<()> {
-        use vst3::Steinberg::Vst::{IAudioProcessorTrait, IComponentTrait};
         use vst3::Steinberg::kResultOk;
+        use vst3::Steinberg::Vst::{IAudioProcessorTrait, IComponentTrait};
 
         // Stop → deactivate. Required before setState per VST3 spec.
-        unsafe { let _ = self.inner.processor.setProcessing(0); }
-        unsafe { let _ = self.inner.component.setActive(0); }
+        unsafe {
+            let _ = self.inner.processor.setProcessing(0);
+        }
+        unsafe {
+            let _ = self.inner.component.setActive(0);
+        }
 
         // Decide layout: new chunked container (MLST...) vs legacy
         // single-blob fixture (entire payload is component state). Older
@@ -831,8 +822,12 @@ impl Vst3Plugin {
         }
 
         // Reactivate → resume processing.
-        unsafe { let _ = self.inner.component.setActive(1); }
-        unsafe { let _ = self.inner.processor.setProcessing(1); }
+        unsafe {
+            let _ = self.inner.component.setActive(1);
+        }
+        unsafe {
+            let _ = self.inner.processor.setProcessing(1);
+        }
 
         if comp_result != kResultOk {
             return Err(Error::Other(format!("setState failed: {comp_result}")));
@@ -847,14 +842,16 @@ impl Vst3Plugin {
     }
 
     fn get_state_inner(&self) -> Result<Vec<u8>> {
-        use vst3::Steinberg::Vst::IComponentTrait;
         use vst3::Steinberg::kResultOk;
+        use vst3::Steinberg::Vst::IComponentTrait;
 
         // Component (processor) state — always required.
         let mut comp_stream = stream::MemoryStream::new_writable();
         let comp_result = unsafe { self.inner.component.getState(comp_stream.as_ibstream_ptr()) };
         if comp_result != kResultOk {
-            return Err(Error::Other(format!("component.getState failed: {comp_result}")));
+            return Err(Error::Other(format!(
+                "component.getState failed: {comp_result}"
+            )));
         }
         let component = comp_stream.data().to_vec();
 
@@ -875,7 +872,11 @@ impl Vst3Plugin {
             None => Vec::new(),
         };
 
-        Ok(state_format::ChunkedState { component, controller }.to_bytes())
+        Ok(state_format::ChunkedState {
+            component,
+            controller,
+        }
+        .to_bytes())
     }
 
     /// Load an SFZ file into sfizz by constructing and setting its state.
@@ -897,8 +898,10 @@ impl Vst3Plugin {
 
     /// Get info for parameter at `index` (0-based).
     pub fn param_info(&self, index: u32) -> Option<Vst3ParamInfo> {
-        use vst3::Steinberg::Vst::{IEditControllerTrait, ParameterInfo, ParameterInfo_::ParameterFlags_};
         use vst3::Steinberg::kResultOk;
+        use vst3::Steinberg::Vst::{
+            IEditControllerTrait, ParameterInfo, ParameterInfo_::ParameterFlags_,
+        };
 
         let ctrl = self.inner.controller.as_ref()?;
         let mut pinfo = std::mem::MaybeUninit::<ParameterInfo>::uninit();
@@ -939,8 +942,8 @@ impl Vst3Plugin {
 
     /// Get display string for a parameter value.
     pub fn param_display(&self, id: u32, value: f64) -> Option<String> {
-        use vst3::Steinberg::Vst::IEditControllerTrait;
         use vst3::Steinberg::kResultOk;
+        use vst3::Steinberg::Vst::IEditControllerTrait;
 
         let ctrl = self.inner.controller.as_ref()?;
         let mut buf = [0u16; 128];
@@ -1003,10 +1006,8 @@ fn dispatch_restart_flags(
 
     if flags & kParamValuesChanged != 0 {
         if let (Some(ctrl), Some(q)) = (controller.as_ref(), queue.as_ref()) {
-            use vst3::Steinberg::Vst::{
-                IEditControllerTrait, ParameterInfo,
-            };
             use vst3::Steinberg::kResultOk;
+            use vst3::Steinberg::Vst::{IEditControllerTrait, ParameterInfo};
 
             let count = unsafe { ctrl.getParameterCount() };
             let mut pulled = 0;

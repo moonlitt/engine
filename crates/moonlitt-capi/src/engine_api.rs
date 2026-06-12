@@ -183,7 +183,10 @@ pub extern "C" fn moonlitt_engine_destroy(e: *mut EngineHandle) {
 /// `MOONLITT_ERR_IO` (file missing/unreadable) or `MOONLITT_ERR_PLUGIN`
 /// (the file exists but the backend failed to initialise).
 #[no_mangle]
-pub extern "C" fn moonlitt_engine_load(e: *mut EngineHandle, path: *const c_char) -> MoonlittStatus {
+pub extern "C" fn moonlitt_engine_load(
+    e: *mut EngineHandle,
+    path: *const c_char,
+) -> MoonlittStatus {
     ffi_guard!(crate::error::MOONLITT_ERR_PANIC, {
         status((|| {
             let handle = handle_mut(e)?;
@@ -404,7 +407,10 @@ pub extern "C" fn moonlitt_engine_render(
 /// Set the backend's output volume. `volume` is linear gain (1.0 =
 /// unity); NaN is rejected.
 #[no_mangle]
-pub extern "C" fn moonlitt_engine_set_volume(e: *mut EngineHandle, volume: c_float) -> MoonlittStatus {
+pub extern "C" fn moonlitt_engine_set_volume(
+    e: *mut EngineHandle,
+    volume: c_float,
+) -> MoonlittStatus {
     ffi_guard!(crate::error::MOONLITT_ERR_PANIC, {
         status((|| {
             if volume.is_nan() {

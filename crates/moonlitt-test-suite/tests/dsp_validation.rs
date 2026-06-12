@@ -64,9 +64,7 @@ fn compute_snr_fft(signal: &[f32], sample_rate: u32, expected_freq: f32) -> f64 
         .iter()
         .enumerate()
         .filter(|&(i, _)| {
-            i > 0
-                && (i < fund_bin.saturating_sub(fund_width)
-                    || i > fund_bin + fund_width)
+            i > 0 && (i < fund_bin.saturating_sub(fund_width) || i > fund_bin + fund_width)
         })
         .map(|(_, m)| m * m)
         .sum();
@@ -92,7 +90,12 @@ fn l1_sinc_at_zero() {
 #[test]
 fn l1_sinc_table_normalized() {
     // For each fractional step, interpolating a constant signal should give that constant.
-    for quality in [Quality::Sinc8, Quality::Sinc16, Quality::Sinc36, Quality::Sinc72] {
+    for quality in [
+        Quality::Sinc8,
+        Quality::Sinc16,
+        Quality::Sinc36,
+        Quality::Sinc72,
+    ] {
         let interp = SincInterpolator::new(quality);
         let n = quality.num_points();
 
@@ -125,9 +128,7 @@ fn l1_sine_wave_reconstruction() {
     let interp = SincInterpolator::new(Quality::Sinc72);
     let freq = 1.0 / 32.0; // low frequency for easy reconstruction
     let n = 512;
-    let samples: Vec<f32> = (0..n)
-        .map(|i| (2.0 * PI * freq * i as f32).sin())
-        .collect();
+    let samples: Vec<f32> = (0..n).map(|i| (2.0 * PI * freq * i as f32).sin()).collect();
 
     // Interpolate at half-sample positions
     let mut max_error = 0.0f32;
@@ -151,9 +152,7 @@ fn l1_quality_hierarchy() {
     // Higher quality should give smaller error on high-frequency content
     let freq = 0.15; // high enough to stress interpolation
     let n = 512;
-    let samples: Vec<f32> = (0..n)
-        .map(|i| (2.0 * PI * freq * i as f32).sin())
-        .collect();
+    let samples: Vec<f32> = (0..n).map(|i| (2.0 * PI * freq * i as f32).sin()).collect();
 
     let mut errors = Vec::new();
     for quality in [Quality::Linear, Quality::Sinc8, Quality::Sinc72] {
@@ -212,7 +211,7 @@ fn l2_snr_measurement() {
     let samples = generate_sine(freq, sr, 1.0);
 
     // Baseline: raw signal SNR
-    let snr_raw = compute_snr_fft(&samples[100..samples.len()-100], sr, freq);
+    let snr_raw = compute_snr_fft(&samples[100..samples.len() - 100], sr, freq);
     eprintln!("Raw signal SNR: {snr_raw:.1} dB");
     assert!(snr_raw > 70.0, "Raw sine SNR should be > 70dB");
 
@@ -227,7 +226,10 @@ fn l2_snr_measurement() {
     let snr = compute_snr_fft(&resampled, sr, shifted_freq);
     eprintln!("Sinc72 shifted SNR: {snr:.1} dB");
     // Sinc72 should maintain reasonable SNR even after interpolation
-    assert!(snr > 20.0, "Sinc72 shifted SNR should be > 20dB, got {snr:.1}");
+    assert!(
+        snr > 20.0,
+        "Sinc72 shifted SNR should be > 20dB, got {snr:.1}"
+    );
 }
 
 #[test]
@@ -294,7 +296,10 @@ fn l2_aliasing_check() {
     // We can't perfectly measure this without proper resampling,
     // but we can check the output isn't garbage
     let rms = (shifted.iter().map(|s| s * s).sum::<f32>() / shifted.len() as f32).sqrt();
-    assert!(rms > 0.01, "Shifted signal should have content, got RMS={rms}");
+    assert!(
+        rms > 0.01,
+        "Shifted signal should have content, got RMS={rms}"
+    );
     assert!(
         !shifted.iter().any(|s| s.is_nan() || s.is_infinite()),
         "No NaN/Inf in aliasing test"
@@ -321,8 +326,12 @@ fn l3_pan_constant_power() {
             let angle = (pan + 1.0) * 0.25 * std::f32::consts::PI;
             let gain_l = angle.cos();
             let gain_r = angle.sin();
-            for s in left.iter_mut() { *s *= gain_l; }
-            for s in right.iter_mut() { *s *= gain_r; }
+            for s in left.iter_mut() {
+                *s *= gain_l;
+            }
+            for s in right.iter_mut() {
+                *s *= gain_r;
+            }
 
             let power = ((left[0] * left[0] + right[0] * right[0]) as f64).sqrt();
             power
@@ -345,8 +354,14 @@ fn l3_pan_hard_left() {
     let angle = (-1.0f32 + 1.0) * 0.25 * PI; // pan = -1.0
     let gain_l = angle.cos();
     let gain_r = angle.sin();
-    assert!(gain_l > 0.99, "Hard left: L gain should be ~1.0, got {gain_l}");
-    assert!(gain_r < 0.01, "Hard left: R gain should be ~0.0, got {gain_r}");
+    assert!(
+        gain_l > 0.99,
+        "Hard left: L gain should be ~1.0, got {gain_l}"
+    );
+    assert!(
+        gain_r < 0.01,
+        "Hard left: R gain should be ~0.0, got {gain_r}"
+    );
 }
 
 #[test]
@@ -354,8 +369,14 @@ fn l3_pan_hard_right() {
     let angle = (1.0f32 + 1.0) * 0.25 * PI; // pan = 1.0
     let gain_l = angle.cos();
     let gain_r = angle.sin();
-    assert!(gain_l < 0.01, "Hard right: L gain should be ~0.0, got {gain_l}");
-    assert!(gain_r > 0.99, "Hard right: R gain should be ~1.0, got {gain_r}");
+    assert!(
+        gain_l < 0.01,
+        "Hard right: L gain should be ~0.0, got {gain_l}"
+    );
+    assert!(
+        gain_r > 0.99,
+        "Hard right: R gain should be ~1.0, got {gain_r}"
+    );
 }
 
 #[test]
@@ -379,21 +400,23 @@ fn l3_limiter_bounds_output() {
 
 #[test]
 fn l3_mixer_empty_silence() {
-
     let mut mixer = moonlitt_audio_io::mixer::Mixer::new(44100, 256);
     let mut left = vec![1.0f32; 256]; // pre-fill with 1.0
     let mut right = vec![1.0f32; 256];
     mixer.render(&mut left, &mut right);
 
     // Empty mixer should produce silence
-    assert!(left.iter().all(|&s| s == 0.0), "Empty mixer should output silence");
+    assert!(
+        left.iter().all(|&s| s == 0.0),
+        "Empty mixer should output silence"
+    );
     assert!(right.iter().all(|&s| s == 0.0));
 }
 
 #[test]
 fn l3_mixer_mute() {
-    use moonlitt_core::AudioBackend;
     use moonlitt_audio_io::mixer::Mixer;
+    use moonlitt_core::AudioBackend;
 
     let mut mixer = moonlitt_audio_io::mixer::Mixer::new(44100, 256);
     let engine = Box::new(moonlitt_core::NullBackend::new(44100)) as Box<dyn AudioBackend>;
@@ -404,7 +427,10 @@ fn l3_mixer_mute() {
     let mut right = vec![0.0f32; 256];
     mixer.render(&mut left, &mut right);
 
-    assert!(left.iter().all(|&s| s == 0.0), "Muted track should be silent");
+    assert!(
+        left.iter().all(|&s| s == 0.0),
+        "Muted track should be silent"
+    );
 }
 
 // =============================================================================
@@ -413,8 +439,6 @@ fn l3_mixer_mute() {
 
 #[test]
 fn l4_golden_interpolation_test() {
-    
-
     let sf2 = "tests/sf2-spec-test/sample interpolation test/sample interpolation test.sf2";
     let _midi = "tests/sf2-spec-test/sample interpolation test/sample interpolation test.mid";
 
@@ -436,7 +460,9 @@ fn l4_golden_interpolation_test() {
         engine.render(&mut left, &mut right);
         for &s in left.iter().chain(right.iter()) {
             let a = s.abs();
-            if a > peak { peak = a; }
+            if a > peak {
+                peak = a;
+            }
             assert!(!s.is_nan(), "NaN in render output");
             assert!(!s.is_infinite(), "Inf in render output");
         }

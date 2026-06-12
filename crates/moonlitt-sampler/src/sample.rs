@@ -71,16 +71,10 @@ impl SamplePool {
         Ok(Self { samples, sf2 })
     }
 
-    fn read_sample_data(
-        file: &mut std::fs::File,
-        sf2: &SoundFont2,
-    ) -> Result<Vec<i16>, String> {
+    fn read_sample_data(file: &mut std::fs::File, sf2: &SoundFont2) -> Result<Vec<i16>, String> {
         use std::io::{Read, Seek, SeekFrom};
 
-        let smpl = sf2
-            .sample_data
-            .smpl
-            .ok_or("No sample data in SF2")?;
+        let smpl = sf2.sample_data.smpl.ok_or("No sample data in SF2")?;
 
         file.seek(SeekFrom::Start(smpl.offset))
             .map_err(|e| e.to_string())?;
@@ -89,10 +83,7 @@ impl SamplePool {
         let mut data = vec![0i16; num_samples];
 
         let byte_slice = unsafe {
-            std::slice::from_raw_parts_mut(
-                data.as_mut_ptr() as *mut u8,
-                num_samples * 2,
-            )
+            std::slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u8, num_samples * 2)
         };
         file.read_exact(byte_slice).map_err(|e| e.to_string())?;
 
@@ -124,9 +115,11 @@ impl SamplePool {
         velocity: u8,
     ) -> Option<SampleInfo> {
         // Find preset by bank + program
-        let preset = self.sf2.presets.iter().find(|p| {
-            p.header.bank == bank && p.header.preset == program as u16
-        })?;
+        let preset = self
+            .sf2
+            .presets
+            .iter()
+            .find(|p| p.header.bank == bank && p.header.preset == program as u16)?;
 
         // Search preset zones for matching key/velocity range
         for pzone in &preset.zones {
@@ -162,7 +155,9 @@ impl SamplePool {
                 if let Some(sample) = self.samples.get(sample_id) {
                     let mut result = sample.clone();
                     // Check for overriding root key
-                    if let Some(key) = find_gen_i16(&izone.gen_list, GeneratorType::OverridingRootKey) {
+                    if let Some(key) =
+                        find_gen_i16(&izone.gen_list, GeneratorType::OverridingRootKey)
+                    {
                         if (0..=127).contains(&key) {
                             result.root_key = key as u8;
                         }
@@ -205,13 +200,15 @@ fn matches_gen_type(sf: &soundfont::SfEnum<GeneratorType, u16>, target: Generato
 }
 
 fn find_gen_u16(gen_list: &[soundfont::raw::Generator], target: GeneratorType) -> Option<u16> {
-    gen_list.iter()
+    gen_list
+        .iter()
         .find(|g| matches_gen_type(&g.ty, target))
         .and_then(|g| g.amount.as_u16().copied())
 }
 
 fn find_gen_i16(gen_list: &[soundfont::raw::Generator], target: GeneratorType) -> Option<i16> {
-    gen_list.iter()
+    gen_list
+        .iter()
         .find(|g| matches_gen_type(&g.ty, target))
         .and_then(|g| g.amount.as_i16().copied())
 }

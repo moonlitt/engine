@@ -107,8 +107,11 @@ mod tests {
         for _ in 0..10000 {
             let output = d.process(input);
             // TPDF range is [-amplitude, +amplitude], amplitude = 1/2^23 ≈ 1.2e-7
-            assert!(output.abs() < 2.0 * d.amplitude,
-                "dither output {} exceeds expected range", output);
+            assert!(
+                output.abs() < 2.0 * d.amplitude,
+                "dither output {} exceeds expected range",
+                output
+            );
         }
     }
 

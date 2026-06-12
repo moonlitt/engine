@@ -44,18 +44,17 @@ pub(crate) fn emit(body: &str) {
     if !enabled() {
         return;
     }
-    eprintln!(
-        "[VST3] +{:.3}ms tid={} {body}",
-        elapsed_ms(),
-        thread_id()
-    );
+    eprintln!("[VST3] +{:.3}ms tid={} {body}", elapsed_ms(), thread_id());
 }
 
 /// Convert a 16-byte interface ID to a human name when known, otherwise hex.
 pub(crate) fn iid_name(iid: &[u8; 16]) -> String {
     // VST3 IIDs are stored as TUID (16 bytes). Common ones we care about:
     let known: &[(&str, [u8; 16])] = &[
-        ("IPluginBase", *b"\x22\x88\x83\x6F\xEE\xE6\x44\x9D\xB2\x4F\x14\x69\xB8\x8E\x46\x16"),
+        (
+            "IPluginBase",
+            *b"\x22\x88\x83\x6F\xEE\xE6\x44\x9D\xB2\x4F\x14\x69\xB8\x8E\x46\x16",
+        ),
         // The byte arrays below are placeholders — proper TUIDs would need
         // platform-aware byte ordering. We log raw hex always; iid_name
         // returns hex unless a recognized prefix matches.

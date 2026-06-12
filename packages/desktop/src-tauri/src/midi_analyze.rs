@@ -122,7 +122,10 @@ pub fn analyze(path: &str) -> Result<MidiInfo, String> {
         }
     }
 
-    let beats_per_bar = time_signature.map(|(n, _)| n as f64).unwrap_or(4.0).max(1.0);
+    let beats_per_bar = time_signature
+        .map(|(n, _)| n as f64)
+        .unwrap_or(4.0)
+        .max(1.0);
     let length_bars = if ticks_per_beat == 0 {
         0.0
     } else {

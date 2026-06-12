@@ -74,20 +74,16 @@ impl Metronome {
                 self.click_remaining = self.click_total_samples;
             }
             if self.click_remaining > 0 {
-                let elapsed_samples =
-                    self.click_total_samples - self.click_remaining;
+                let elapsed_samples = self.click_total_samples - self.click_remaining;
                 let t = elapsed_samples as f32 / self.sample_rate as f32;
-                let progress =
-                    elapsed_samples as f32 / self.click_total_samples as f32;
+                let progress = elapsed_samples as f32 / self.click_total_samples as f32;
                 // Exponential decay envelope — squared makes the tail
                 // softer than linear, closer to a real click than a beep.
                 let env = (1.0 - progress).powi(2);
                 // cos (not sin) so the first sample of the click is at
                 // peak amplitude — a real click has an abrupt onset, and
                 // sin(0) = 0 would emit a silent first sample.
-                let s = (std::f32::consts::TAU * CLICK_FREQ_HZ * t).cos()
-                    * env
-                    * CLICK_AMPLITUDE;
+                let s = (std::f32::consts::TAU * CLICK_FREQ_HZ * t).cos() * env * CLICK_AMPLITUDE;
                 left[i] += s;
                 right[i] += s;
                 self.click_remaining -= 1;

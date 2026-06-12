@@ -180,13 +180,7 @@ impl AudioBackend for Flanger {
     // -- Audio: generator render is a no-op (this is an effect) --
     fn render(&mut self, _left: &mut [f32], _right: &mut [f32]) {}
 
-    fn process_effect(
-        &mut self,
-        in_l: &[f32],
-        in_r: &[f32],
-        out_l: &mut [f32],
-        out_r: &mut [f32],
-    ) {
+    fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
         let len = in_l.len();
 
         // Bypass: bit-exact copy
@@ -216,8 +210,7 @@ impl AudioBackend for Flanger {
             let delayed_l = self.delay_line_l.read(delay_samples_l) as f64;
 
             let fb_sample_l =
-                flush_denormal(Self::soft_saturate(delayed_l * fb_abs) as f32) as f64
-                    * fb_sign;
+                flush_denormal(Self::soft_saturate(delayed_l * fb_abs) as f32) as f64 * fb_sign;
             self.delay_line_l
                 .write((in_l[n] as f64 + fb_sample_l) as f32);
 
@@ -228,8 +221,7 @@ impl AudioBackend for Flanger {
             let delayed_r = self.delay_line_r.read(delay_samples_r) as f64;
 
             let fb_sample_r =
-                flush_denormal(Self::soft_saturate(delayed_r * fb_abs) as f32) as f64
-                    * fb_sign;
+                flush_denormal(Self::soft_saturate(delayed_r * fb_abs) as f32) as f64 * fb_sign;
             self.delay_line_r
                 .write((in_r[n] as f64 + fb_sample_r) as f32);
 
@@ -642,7 +634,7 @@ mod tests {
         flanger_pos.set_param(2, 2.0); // 2 ms delay
         flanger_pos.set_param(3, 0.5); // positive feedback
         flanger_pos.set_param(6, 1.0); // 100% wet
-        // Jump smoothers
+                                       // Jump smoothers
         flanger_pos.rate_smoother.reset(0.05);
         flanger_pos.depth_smoother.reset(0.0);
         flanger_pos.delay_smoother.reset(2.0);
@@ -741,7 +733,11 @@ mod tests {
         let input: Vec<f32> = (0..num_samples)
             .map(|i| {
                 let phase = (i as f64 / sr as f64) * 100.0;
-                if phase.fract() < 0.5 { 0.9 } else { -0.9 }
+                if phase.fract() < 0.5 {
+                    0.9
+                } else {
+                    -0.9
+                }
             })
             .collect();
 
@@ -751,7 +747,7 @@ mod tests {
         flanger.set_param(2, 3.0); // delay
         flanger.set_param(3, 0.94); // near-max feedback
         flanger.set_param(6, 1.0); // 100% wet
-        // Jump smoothers
+                                   // Jump smoothers
         flanger.rate_smoother.reset(1.0);
         flanger.depth_smoother.reset(0.5);
         flanger.delay_smoother.reset(3.0);
@@ -791,7 +787,7 @@ mod tests {
         flanger.set_param(2, 2.0); // 2 ms delay
         flanger.set_param(3, 0.0); // zero feedback
         flanger.set_param(6, 1.0); // 100% wet
-        // Jump smoothers
+                                   // Jump smoothers
         flanger.rate_smoother.reset(0.05);
         flanger.depth_smoother.reset(0.0);
         flanger.delay_smoother.reset(2.0);
@@ -836,14 +832,14 @@ mod tests {
 
         for i in 0..11 {
             let info = flanger.param_info(i);
-            assert!(
-                info.is_some(),
-                "param_info({}) should return Some",
-                i
-            );
+            assert!(info.is_some(), "param_info({}) should return Some", i);
             let info = info.unwrap();
             assert_eq!(info.id, i);
-            assert!(!info.name.is_empty(), "param {} name should not be empty", i);
+            assert!(
+                !info.name.is_empty(),
+                "param {} name should not be empty",
+                i
+            );
             assert!(
                 !info.group.is_empty(),
                 "param {} group should not be empty",

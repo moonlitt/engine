@@ -6,10 +6,10 @@
 //!
 //! Zero tolerance: all assertions use machine epsilon.
 
-use moonlitt_effects::Compressor;
 use moonlitt_core::AudioBackend;
-use moonlitt_effects::{Band, BiquadCoeffs, FilterType, ParametricEq};
+use moonlitt_effects::Compressor;
 use moonlitt_effects::Reverb;
+use moonlitt_effects::{Band, BiquadCoeffs, FilterType, ParametricEq};
 use rustfft::{num_complex::Complex, FftPlanner};
 use std::f64::consts::PI;
 
@@ -65,10 +65,7 @@ fn power_spectrum(signal: &[f32]) -> Vec<f64> {
 
     fft.process(&mut buffer);
 
-    buffer[..n / 2]
-        .iter()
-        .map(|c| c.norm_sqr())
-        .collect()
+    buffer[..n / 2].iter().map(|c| c.norm_sqr()).collect()
 }
 
 /// Create a ParametricEq with bypass=true.

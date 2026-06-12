@@ -67,9 +67,7 @@ fn find_xml_attr(haystack: &[u8], tag: &[u8], attr: &[u8]) -> Option<String> {
     let attr_pos = find_subslice(local, &needle)?;
     let value_start = scan_from + attr_pos + needle.len();
     // End of attribute = first `"` after value_start.
-    let end_rel = haystack[value_start..]
-        .iter()
-        .position(|&b| b == b'"')?;
+    let end_rel = haystack[value_start..].iter().position(|&b| b == b'"')?;
     let value = &haystack[value_start..value_start + end_rel];
     Some(String::from_utf8_lossy(value).into_owned())
 }
@@ -94,9 +92,7 @@ mod tests {
             .and_then(|p| p.parent()) // desktop
             .and_then(|p| p.parent()) // packages
             .and_then(|p| p.parent()) // repo root
-            .map(|p| {
-                p.join("crates/moonlitt-vst3/tests/fixtures/keyscape-default.mlstate")
-            });
+            .map(|p| p.join("crates/moonlitt-vst3/tests/fixtures/keyscape-default.mlstate"));
         let Some(path) = path else {
             return;
         };

@@ -21,7 +21,15 @@ const PARAM_GAIN: u32 = 20;
 
 const SF2_PARAMS: &[(u32, &str, &str, f64, f64, f64, u32)] = &[
     (PARAM_REVERB_ON, "Reverb On", "Reverb", 0.0, 1.0, 1.0, 1),
-    (PARAM_REVERB_ROOMSIZE, "Room Size", "Reverb", 0.0, 1.2, 0.2, 0),
+    (
+        PARAM_REVERB_ROOMSIZE,
+        "Room Size",
+        "Reverb",
+        0.0,
+        1.2,
+        0.2,
+        0,
+    ),
     (PARAM_REVERB_DAMP, "Damping", "Reverb", 0.0, 1.0, 0.0, 0),
     (PARAM_REVERB_WIDTH, "Width", "Reverb", 0.0, 100.0, 0.5, 0),
     (PARAM_REVERB_LEVEL, "Level", "Reverb", 0.0, 1.0, 0.9, 0),
@@ -56,7 +64,10 @@ impl OxiSynthBackend {
     }
 
     /// Create from a pre-loaded SoundFont (cloned via Arc — no data copy).
-    pub fn new_with_font(sample_rate: u32, font: SoundFont) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new_with_font(
+        sample_rate: u32,
+        font: SoundFont,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let mut backend = Self::with_interpolation(sample_rate, InterpolationMethod::SeventhOrder)?;
         let id = backend.synth.add_font(font, true);
         backend.font_id = Some(id);
@@ -64,7 +75,10 @@ impl OxiSynthBackend {
         Ok(backend)
     }
 
-    fn with_interpolation(sample_rate: u32, interpolation: InterpolationMethod) -> Result<Self, Box<dyn std::error::Error>> {
+    fn with_interpolation(
+        sample_rate: u32,
+        interpolation: InterpolationMethod,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let synth = Synth::new(SynthDescriptor {
             sample_rate: sample_rate as f32,
             gain: 1.0,
@@ -84,8 +98,8 @@ impl OxiSynthBackend {
             font_id: None,
             reverb_on: true,
             chorus_on: true,
-            reverb_level_cache: 0.9,  // matches default in SF2_PARAMS
-            chorus_level_cache: 2.0,  // matches default in SF2_PARAMS
+            reverb_level_cache: 0.9, // matches default in SF2_PARAMS
+            chorus_level_cache: 2.0, // matches default in SF2_PARAMS
         })
     }
 }
@@ -102,10 +116,8 @@ impl AudioBackend for OxiSynthBackend {
     fn load(&mut self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
         self.unload();
 
-        let mut file = std::fs::File::open(path)
-            .map_err(|e| format!("failed to open sf2: {e}"))?;
-        let font = SoundFont::load(&mut file)
-            .map_err(|e| format!("failed to load sf2: {e}"))?;
+        let mut file = std::fs::File::open(path).map_err(|e| format!("failed to open sf2: {e}"))?;
+        let font = SoundFont::load(&mut file).map_err(|e| format!("failed to load sf2: {e}"))?;
 
         let id = self.synth.add_font(font, true);
         self.font_id = Some(id);
@@ -129,10 +141,9 @@ impl AudioBackend for OxiSynthBackend {
     }
 
     fn note_off(&mut self, channel: u8, note: u8) {
-        let _ = self.synth.send_event(MidiEvent::NoteOff {
-            channel,
-            key: note,
-        });
+        let _ = self
+            .synth
+            .send_event(MidiEvent::NoteOff { channel, key: note });
     }
 
     fn cc(&mut self, channel: u8, cc: u8, value: u8) {
@@ -163,11 +174,7 @@ impl AudioBackend for OxiSynthBackend {
     }
 
     fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
-        self.synth.write_f32(
-            left.len(),
-            left, 0, 1,
-            right, 0, 1,
-        );
+        self.synth.write_f32(left.len(), left, 0, 1, right, 0, 1);
     }
 
     fn set_volume(&mut self, volume: f32) {
@@ -195,7 +202,11 @@ impl AudioBackend for OxiSynthBackend {
             max: p.4,
             default: p.5,
             step_count: p.6,
-            flags: if p.6 > 0 { ParamFlags::STEPPED } else { ParamFlags::empty() },
+            flags: if p.6 > 0 {
+                ParamFlags::STEPPED
+            } else {
+                ParamFlags::empty()
+            },
         })
     }
 

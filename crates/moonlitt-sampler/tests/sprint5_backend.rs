@@ -21,10 +21,12 @@ fn has_sf2() -> bool {
 
 #[test]
 fn t1_backend_load() {
-    if !has_sf2() { return; }
+    if !has_sf2() {
+        return;
+    }
 
-    use moonlitt_engine::backends::sampler::SamplerBackend;
     use moonlitt_engine::backend::AudioBackend;
+    use moonlitt_engine::backends::sampler::SamplerBackend;
 
     let mut backend = SamplerBackend::new(SAMPLE_RATE).unwrap();
     backend.load(SF2_PATH).unwrap();
@@ -40,10 +42,12 @@ fn t1_backend_load() {
 
 #[test]
 fn t2_note_on_render() {
-    if !has_sf2() { return; }
+    if !has_sf2() {
+        return;
+    }
 
-    use moonlitt_engine::backends::sampler::SamplerBackend;
     use moonlitt_engine::backend::AudioBackend;
+    use moonlitt_engine::backends::sampler::SamplerBackend;
 
     let mut backend = SamplerBackend::new(SAMPLE_RATE).unwrap();
     backend.load(SF2_PATH).unwrap();
@@ -65,10 +69,12 @@ fn t2_note_on_render() {
 
 #[test]
 fn t3_program_change() {
-    if !has_sf2() { return; }
+    if !has_sf2() {
+        return;
+    }
 
-    use moonlitt_engine::backends::sampler::SamplerBackend;
     use moonlitt_engine::backend::AudioBackend;
+    use moonlitt_engine::backends::sampler::SamplerBackend;
 
     let mut backend = SamplerBackend::new(SAMPLE_RATE).unwrap();
     backend.load(SF2_PATH).unwrap();
@@ -96,10 +102,12 @@ fn t3_program_change() {
 
 #[test]
 fn t4_midi_methods_safe() {
-    if !has_sf2() { return; }
+    if !has_sf2() {
+        return;
+    }
 
-    use moonlitt_engine::backends::sampler::SamplerBackend;
     use moonlitt_engine::backend::AudioBackend;
+    use moonlitt_engine::backends::sampler::SamplerBackend;
 
     let mut backend = SamplerBackend::new(SAMPLE_RATE).unwrap();
     backend.load(SF2_PATH).unwrap();
@@ -108,7 +116,7 @@ fn t4_midi_methods_safe() {
     backend.note_on(0, 60, 100);
     backend.note_off(0, 60);
     backend.cc(0, 64, 127); // sustain
-    backend.cc(0, 7, 100);  // volume
+    backend.cc(0, 7, 100); // volume
     backend.pitch_bend(0, 0);
     backend.pitch_bend(0, 8191);
     backend.pitch_bend(0, -8192);
@@ -131,10 +139,12 @@ fn t4_midi_methods_safe() {
 
 #[test]
 fn t5_correct_pitch() {
-    if !has_sf2() { return; }
+    if !has_sf2() {
+        return;
+    }
 
-    use moonlitt_engine::backends::sampler::SamplerBackend;
     use moonlitt_engine::backend::AudioBackend;
+    use moonlitt_engine::backends::sampler::SamplerBackend;
     use rustfft::{num_complex::Complex, FftPlanner};
 
     let mut backend = SamplerBackend::new(SAMPLE_RATE).unwrap();
@@ -149,26 +159,47 @@ fn t5_correct_pitch() {
     // FFT with Hann window
     let mut planner = FftPlanner::<f64>::new();
     let fft = planner.plan_fft_forward(n);
-    let mut buffer: Vec<Complex<f64>> = left.iter().enumerate().map(|(i, &s)| {
-        let w = 0.5 * (1.0 - (2.0 * std::f64::consts::PI * i as f64 / n as f64).cos());
-        Complex::new(s as f64 * w, 0.0)
-    }).collect();
+    let mut buffer: Vec<Complex<f64>> = left
+        .iter()
+        .enumerate()
+        .map(|(i, &s)| {
+            let w = 0.5 * (1.0 - (2.0 * std::f64::consts::PI * i as f64 / n as f64).cos());
+            Complex::new(s as f64 * w, 0.0)
+        })
+        .collect();
     fft.process(&mut buffer);
 
-    let magnitudes: Vec<f64> = buffer[1..n/2].iter()
+    let magnitudes: Vec<f64> = buffer[1..n / 2]
+        .iter()
         .map(|c| (c.re * c.re + c.im * c.im).sqrt())
         .collect();
 
-    let peak_bin = magnitudes.iter().enumerate()
+    let peak_bin = magnitudes
+        .iter()
+        .enumerate()
         .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-        .unwrap().0 + 1;
+        .unwrap()
+        .0
+        + 1;
 
     // Parabolic interpolation
-    let alpha = if peak_bin > 1 { magnitudes[peak_bin - 2].ln() } else { 0.0 };
+    let alpha = if peak_bin > 1 {
+        magnitudes[peak_bin - 2].ln()
+    } else {
+        0.0
+    };
     let beta = magnitudes[peak_bin - 1].ln();
-    let gamma = if peak_bin < magnitudes.len() { magnitudes[peak_bin].ln() } else { 0.0 };
+    let gamma = if peak_bin < magnitudes.len() {
+        magnitudes[peak_bin].ln()
+    } else {
+        0.0
+    };
     let denom = alpha - 2.0 * beta + gamma;
-    let p = if denom.abs() > 1e-10 { 0.5 * (alpha - gamma) / denom } else { 0.0 };
+    let p = if denom.abs() > 1e-10 {
+        0.5 * (alpha - gamma) / denom
+    } else {
+        0.0
+    };
     let precise_freq = (peak_bin as f64 + p) * SAMPLE_RATE as f64 / n as f64;
 
     let expected = 261.626;
@@ -184,10 +215,12 @@ fn t5_correct_pitch() {
 
 #[test]
 fn t6_volume_control() {
-    if !has_sf2() { return; }
+    if !has_sf2() {
+        return;
+    }
 
-    use moonlitt_engine::backends::sampler::SamplerBackend;
     use moonlitt_engine::backend::AudioBackend;
+    use moonlitt_engine::backends::sampler::SamplerBackend;
 
     let mut backend = SamplerBackend::new(SAMPLE_RATE).unwrap();
     backend.load(SF2_PATH).unwrap();

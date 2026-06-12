@@ -92,13 +92,7 @@ impl AudioBackend for Gain {
     // -- Audio: generator render is a no-op (this is an effect) --
     fn render(&mut self, _left: &mut [f32], _right: &mut [f32]) {}
 
-    fn process_effect(
-        &mut self,
-        in_l: &[f32],
-        in_r: &[f32],
-        out_l: &mut [f32],
-        out_r: &mut [f32],
-    ) {
+    fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
         let len = in_l.len();
 
         // Bypass: bit-exact copy
@@ -326,7 +320,10 @@ mod tests {
                 assert!(
                     diff < 1e-6,
                     "0dB: sample {} differs by {} (in={}, out={})",
-                    i, diff, input[i], out_l[i]
+                    i,
+                    diff,
+                    input[i],
+                    out_l[i]
                 );
             }
         }
@@ -350,7 +347,10 @@ mod tests {
                 assert!(
                     diff < 1e-5,
                     "+6dB: sample {} differs by {} (expected={}, out={})",
-                    i, diff, expected, out_l[i]
+                    i,
+                    diff,
+                    expected,
+                    out_l[i]
                 );
             }
         }
@@ -374,7 +374,10 @@ mod tests {
                 assert!(
                     diff < 1e-5,
                     "-6dB: sample {} differs by {} (expected={}, out={})",
-                    i, diff, expected, out_l[i]
+                    i,
+                    diff,
+                    expected,
+                    out_l[i]
                 );
             }
         }
@@ -398,7 +401,9 @@ mod tests {
             assert!(
                 diff < 1e-6,
                 "polarity: sample {} not inverted (in={}, out={})",
-                i, input[i], out_l[i]
+                i,
+                input[i],
+                out_l[i]
             );
         }
     }
@@ -423,12 +428,14 @@ mod tests {
             assert!(
                 diff_l < 1e-6,
                 "mono L: sample {} expected 0.5, got {}",
-                i, out_l[i]
+                i,
+                out_l[i]
             );
             assert!(
                 diff_r < 1e-6,
                 "mono R: sample {} expected 0.5, got {}",
-                i, out_r[i]
+                i,
+                out_r[i]
             );
             // Both channels should be identical
             assert_eq!(
@@ -450,7 +457,11 @@ mod tests {
             assert!(info.is_some(), "param_info({}) should return Some", i);
             let info = info.unwrap();
             assert_eq!(info.id, i);
-            assert!(!info.name.is_empty(), "param {} name should not be empty", i);
+            assert!(
+                !info.name.is_empty(),
+                "param {} name should not be empty",
+                i
+            );
             assert!(
                 !info.group.is_empty(),
                 "param {} group should not be empty",

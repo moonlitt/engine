@@ -6,9 +6,8 @@
 //!
 //! Verifies the engine handles edge cases without crash, overflow, or state corruption.
 
-
-use moonlitt_core::AudioBackend;
 use moonlitt_audio_io::mixer::Mixer;
+use moonlitt_core::AudioBackend;
 use std::path::Path;
 use std::time::Instant;
 
@@ -120,9 +119,7 @@ fn b01_denormal_protection() {
     let dur_quiet = start_quiet.elapsed();
 
     let ratio = dur_quiet.as_secs_f64() / dur_normal.as_secs_f64();
-    eprintln!(
-        "b01: normal={dur_normal:?}, quiet={dur_quiet:?}, ratio={ratio:.2}x"
-    );
+    eprintln!("b01: normal={dur_normal:?}, quiet={dur_quiet:?}, ratio={ratio:.2}x");
     assert!(
         ratio < 3.0,
         "Near-silence render is {ratio:.2}x slower than normal — possible denormal CPU spike"
@@ -158,14 +155,8 @@ fn b02_overflow_protection() {
 
     // Verify no sample exceeds [-1.0, 1.0]
     for (i, (&l, &r)) in left.iter().zip(right.iter()).enumerate() {
-        assert!(
-            l.abs() <= 1.0,
-            "left[{i}] = {l} exceeds [-1, 1]"
-        );
-        assert!(
-            r.abs() <= 1.0,
-            "right[{i}] = {r} exceeds [-1, 1]"
-        );
+        assert!(l.abs() <= 1.0, "left[{i}] = {l} exceeds [-1, 1]");
+        assert!(r.abs() <= 1.0, "right[{i}] = {r} exceeds [-1, 1]");
     }
 
     // Verify we actually had loud input (signal exists)

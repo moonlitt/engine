@@ -180,7 +180,10 @@ fn make_effect(kind: &str, sr: u32) -> Option<(Box<dyn AudioBackend>, &'static s
         "tremolo" => (Box::new(fx::Tremolo::new(sr)), "Tremolo"),
         "saturator" => (Box::new(fx::Saturator::new(sr)), "Saturator"),
         "bitcrusher" => (Box::new(fx::Bitcrusher::new(sr)), "Bitcrusher"),
-        "multiband-compressor" => (Box::new(fx::MultibandCompressor::new(sr)), "Multiband Compressor"),
+        "multiband-compressor" => (
+            Box::new(fx::MultibandCompressor::new(sr)),
+            "Multiband Compressor",
+        ),
         "auto-filter" => (Box::new(fx::AutoFilter::new(sr)), "Auto Filter"),
         "pitch-shifter" => (Box::new(fx::PitchShifter::new(sr)), "Pitch Shifter"),
         "gain" => (Box::new(fx::Gain::new(sr)), "Gain"),
@@ -193,7 +196,9 @@ fn snapshot_params(backend: &dyn AudioBackend) -> Vec<ParamMeta> {
     let count = backend.param_count();
     let mut out = Vec::with_capacity(count as usize);
     for i in 0..count {
-        let Some(info) = backend.param_info(i) else { continue };
+        let Some(info) = backend.param_info(i) else {
+            continue;
+        };
         let value = backend.get_param(info.id).unwrap_or(info.default);
         out.push(ParamMeta {
             id: info.id,
@@ -491,7 +496,11 @@ impl Engine {
 
     // --- Per-channel overrides ---
 
-    pub fn set_channel_override(&self, channel: u8, path: &str) -> Result<ChannelOverrideState, String> {
+    pub fn set_channel_override(
+        &self,
+        channel: u8,
+        path: &str,
+    ) -> Result<ChannelOverrideState, String> {
         self.set_channel_override_with_state(channel, path, None)
     }
 
@@ -535,7 +544,11 @@ impl Engine {
                 rt.swap_track_backend(id, backend);
             }
             // Reborrow to apply path/name updates.
-            let existing = s.overrides.iter_mut().find(|o| o.channel == channel).unwrap();
+            let existing = s
+                .overrides
+                .iter_mut()
+                .find(|o| o.channel == channel)
+                .unwrap();
             existing.instrument_path = path.to_string();
             existing.instrument_name = instrument_name;
             existing.warm_up_blocks = warm_up_blocks;
@@ -646,15 +659,11 @@ impl Engine {
     /// Validates hex format loosely — must start with `#` and have 3, 6,
     /// or 8 hex digits. Bad input is rejected so we don't smuggle a
     /// CSS-injection string into rendered UI.
-    pub fn set_channel_color(
-        &self,
-        channel: u8,
-        color: Option<&str>,
-    ) -> Result<(), String> {
+    pub fn set_channel_color(&self, channel: u8, color: Option<&str>) -> Result<(), String> {
         if let Some(c) = color {
-            let body = c.strip_prefix('#').ok_or_else(|| {
-                format!("color must start with '#' (got {c:?})")
-            })?;
+            let body = c
+                .strip_prefix('#')
+                .ok_or_else(|| format!("color must start with '#' (got {c:?})"))?;
             let len_ok = matches!(body.len(), 3 | 6 | 8);
             let hex_ok = body.chars().all(|ch| ch.is_ascii_hexdigit());
             if !(len_ok && hex_ok) {
@@ -983,12 +992,11 @@ impl Engine {
             master_mask &= !(1u16 << o.channel);
         }
 
-        let encode_state =
-            |path: &Option<String>| -> Option<String> {
-                path.as_ref()
-                    .and_then(|p| plugin_states.get(p))
-                    .map(|b| BASE64.encode(b))
-            };
+        let encode_state = |path: &Option<String>| -> Option<String> {
+            path.as_ref()
+                .and_then(|p| plugin_states.get(p))
+                .map(|b| BASE64.encode(b))
+        };
 
         let mut tracks = vec![TrackState {
             id: 0,
@@ -1067,8 +1075,7 @@ impl Engine {
         // Clear existing overrides on the audio thread.
         {
             let mut s = self.inner.lock();
-            let override_ids: Vec<u32> =
-                s.overrides.iter().map(|o| o.native_track_id).collect();
+            let override_ids: Vec<u32> = s.overrides.iter().map(|o| o.native_track_id).collect();
             if let Some(rt) = s.runtime.as_mut() {
                 for id in &override_ids {
                     rt.remove_track(*id);
@@ -1219,7 +1226,9 @@ fn state_of(o: &Override) -> ChannelOverrideState {
 }
 
 fn sync_master_mask(s: &mut Inner) {
-    let Some(track_id) = s.master_track_id else { return };
+    let Some(track_id) = s.master_track_id else {
+        return;
+    };
     let Some(rt) = s.runtime.as_mut() else { return };
     let mut mask: u16 = 0xFFFF;
     for o in &s.overrides {
@@ -1370,7 +1379,8 @@ mod tests {
             s.overrides.push(o);
         }
 
-        eng.set_insert_bypass(2, 42, true).expect("set_insert_bypass");
+        eng.set_insert_bypass(2, 42, true)
+            .expect("set_insert_bypass");
         assert_eq!(eng.inner.lock().overrides[0].inserts[0].bypassed, true);
 
         eng.set_insert_bypass(2, 42, false).unwrap();
@@ -1383,7 +1393,10 @@ mod tests {
         eng.inner.lock().overrides.push(fake_override(0));
 
         eng.set_channel_color(0, Some("#4a90d9")).unwrap();
-        assert_eq!(eng.inner.lock().overrides[0].color.as_deref(), Some("#4a90d9"));
+        assert_eq!(
+            eng.inner.lock().overrides[0].color.as_deref(),
+            Some("#4a90d9")
+        );
 
         eng.set_channel_color(0, None).unwrap();
         assert!(eng.inner.lock().overrides[0].color.is_none());
@@ -1395,9 +1408,11 @@ mod tests {
         eng.inner.lock().overrides.push(fake_override(0));
 
         assert!(eng.set_channel_color(0, Some("4a90d9")).is_err()); // missing #
-        assert!(eng.set_channel_color(0, Some("#xyz")).is_err());    // bad hex
+        assert!(eng.set_channel_color(0, Some("#xyz")).is_err()); // bad hex
         assert!(eng.set_channel_color(0, Some("#12345")).is_err()); // bad length
-        assert!(eng.set_channel_color(0, Some("javascript:alert(1)")).is_err());
+        assert!(eng
+            .set_channel_color(0, Some("javascript:alert(1)"))
+            .is_err());
     }
 
     #[test]
@@ -1460,4 +1475,3 @@ mod tests {
         assert!((eng.inner.lock().master_volume_db + 3.5).abs() < 1e-9);
     }
 }
-

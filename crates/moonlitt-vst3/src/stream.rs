@@ -151,9 +151,9 @@ unsafe extern "system" fn ms_seek(
     let s = get_self(this);
     let data = &*s.data.get();
     let new_pos = match mode {
-        0 => pos as usize,                              // kIBSeekSet
-        1 => (s.position.get() as i64 + pos) as usize,  // kIBSeekCur
-        2 => (data.len() as i64 + pos) as usize,        // kIBSeekEnd
+        0 => pos as usize,                             // kIBSeekSet
+        1 => (s.position.get() as i64 + pos) as usize, // kIBSeekCur
+        2 => (data.len() as i64 + pos) as usize,       // kIBSeekEnd
         _ => return kResultFalse,
     };
     s.position.set(new_pos.min(data.len()));

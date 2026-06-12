@@ -206,9 +206,10 @@ pub fn poll_patch_name_updates() -> Vec<(String, Option<String>)> {
                 // `try_lock` ↔ "if the audio thread isn't using it
                 // right now". A miss is fine — patch picking is rare
                 // and we poll often.
-                entry.plugin.try_lock().and_then(|p| {
-                    p.get_state().ok().map(|b| (entry.path.clone(), b))
-                })
+                entry
+                    .plugin
+                    .try_lock()
+                    .and_then(|p| p.get_state().ok().map(|b| (entry.path.clone(), b)))
             })
             .collect()
     };
@@ -219,10 +220,7 @@ pub fn poll_patch_name_updates() -> Vec<(String, Option<String>)> {
             // Refresh stash so subsequent ⌘S and on-demand
             // `patch_name_for` lookups see the freshest value, not
             // just the one captured at GUI open.
-            put_in_stash(
-                path.clone(),
-                bytes,
-            );
+            put_in_stash(path.clone(), bytes);
             (path, parsed)
         })
         .collect()

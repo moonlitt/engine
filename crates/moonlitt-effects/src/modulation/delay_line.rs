@@ -86,10 +86,7 @@ impl SincTable {
             }
         }
 
-        Self {
-            table,
-            oversample,
-        }
+        Self { table, oversample }
     }
 }
 
@@ -118,8 +115,7 @@ impl FractionalDelayLine {
     /// - `sample_rate`: audio sample rate in Hz
     /// - `sinc_points`: kernel width (8 recommended)
     pub fn new(max_delay_ms: f64, sample_rate: u32, sinc_points: usize) -> Self {
-        let max_delay_samples =
-            (max_delay_ms * 0.001 * sample_rate as f64).ceil() as usize;
+        let max_delay_samples = (max_delay_ms * 0.001 * sample_rate as f64).ceil() as usize;
         // Buffer needs extra room for the sinc kernel
         let buffer_size = max_delay_samples + sinc_points + 1;
         let sinc_table = SincTable::new(sinc_points, 256);
@@ -158,8 +154,7 @@ impl FractionalDelayLine {
         let frac_idx = (frac * self.sinc_table.oversample as f64) as usize;
         let frac_idx = frac_idx.min(self.sinc_table.oversample - 1);
 
-        let kernel =
-            &self.sinc_table.table[frac_idx * self.num_points..][..self.num_points];
+        let kernel = &self.sinc_table.table[frac_idx * self.num_points..][..self.num_points];
         let half = self.num_points / 2;
         let buf_len = self.buffer.len();
 
@@ -169,20 +164,15 @@ impl FractionalDelayLine {
         //
         // For ascending SIMD loads, we read from start = pos(num_points-1)
         // upward: buf[start..start+num_points], paired with the kernel reversed.
-        let base_raw =
-            self.write_pos + buf_len - 1 - delay_int + half - 1;
+        let base_raw = self.write_pos + buf_len - 1 - delay_int + half - 1;
         // start = pos of oldest tap (j = num_points - 1)
         let start = (base_raw + buf_len - (self.num_points - 1)) % buf_len;
 
         // SIMD fast path: 8 taps = 2 × f32x4 when reads are contiguous
         if self.num_points == 8 && start + 8 <= buf_len {
             // Load 8 buffer samples ascending
-            let s0 = f32x4::new(
-                self.buffer[start..start + 4].try_into().unwrap(),
-            );
-            let s1 = f32x4::new(
-                self.buffer[start + 4..start + 8].try_into().unwrap(),
-            );
+            let s0 = f32x4::new(self.buffer[start..start + 4].try_into().unwrap());
+            let s1 = f32x4::new(self.buffer[start + 4..start + 8].try_into().unwrap());
             // Load kernel reversed (ascending buffer ↔ descending kernel)
             let k0 = f32x4::new([kernel[7], kernel[6], kernel[5], kernel[4]]);
             let k1 = f32x4::new([kernel[3], kernel[2], kernel[1], kernel[0]]);
@@ -213,15 +203,13 @@ impl FractionalDelayLine {
         let frac_idx = (frac * self.sinc_table.oversample as f64) as usize;
         let frac_idx = frac_idx.min(self.sinc_table.oversample - 1);
 
-        let kernel =
-            &self.sinc_table.table[frac_idx * self.num_points..][..self.num_points];
+        let kernel = &self.sinc_table.table[frac_idx * self.num_points..][..self.num_points];
         let half = self.num_points / 2;
         let buf_len = self.buffer.len();
 
         let mut sum = 0.0f32;
         for (j, &k) in kernel.iter().enumerate() {
-            let pos =
-                (self.write_pos + buf_len - 1 - delay_int + half - 1 - j) % buf_len;
+            let pos = (self.write_pos + buf_len - 1 - delay_int + half - 1 - j) % buf_len;
             sum += self.buffer[pos] * k;
         }
         sum
@@ -323,19 +311,16 @@ mod tests {
         let mut linear_error = 0.0f64;
 
         for i in 0..num_samples {
-            let sample =
-                (2.0 * std::f64::consts::PI * freq * i as f64 / sr as f64).sin() as f32;
+            let sample = (2.0 * std::f64::consts::PI * freq * i as f64 / sr as f64).sin() as f32;
             dl_sinc.write(sample);
             dl_lin.write(sample);
 
             if i >= delay_frac as usize + 10 {
-                let expected = (2.0 * std::f64::consts::PI * freq
-                    * (i as f64 - delay_frac)
+                let expected = (2.0 * std::f64::consts::PI * freq * (i as f64 - delay_frac)
                     / sr as f64)
                     .sin() as f32;
                 sinc_error += (dl_sinc.read(delay_frac) - expected).powi(2) as f64;
-                linear_error +=
-                    (dl_lin.read_linear(delay_frac) - expected).powi(2) as f64;
+                linear_error += (dl_lin.read_linear(delay_frac) - expected).powi(2) as f64;
             }
         }
         assert!(
@@ -355,10 +340,7 @@ mod tests {
     #[test]
     fn max_delay_correct() {
         let dl = FractionalDelayLine::new(10.0, 44100, 8);
-        assert!(
-            dl.max_delay_samples() >= 441,
-            "10ms @ 44100 = 441 samples"
-        );
+        assert!(dl.max_delay_samples() >= 441, "10ms @ 44100 = 441 samples");
     }
 
     #[test]
@@ -380,8 +362,8 @@ mod tests {
         // Test various fractional delays, including values that exercise
         // different fractional LUT indices and positions near buffer wrap
         let test_delays = [
-            0.0, 0.5, 1.0, 1.3, 5.7, 10.0, 10.5, 20.3, 50.0, 99.9,
-            200.0, 441.0, 441.5, 442.0, 442.7,
+            0.0, 0.5, 1.0, 1.3, 5.7, 10.0, 10.5, 20.3, 50.0, 99.9, 200.0, 441.0, 441.5, 442.0,
+            442.7,
         ];
 
         for &delay in &test_delays {

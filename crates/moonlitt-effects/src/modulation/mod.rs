@@ -1,5 +1,5 @@
-pub mod lfo;
 pub mod delay_line;
+pub mod lfo;
 
 #[cfg(feature = "delay")]
 pub mod delay;

@@ -15,10 +15,9 @@
 //! 12. Insert chain audio flow (add/remove/bypass)
 //! 13. Soft limiter THD
 
-
+use moonlitt_audio_io::mixer::{Mixer, OutputTarget};
 use moonlitt_core::AudioBackend;
 use moonlitt_effects::Reverb;
-use moonlitt_audio_io::mixer::{Mixer, OutputTarget};
 use std::path::Path;
 
 const SF2_PATH: &str = "/Users/wangyan/Desktop/stardew valley mods/mods/piano-block/assets/soundfonts/GeneralUser_GS.sf2";
@@ -115,7 +114,10 @@ fn q01_sf2_24bit_precision() {
 
     let pk = peak(&left).max(peak(&right));
     eprintln!("q01: SF2 render peak = {pk:.6}");
-    assert!(pk > 0.001, "SF2 should produce audible signal, got peak={pk}");
+    assert!(
+        pk > 0.001,
+        "SF2 should produce audible signal, got peak={pk}"
+    );
 }
 
 // =============================================================================
@@ -157,10 +159,19 @@ fn q03_group_track_routing_with_insert() {
     let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
 
     // Track 0 and Track 1 are source tracks (no-backend engines = silence)
-    let t0 = mixer.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0001);
-    let t1 = mixer.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0002);
+    let t0 = mixer.add_track(
+        Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>,
+        0x0001,
+    );
+    let t1 = mixer.add_track(
+        Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>,
+        0x0002,
+    );
     // Group track
-    let group = mixer.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0000);
+    let group = mixer.add_track(
+        Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>,
+        0x0000,
+    );
 
     // Route t0 and t1 to group
     assert!(mixer.set_track_output(t0, OutputTarget::Group(group)));
@@ -176,7 +187,12 @@ fn q03_group_track_routing_with_insert() {
     );
 
     // Add a "mute" insert on the group (no-backend engine zeros output via process_effect)
-    let insert_id = mixer.add_insert(group, Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>).unwrap();
+    let insert_id = mixer
+        .add_insert(
+            group,
+            Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>,
+        )
+        .unwrap();
     let (left2, right2) = render_blocks(&mut mixer, 4);
     let pk_with_insert = peak(&left2).max(peak(&right2));
     eprintln!("q03: With mute insert on group, peak = {pk_with_insert:.6}");
@@ -186,9 +202,18 @@ fn q03_group_track_routing_with_insert() {
     );
 
     // Verify the group routing structure is correct
-    assert_eq!(mixer.track(t0).unwrap().output_target, OutputTarget::Group(group));
-    assert_eq!(mixer.track(t1).unwrap().output_target, OutputTarget::Group(group));
-    assert_eq!(mixer.track(group).unwrap().output_target, OutputTarget::Master);
+    assert_eq!(
+        mixer.track(t0).unwrap().output_target,
+        OutputTarget::Group(group)
+    );
+    assert_eq!(
+        mixer.track(t1).unwrap().output_target,
+        OutputTarget::Group(group)
+    );
+    assert_eq!(
+        mixer.track(group).unwrap().output_target,
+        OutputTarget::Master
+    );
 
     // Remove insert — verify no crash
     mixer.remove_insert(group, insert_id);
@@ -206,12 +231,30 @@ fn q04_nested_group_routing() {
     let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
 
     // Create 3 source tracks and 3 groups: chain is source -> groupA -> groupB -> groupC -> master
-    let src0 = mixer.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0001);
-    let src1 = mixer.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0002);
-    let src2 = mixer.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0004);
-    let group_a = mixer.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0000);
-    let group_b = mixer.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0000);
-    let group_c = mixer.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0000);
+    let src0 = mixer.add_track(
+        Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>,
+        0x0001,
+    );
+    let src1 = mixer.add_track(
+        Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>,
+        0x0002,
+    );
+    let src2 = mixer.add_track(
+        Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>,
+        0x0004,
+    );
+    let group_a = mixer.add_track(
+        Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>,
+        0x0000,
+    );
+    let group_b = mixer.add_track(
+        Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>,
+        0x0000,
+    );
+    let group_c = mixer.add_track(
+        Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>,
+        0x0000,
+    );
 
     // src0 -> groupA -> groupB -> groupC -> master
     assert!(mixer.set_track_output(src0, OutputTarget::Group(group_a)));
@@ -232,7 +275,10 @@ fn q04_nested_group_routing() {
     let (left, right) = render_blocks(&mut mixer, 8);
     assert_no_nan_inf(&left, "left");
     assert_no_nan_inf(&right, "right");
-    eprintln!("q04: Nested group routing rendered {} samples without crash", left.len());
+    eprintln!(
+        "q04: Nested group routing rendered {} samples without crash",
+        left.len()
+    );
 }
 
 // =============================================================================
@@ -244,24 +290,35 @@ fn q05_pdc_multi_latency_alignment() {
     let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
 
     // Two tracks, no inserts (0 latency each)
-    let t0 = mixer.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0001);
-    let t1 = mixer.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0002);
+    let t0 = mixer.add_track(
+        Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>,
+        0x0001,
+    );
+    let t1 = mixer.add_track(
+        Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>,
+        0x0002,
+    );
 
     // No inserts => no latency => recalculate_pdc should not add any delay
     mixer.recalculate_pdc();
 
     // Verify zero compensation
     assert_eq!(
-        mixer.track(t0).unwrap().inserts.len(), 0,
+        mixer.track(t0).unwrap().inserts.len(),
+        0,
         "t0 should have no inserts"
     );
     assert_eq!(
-        mixer.track(t1).unwrap().inserts.len(), 0,
+        mixer.track(t1).unwrap().inserts.len(),
+        0,
         "t1 should have no inserts"
     );
 
     // Add insert (no-backend engine reports 0 latency) — PDC still 0
-    mixer.add_insert(t0, Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>);
+    mixer.add_insert(
+        t0,
+        Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>,
+    );
     mixer.recalculate_pdc();
 
     // Both tracks should still have 0 compensation (both report 0 latency)
@@ -330,7 +387,10 @@ fn q06_session_restore_complete_state() {
         "Track pan should be -0.3, got {}",
         restored_mixer.tracks()[0].pan
     );
-    assert!(!restored_mixer.tracks()[0].mute, "Track should not be muted");
+    assert!(
+        !restored_mixer.tracks()[0].mute,
+        "Track should not be muted"
+    );
     assert!(restored_mixer.tracks()[0].solo, "Track should be soloed");
     assert_eq!(restored_mixer.tracks()[0].channel_mask, 0x0001);
     assert_eq!(restored_mixer.sample_rate(), SAMPLE_RATE);
@@ -383,7 +443,9 @@ fn q07_tpdf_dither_spectral_flatness() {
     let min_db = db_powers.iter().cloned().fold(f64::INFINITY, f64::min);
     let variation = max_db - min_db;
 
-    eprintln!("q07: Dither spectral variation = {variation:.2} dB (max={max_db:.2}, min={min_db:.2})");
+    eprintln!(
+        "q07: Dither spectral variation = {variation:.2} dB (max={max_db:.2}, min={min_db:.2})"
+    );
     for (i, db) in db_powers.iter().enumerate() {
         eprintln!("  Band {i}: {db:.2} dB");
     }
@@ -531,10 +593,7 @@ fn q10_sf2_velocity_attenuation() {
 
     eprintln!("q10: vel=32 peak={peak_soft:.6}, vel=127 peak={peak_loud:.6}");
 
-    assert!(
-        peak_soft > 0.0,
-        "vel=32 should still produce signal"
-    );
+    assert!(peak_soft > 0.0, "vel=32 should still produce signal");
     assert!(
         peak_loud > peak_soft,
         "vel=127 (peak={peak_loud:.6}) should be louder than vel=32 (peak={peak_soft:.6})"
@@ -592,7 +651,8 @@ fn q11_sf2_filter_spectrum() {
 
     // The peak energy should be near the fundamental (within +/- a few harmonics)
     // Allow generous tolerance since piano sounds have strong harmonics
-    let fund_power: f64 = spectrum[expected_bin.saturating_sub(3)..=(expected_bin + 3).min(spectrum.len() - 1)]
+    let fund_power: f64 = spectrum
+        [expected_bin.saturating_sub(3)..=(expected_bin + 3).min(spectrum.len() - 1)]
         .iter()
         .sum();
     let total_power: f64 = spectrum.iter().sum();
@@ -618,7 +678,12 @@ fn q12_insert_chain_audio_flow() {
     let t0 = mixer.add_track(engine, 0xFFFF);
 
     // No-backend engine = silence source. Add insert (also no-backend, zeros via process_effect)
-    let insert_id = mixer.add_insert(t0, Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>).unwrap();
+    let insert_id = mixer
+        .add_insert(
+            t0,
+            Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>,
+        )
+        .unwrap();
 
     // With insert: output should be silence (source is silence, insert zeros it too)
     let (left, right) = render_blocks(&mut mixer, 4);
@@ -630,7 +695,10 @@ fn q12_insert_chain_audio_flow() {
     let (left2, right2) = render_blocks(&mut mixer, 4);
     let pk2 = peak(&left2).max(peak(&right2));
     // With bypass, source is still silence (no backend), so still silent
-    assert!(pk2 < 1e-6, "Bypassed insert with silent source should be silent");
+    assert!(
+        pk2 < 1e-6,
+        "Bypassed insert with silent source should be silent"
+    );
 
     // Un-bypass
     mixer.set_insert_bypass(t0, insert_id, false);
@@ -645,7 +713,11 @@ fn q12_insert_chain_audio_flow() {
     let (left4, right4) = render_blocks(&mut mixer, 4);
     assert_no_nan_inf(&left4, "left after remove");
     assert_no_nan_inf(&right4, "right after remove");
-    assert_eq!(mixer.track(t0).unwrap().inserts.len(), 0, "No inserts remaining");
+    assert_eq!(
+        mixer.track(t0).unwrap().inserts.len(),
+        0,
+        "No inserts remaining"
+    );
 
     // Now test with real SF2 if available — insert should zero the audio
     if let Some(sf2_engine) = load_sf2_engine() {
@@ -659,7 +731,12 @@ fn q12_insert_chain_audio_flow() {
         eprintln!("q12: SF2 without insert, peak = {pk_no_insert:.6}");
 
         // Add no-backend insert — should zero the signal
-        let ins2 = mixer2.add_insert(t1, Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>).unwrap();
+        let ins2 = mixer2
+            .add_insert(
+                t1,
+                Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>,
+            )
+            .unwrap();
         // Need to retrigger note since the previous renders consumed it
         mixer2.note_on(0, 60, 127);
         let (left_with_insert, _) = render_blocks(&mut mixer2, 32);
@@ -729,7 +806,8 @@ fn q13_soft_limiter_thd() {
         );
 
         // Above threshold: crank volume to push signal past threshold
-        let engine_loud = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
+        let engine_loud =
+            moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
         let mut mixer_hot = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
         mixer_hot.master_mut().limiter_threshold = 0.95;
         mixer_hot.set_master_volume(10.0); // extreme volume
@@ -768,7 +846,9 @@ fn q13_soft_limiter_thd() {
 fn rms_dbfs(buf: &[f32]) -> f64 {
     let sum_sq: f64 = buf.iter().map(|&s| (s as f64) * (s as f64)).sum();
     let rms = (sum_sq / buf.len() as f64).sqrt();
-    if rms < 1e-10 { return -100.0; }
+    if rms < 1e-10 {
+        return -100.0;
+    }
     20.0 * rms.log10()
 }
 
@@ -777,29 +857,40 @@ fn rms_dbfs(buf: &[f32]) -> f64 {
 fn q14_db_to_linear_precision() {
     // +6dB = 10^(6/20) = exactly 1.99526231...
     let gain_6db = 10f64.powf(6.0 / 20.0);
-    assert!((gain_6db - 1.99526231496888).abs() < 1e-10,
-        "+6dB should be 1.99526231, got {gain_6db}");
+    assert!(
+        (gain_6db - 1.99526231496888).abs() < 1e-10,
+        "+6dB should be 1.99526231, got {gain_6db}"
+    );
 
     // -6dB = 10^(-6/20) = exactly 0.50118723...
     let gain_neg6db = 10f64.powf(-6.0 / 20.0);
-    assert!((gain_neg6db - 0.50118723362727).abs() < 1e-10,
-        "-6dB should be 0.50118723, got {gain_neg6db}");
+    assert!(
+        (gain_neg6db - 0.50118723362727).abs() < 1e-10,
+        "-6dB should be 0.50118723, got {gain_neg6db}"
+    );
 
     // 0dB = exactly 1.0
     let gain_0db = 10f64.powf(0.0 / 20.0);
-    assert!((gain_0db - 1.0).abs() < 1e-15, "0dB should be 1.0, got {gain_0db}");
+    assert!(
+        (gain_0db - 1.0).abs() < 1e-15,
+        "0dB should be 1.0, got {gain_0db}"
+    );
 
     // -18dB (target level)
     let gain_neg18db = 10f64.powf(-18.0 / 20.0);
-    assert!((gain_neg18db - 0.12589254117942).abs() < 1e-10,
-        "-18dB should be 0.12589254, got {gain_neg18db}");
+    assert!(
+        (gain_neg18db - 0.12589254117942).abs() < 1e-10,
+        "-18dB should be 0.12589254, got {gain_neg18db}"
+    );
 
     // Roundtrip: linear → dB → linear
     let original = 0.7f64;
     let db = 20.0 * original.log10();
     let recovered = 10f64.powf(db / 20.0);
-    assert!((recovered - original).abs() < 1e-14,
-        "dB roundtrip failed: {original} → {db}dB → {recovered}");
+    assert!(
+        (recovered - original).abs() < 1e-14,
+        "dB roundtrip failed: {original} → {db}dB → {recovered}"
+    );
 }
 
 /// Q15: RMS calculation on known signals (zero tolerance)
@@ -808,29 +899,38 @@ fn q15_rms_known_signals() {
     // Constant signal 0.5: RMS = 0.5 = -6.02dBFS
     let constant: Vec<f32> = vec![0.5; 44100];
     let rms = rms_dbfs(&constant);
-    assert!((rms - (-6.0206)).abs() < 0.001,
-        "RMS of 0.5 constant should be -6.02dBFS, got {rms:.4}");
+    assert!(
+        (rms - (-6.0206)).abs() < 0.001,
+        "RMS of 0.5 constant should be -6.02dBFS, got {rms:.4}"
+    );
 
     // Full-scale sine: RMS = 1/sqrt(2) = -3.01dBFS
     let sine: Vec<f32> = (0..44100)
         .map(|i| (2.0 * std::f64::consts::PI * 1000.0 * i as f64 / 44100.0).sin() as f32)
         .collect();
     let rms_sine = rms_dbfs(&sine);
-    assert!((rms_sine - (-3.0103)).abs() < 0.01,
-        "RMS of full-scale sine should be -3.01dBFS, got {rms_sine:.4}");
+    assert!(
+        (rms_sine - (-3.0103)).abs() < 0.01,
+        "RMS of full-scale sine should be -3.01dBFS, got {rms_sine:.4}"
+    );
 
     // Silence: should return -100 (floor)
     let silence: Vec<f32> = vec![0.0; 44100];
     let rms_silent = rms_dbfs(&silence);
-    assert!(rms_silent <= -100.0, "Silence RMS should be <= -100dBFS, got {rms_silent}");
+    assert!(
+        rms_silent <= -100.0,
+        "Silence RMS should be <= -100dBFS, got {rms_silent}"
+    );
 
     // Half-scale sine: RMS = 0.5/sqrt(2) = -9.03dBFS
     let half_sine: Vec<f32> = (0..44100)
         .map(|i| (0.5 * (2.0 * std::f64::consts::PI * 1000.0 * i as f64 / 44100.0).sin()) as f32)
         .collect();
     let rms_half = rms_dbfs(&half_sine);
-    assert!((rms_half - (-9.0309)).abs() < 0.01,
-        "RMS of 0.5 sine should be -9.03dBFS, got {rms_half:.4}");
+    assert!(
+        (rms_half - (-9.0309)).abs() < 0.01,
+        "RMS of 0.5 sine should be -9.03dBFS, got {rms_half:.4}"
+    );
 }
 
 /// Q16: Gain calibration offset math (zero tolerance)
@@ -841,25 +941,41 @@ fn q16_gain_calibration_math() {
     // If measured -22dBFS, need +4dB boost
     let measured1 = -22.0;
     let offset1 = target - measured1;
-    assert!((offset1 - 4.0).abs() < 1e-10, "Offset should be +4.0, got {offset1}");
+    assert!(
+        (offset1 - 4.0).abs() < 1e-10,
+        "Offset should be +4.0, got {offset1}"
+    );
     let linear1 = 10f64.powf(offset1 / 20.0);
-    assert!((linear1 - 1.58489319246111).abs() < 1e-10,
-        "+4dB linear should be 1.58489, got {linear1}");
+    assert!(
+        (linear1 - 1.58489319246111).abs() < 1e-10,
+        "+4dB linear should be 1.58489, got {linear1}"
+    );
 
     // If measured -12dBFS, need -6dB cut
     let measured2 = -12.0;
     let offset2 = target - measured2;
-    assert!((offset2 - (-6.0)).abs() < 1e-10, "Offset should be -6.0, got {offset2}");
+    assert!(
+        (offset2 - (-6.0)).abs() < 1e-10,
+        "Offset should be -6.0, got {offset2}"
+    );
     let linear2 = 10f64.powf(offset2 / 20.0);
-    assert!((linear2 - 0.50118723362727).abs() < 1e-10,
-        "-6dB linear should be 0.50119, got {linear2}");
+    assert!(
+        (linear2 - 0.50118723362727).abs() < 1e-10,
+        "-6dB linear should be 0.50119, got {linear2}"
+    );
 
     // If measured exactly -18dBFS, offset is 0, gain is 1.0
     let measured3 = -18.0;
     let offset3 = target - measured3;
-    assert!((offset3).abs() < 1e-10, "Offset should be 0.0, got {offset3}");
+    assert!(
+        (offset3).abs() < 1e-10,
+        "Offset should be 0.0, got {offset3}"
+    );
     let linear3 = 10f64.powf(offset3 / 20.0);
-    assert!((linear3 - 1.0).abs() < 1e-10, "0dB linear should be 1.0, got {linear3}");
+    assert!(
+        (linear3 - 1.0).abs() < 1e-10,
+        "0dB linear should be 1.0, got {linear3}"
+    );
 }
 
 /// Q17: CC7 to volume mapping (MIDI standard)
@@ -873,13 +989,17 @@ fn q17_cc7_volume_mapping() {
 
     // CC7=120 → 0.94488...
     let cc120: f64 = 120.0 / 127.0;
-    assert!((cc120 - 0.94488188976378).abs() < 1e-10,
-        "CC7=120 should be 0.94488, got {cc120}");
+    assert!(
+        (cc120 - 0.94488188976378).abs() < 1e-10,
+        "CC7=120 should be 0.94488, got {cc120}"
+    );
 
     // CC7=64 → 0.50393... (center)
     let cc64: f64 = 64.0 / 127.0;
-    assert!((cc64 - 0.50393700787402).abs() < 1e-10,
-        "CC7=64 should be 0.50394, got {cc64}");
+    assert!(
+        (cc64 - 0.50393700787402).abs() < 1e-10,
+        "CC7=64 should be 0.50394, got {cc64}"
+    );
 
     // Verify CC7 value roundtrip: float → CC → float
     for cc in 0..=127 {
@@ -896,7 +1016,10 @@ fn q18_trim_actual_render() {
     let mut mixer = Mixer::new(SAMPLE_RATE, 64);
     let engine = match load_sf2_engine() {
         Some(e) => e,
-        None => { eprintln!("q18: SF2 not found, skipping"); return; }
+        None => {
+            eprintln!("q18: SF2 not found, skipping");
+            return;
+        }
     };
     let id = mixer.add_track(engine, 0xFFFF);
 
@@ -930,23 +1053,33 @@ fn q19_send_level_routing() {
     let signal = 0.8f32;
     let send_level = 0.5f32;
     let sent = signal * send_level;
-    assert!((sent - 0.4).abs() < 1e-6, "0.8 * 0.5 should be 0.4, got {sent}");
+    assert!(
+        (sent - 0.4).abs() < 1e-6,
+        "0.8 * 0.5 should be 0.4, got {sent}"
+    );
 
     // send_level=0.0 means nothing sent
     assert!((signal * 0.0f32).abs() < 1e-10, "send=0 should produce 0");
 
     // send_level=1.0 means full signal
-    assert!((signal * 1.0f32 - signal).abs() < 1e-10, "send=1 should produce full signal");
+    assert!(
+        (signal * 1.0f32 - signal).abs() < 1e-10,
+        "send=1 should produce full signal"
+    );
 
     // Verify multiple tracks summing into send bus (additive)
     let track_outputs = [0.3f32, 0.5, 0.2, 0.1];
     let send_levels = [0.2f32, 0.1, 0.3, 0.0];
-    let bus_sum: f32 = track_outputs.iter().zip(send_levels.iter())
+    let bus_sum: f32 = track_outputs
+        .iter()
+        .zip(send_levels.iter())
         .map(|(sig, send)| sig * send)
         .sum();
     let expected = 0.3 * 0.2 + 0.5 * 0.1 + 0.2 * 0.3 + 0.1 * 0.0;
-    assert!((bus_sum - expected).abs() < 1e-6,
-        "Bus sum should be {expected}, got {bus_sum}");
+    assert!(
+        (bus_sum - expected).abs() < 1e-6,
+        "Bus sum should be {expected}, got {bus_sum}"
+    );
 }
 
 // =============================================================================
@@ -959,7 +1092,10 @@ fn q20_volume_fader_accuracy() {
     let mut mixer = Mixer::new(SAMPLE_RATE, 64);
     let engine = match load_sf2_engine() {
         Some(e) => e,
-        None => { eprintln!("q20: SF2 not found, skipping"); return; }
+        None => {
+            eprintln!("q20: SF2 not found, skipping");
+            return;
+        }
     };
     let id = mixer.add_track(engine, 0xFFFF);
 
@@ -979,8 +1115,10 @@ fn q20_volume_fader_accuracy() {
 
     let delta = rms_full - rms_half;
     // 0.5 linear = -6.02dBFS
-    assert!((delta - 6.02).abs() < 0.2,
-        "Fader 0.5 should reduce by ~6dB, got delta={delta:.3}dB");
+    assert!(
+        (delta - 6.02).abs() < 0.2,
+        "Fader 0.5 should reduce by ~6dB, got delta={delta:.3}dB"
+    );
 }
 
 /// Q21: Gain calibration end-to-end — measure, compensate, verify at -18dBFS
@@ -988,7 +1126,10 @@ fn q20_volume_fader_accuracy() {
 fn q21_gain_calibration_e2e() {
     let engine = match load_sf2_engine() {
         Some(e) => e,
-        None => { eprintln!("q21: SF2 not found, skipping"); return; }
+        None => {
+            eprintln!("q21: SF2 not found, skipping");
+            return;
+        }
     };
 
     // Step 1: Measure RMS of reference tone (C4, piano, 1s)
@@ -1037,8 +1178,10 @@ fn q21_gain_calibration_e2e() {
     let calibrated_rms = rms_dbfs(&calibrated_left);
 
     // After calibration, RMS should be within ±0.5dB of -18dBFS
-    assert!((calibrated_rms - target).abs() < 0.5,
-        "After calibration, RMS should be -18±0.5dBFS, got {calibrated_rms:.2}dBFS");
+    assert!(
+        (calibrated_rms - target).abs() < 0.5,
+        "After calibration, RMS should be -18±0.5dBFS, got {calibrated_rms:.2}dBFS"
+    );
 }
 
 /// Q22: Reverb send bus — signal goes through reverb and returns to master
@@ -1047,7 +1190,10 @@ fn q22_reverb_send_routing() {
     let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
     let engine = match load_sf2_engine() {
         Some(e) => e,
-        None => { eprintln!("q22: SF2 not found, skipping"); return; }
+        None => {
+            eprintln!("q22: SF2 not found, skipping");
+            return;
+        }
     };
     let track_id = mixer.add_track(engine, 0xFFFF);
 
@@ -1060,15 +1206,31 @@ fn q22_reverb_send_routing() {
 
     // Render WITHOUT send (send=0) — baseline (dry only)
     mixer.track_mut(track_id).unwrap().send_levels = vec![0.0];
-    mixer.track_mut(track_id).unwrap().backend.program_change(0, 0);
-    mixer.track_mut(track_id).unwrap().backend.note_on(0, 60, 100);
+    mixer
+        .track_mut(track_id)
+        .unwrap()
+        .backend
+        .program_change(0, 0);
+    mixer
+        .track_mut(track_id)
+        .unwrap()
+        .backend
+        .note_on(0, 60, 100);
     let (dry_left, _) = render_blocks(&mut mixer, 8);
 
     // Reset and render WITH send (send=0.3) — dry + reverb
     mixer.track_mut(track_id).unwrap().backend.all_notes_off();
     mixer.track_mut(track_id).unwrap().send_levels = vec![0.3];
-    mixer.track_mut(track_id).unwrap().backend.program_change(0, 0);
-    mixer.track_mut(track_id).unwrap().backend.note_on(0, 60, 100);
+    mixer
+        .track_mut(track_id)
+        .unwrap()
+        .backend
+        .program_change(0, 0);
+    mixer
+        .track_mut(track_id)
+        .unwrap()
+        .backend
+        .note_on(0, 60, 100);
     let (wet_left, _) = render_blocks(&mut mixer, 8);
 
     // With reverb send, output should be DIFFERENT from dry-only
@@ -1076,13 +1238,17 @@ fn q22_reverb_send_routing() {
     let dry_energy: f64 = dry_left.iter().map(|&s| (s as f64).powi(2)).sum();
     let wet_energy: f64 = wet_left.iter().map(|&s| (s as f64).powi(2)).sum();
 
-    assert!(wet_energy > dry_energy,
-        "Reverb send should add energy: dry={dry_energy:.4}, wet={wet_energy:.4}");
+    assert!(
+        wet_energy > dry_energy,
+        "Reverb send should add energy: dry={dry_energy:.4}, wet={wet_energy:.4}"
+    );
 
     // The difference should be meaningful (not just noise)
     let ratio = wet_energy / dry_energy;
-    assert!(ratio > 1.001,
-        "Reverb contribution should be measurable, ratio={ratio:.6}");
+    assert!(
+        ratio > 1.001,
+        "Reverb contribution should be measurable, ratio={ratio:.6}"
+    );
 }
 
 /// Q23: Reverb wet-only — send bus with dry/wet=100% produces no dry signal
@@ -1119,12 +1285,16 @@ fn q23_reverb_wet_only() {
     }
 
     // First sample should NOT be 1.0 (dry leak)
-    assert!(first_sample.abs() < 0.01,
-        "Wet-only reverb should not pass dry at sample[0], got {first_sample}");
+    assert!(
+        first_sample.abs() < 0.01,
+        "Wet-only reverb should not pass dry at sample[0], got {first_sample}"
+    );
 
     // Total tail energy should be significant
-    assert!(total_energy > 0.001,
-        "Reverb tail should have energy over {num_blocks} blocks, got {total_energy:.6}");
+    assert!(
+        total_energy > 0.001,
+        "Reverb tail should have energy over {num_blocks} blocks, got {total_energy:.6}"
+    );
 }
 
 /// Q24: Reverb dry/wet=0 (100% dry) — bit-exact passthrough
@@ -1155,7 +1325,8 @@ fn q25_default_send_levels() {
 
     // Add 4 tracks
     for ch in 0..4u16 {
-        let engine = Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>;
+        let engine =
+            Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>;
         let id = mixer.add_track(engine, 1 << ch);
 
         // Set send level to 10% (simulating default reverb setup)
@@ -1169,9 +1340,15 @@ fn q25_default_send_levels() {
 
     // Verify all tracks have send_level[0] = 0.1
     for track in mixer.tracks() {
-        assert!(!track.send_levels.is_empty(), "Each track should have send levels");
-        assert!((track.send_levels[0] - 0.1).abs() < 1e-6,
-            "Send level[0] should be 0.1, got {}", track.send_levels[0]);
+        assert!(
+            !track.send_levels.is_empty(),
+            "Each track should have send levels"
+        );
+        assert!(
+            (track.send_levels[0] - 0.1).abs() < 1e-6,
+            "Send level[0] should be 0.1, got {}",
+            track.send_levels[0]
+        );
     }
 }
 
@@ -1241,7 +1418,10 @@ fn p01_parallel_16_track_render() {
 
     // Verify signal exists
     let pk = peak(&ref_left).max(peak(&ref_right));
-    assert!(pk > 0.0, "Should have produced audible signal across 16 tracks");
+    assert!(
+        pk > 0.0,
+        "Should have produced audible signal across 16 tracks"
+    );
 
     // Verify combined signal stays below limiter threshold (0.95) so limiter is passthrough
     let combined_pk = peak(&combined_left).max(peak(&combined_right));
@@ -1255,14 +1435,18 @@ fn p01_parallel_16_track_render() {
     // and the limiter is not engaged, the results must match bit-for-bit.
     for i in 0..total_samples {
         assert_eq!(
-            combined_left[i].to_bits(), ref_left[i].to_bits(),
+            combined_left[i].to_bits(),
+            ref_left[i].to_bits(),
             "L[{i}] mismatch: combined={:.10e} vs ref={:.10e}",
-            combined_left[i], ref_left[i]
+            combined_left[i],
+            ref_left[i]
         );
         assert_eq!(
-            combined_right[i].to_bits(), ref_right[i].to_bits(),
+            combined_right[i].to_bits(),
+            ref_right[i].to_bits(),
             "R[{i}] mismatch: combined={:.10e} vs ref={:.10e}",
-            combined_right[i], ref_right[i]
+            combined_right[i],
+            ref_right[i]
         );
     }
 }
@@ -1312,8 +1496,12 @@ fn p02_solo_exclusivity() {
     // Solo render should match isolated track 1 render exactly
     let mut max_err = 0.0f32;
     for i in 0..left_solo.len() {
-        let err = (left_solo[i] - left_alone[i]).abs().max((right_solo[i] - right_alone[i]).abs());
-        if err > max_err { max_err = err; }
+        let err = (left_solo[i] - left_alone[i])
+            .abs()
+            .max((right_solo[i] - right_alone[i]).abs());
+        if err > max_err {
+            max_err = err;
+        }
     }
 
     eprintln!("p02: max_err between solo and isolated = {max_err:.2e}");
@@ -1325,7 +1513,10 @@ fn p02_solo_exclusivity() {
 
     // Verify signal exists
     let pk = peak(&left_solo).max(peak(&right_solo));
-    assert!(pk > 0.001, "Solo track should produce audible signal, got peak={pk}");
+    assert!(
+        pk > 0.001,
+        "Solo track should produce audible signal, got peak={pk}"
+    );
 }
 
 /// P3: Mute + Solo interaction — mute takes priority over solo.
@@ -1426,7 +1617,10 @@ fn p05_group_routing_additive() {
         let mut mixer_single = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
         mixer_single.master_mut().limiter_threshold = 1.0;
         let tid = mixer_single.add_track(engine, 1u16 << ch);
-        let gid = mixer_single.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0000);
+        let gid = mixer_single.add_track(
+            Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>,
+            0x0000,
+        );
         mixer_single.set_track_output(tid, OutputTarget::Group(gid));
         mixer_single.note_on(ch, 48 + ch * 12, 80);
 
@@ -1449,7 +1643,10 @@ fn p05_group_routing_additive() {
     }
 
     // Group track (no source engine, just accumulator)
-    let group_id = mixer_group.add_track(Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>, 0x0000);
+    let group_id = mixer_group.add_track(
+        Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>,
+        0x0000,
+    );
 
     // Route all 3 source tracks to the group
     for &tid in &track_ids {
@@ -1474,7 +1671,9 @@ fn p05_group_routing_additive() {
         let err_l = (group_left[i] as f64 - independent_sum_left[i]).abs();
         let err_r = (group_right[i] as f64 - independent_sum_right[i]).abs();
         let err = err_l.max(err_r);
-        if err > max_err { max_err = err; }
+        if err > max_err {
+            max_err = err;
+        }
     }
 
     eprintln!("p05: max_err between group and independent sum = {max_err:.2e}");
@@ -1527,10 +1726,7 @@ fn p06_master_limiter_no_overflow() {
 
     // Every sample must be <= 1.0 (the soft limiter clamps to [-1.0, 1.0])
     for (i, &s) in left.iter().enumerate() {
-        assert!(
-            s.abs() <= 1.0 + f32::EPSILON,
-            "Left[{i}] = {s} exceeds 1.0"
-        );
+        assert!(s.abs() <= 1.0 + f32::EPSILON, "Left[{i}] = {s} exceeds 1.0");
     }
     for (i, &s) in right.iter().enumerate() {
         assert!(
@@ -1540,8 +1736,14 @@ fn p06_master_limiter_no_overflow() {
     }
 
     // Signal should be present and near limiter ceiling
-    assert!(pk_l > 0.5, "16 loud tracks should drive signal near ceiling, got {pk_l}");
-    assert!(pk_r > 0.5, "16 loud tracks should drive signal near ceiling, got {pk_r}");
+    assert!(
+        pk_l > 0.5,
+        "16 loud tracks should drive signal near ceiling, got {pk_l}"
+    );
+    assert!(
+        pk_r > 0.5,
+        "16 loud tracks should drive signal near ceiling, got {pk_r}"
+    );
 }
 
 /// P7: Zero latency no insert — track with no inserts has PDC delay = 0.
@@ -1594,15 +1796,18 @@ fn p07_zero_latency_no_insert() {
     let (left1, _right1) = render_blocks(&mut mixer1, 8);
 
     // Find first non-zero sample in combined render
-    let first_nonzero_combined = combined_left.iter()
+    let first_nonzero_combined = combined_left
+        .iter()
         .position(|&s| s.abs() > 1e-10)
         .unwrap_or(combined_left.len());
 
     // Find first non-zero sample in each independent render
-    let first_nonzero_0 = left0.iter()
+    let first_nonzero_0 = left0
+        .iter()
         .position(|&s| s.abs() > 1e-10)
         .unwrap_or(left0.len());
-    let first_nonzero_1 = left1.iter()
+    let first_nonzero_1 = left1
+        .iter()
         .position(|&s| s.abs() > 1e-10)
         .unwrap_or(left1.len());
 
@@ -1623,7 +1828,9 @@ fn p07_zero_latency_no_insert() {
     for i in 0..combined_left.len() {
         let sum_l = left0[i] as f64 + left1[i] as f64;
         let err = (combined_left[i] as f64 - sum_l).abs();
-        if err > max_err { max_err = err; }
+        if err > max_err {
+            max_err = err;
+        }
     }
 
     eprintln!("p07: max_err = {max_err:.2e}");

@@ -14,7 +14,9 @@ use moonlitt_vst3::Vst3Host;
 
 fn plugin_lock() -> MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|e| e.into_inner())
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
 }
 
 fn peak_after_blocks(plugin: &mut moonlitt_vst3::Vst3Plugin, blocks: usize) -> f32 {
@@ -110,7 +112,10 @@ fn every_default_audible_plugin_round_trips_audio() {
         // Second pass: fresh instance, apply state, verify audio.
         let mut fresh = host.load(info).unwrap();
         fresh.set_state(&state).unwrap_or_else(|e| {
-            panic!("{}: set_state failed for self-captured state: {e}", info.name)
+            panic!(
+                "{}: set_state failed for self-captured state: {e}",
+                info.name
+            )
         });
         fresh.note_on(0, 60, 100);
         fresh.note_on(0, 64, 100);
@@ -129,9 +134,7 @@ fn every_default_audible_plugin_round_trips_audio() {
         covered.len()
     );
     for (name, warm, restored) in &covered {
-        println!(
-            "    {name:<22} default={warm:.3}  restored={restored:.3}"
-        );
+        println!("    {name:<22} default={warm:.3}  restored={restored:.3}");
     }
     if !skipped_silent.is_empty() {
         println!(

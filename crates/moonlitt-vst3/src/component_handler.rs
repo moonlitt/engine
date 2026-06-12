@@ -187,11 +187,7 @@ impl IComponentHandler3Trait for ComponentHandler {
         // into, so null is the correct answer. Tracing helps confirm
         // the plug-in asked (some plug-ins skip entirely when null is
         // already known via interface enumeration).
-        let pid = if param_id.is_null() {
-            0
-        } else {
-            *param_id
-        };
+        let pid = if param_id.is_null() { 0 } else { *param_id };
         crate::trace::emit(&format!(
             "ComponentHandler3::createContextMenu param={pid} -> null"
         ));
@@ -233,8 +229,7 @@ impl IUnitHandler2Trait for ComponentHandler {
 /// Create a new IComponentHandler COM wrapper paired with its drain queue,
 /// restart-flags accumulator, and side-band notification queue (the latter
 /// surfaces IComponentHandler2 / IUnitHandler / IUnitHandler2 callbacks).
-pub(crate) fn create_component_handler_with_notifications(
-) -> (
+pub(crate) fn create_component_handler_with_notifications() -> (
     ComWrapper<ComponentHandler>,
     ParamQueue,
     RestartFlags,
@@ -248,7 +243,12 @@ pub(crate) fn create_component_handler_with_notifications(
         restart_flags: Arc::clone(&restart_flags),
         notifications: Arc::clone(&notifications),
     };
-    (ComWrapper::new(handler), queue, restart_flags, notifications)
+    (
+        ComWrapper::new(handler),
+        queue,
+        restart_flags,
+        notifications,
+    )
 }
 
 /// Drain all host notifications, returning them in arrival order.
@@ -344,7 +344,9 @@ mod handler_extensions_tests {
         }
         let drained = drain_notifications(&notifications);
         assert!(
-            drained.iter().any(|n| matches!(n, HostNotification::SetDirty(true))),
+            drained
+                .iter()
+                .any(|n| matches!(n, HostNotification::SetDirty(true))),
             "setDirty(true) must surface as HostNotification::SetDirty(true), got {drained:?}"
         );
     }
@@ -381,8 +383,14 @@ mod handler_extensions_tests {
             .iter()
             .filter(|n| matches!(n, HostNotification::FinishGroupEdit))
             .count();
-        assert_eq!(starts, 1, "expected exactly one StartGroupEdit, drained={drained:?}");
-        assert_eq!(finishes, 1, "expected exactly one FinishGroupEdit, drained={drained:?}");
+        assert_eq!(
+            starts, 1,
+            "expected exactly one StartGroupEdit, drained={drained:?}"
+        );
+        assert_eq!(
+            finishes, 1,
+            "expected exactly one FinishGroupEdit, drained={drained:?}"
+        );
     }
 
     #[test]
@@ -394,7 +402,9 @@ mod handler_extensions_tests {
         }
         let drained = drain_notifications(&notifications);
         assert!(
-            drained.iter().any(|n| matches!(n, HostNotification::UnitSelection(42))),
+            drained
+                .iter()
+                .any(|n| matches!(n, HostNotification::UnitSelection(42))),
             "notifyUnitSelection(42) must surface as UnitSelection(42), got {drained:?}"
         );
     }
@@ -408,7 +418,13 @@ mod handler_extensions_tests {
         }
         let drained = drain_notifications(&notifications);
         assert!(
-            drained.iter().any(|n| matches!(n, HostNotification::ProgramListChange { list_id: 7, program_index: 13 })),
+            drained.iter().any(|n| matches!(
+                n,
+                HostNotification::ProgramListChange {
+                    list_id: 7,
+                    program_index: 13
+                }
+            )),
             "notifyProgramListChange(7,13) must surface, got {drained:?}"
         );
     }
@@ -422,7 +438,9 @@ mod handler_extensions_tests {
         }
         let drained = drain_notifications(&notifications);
         assert!(
-            drained.iter().any(|n| matches!(n, HostNotification::UnitByBusChange)),
+            drained
+                .iter()
+                .any(|n| matches!(n, HostNotification::UnitByBusChange)),
             "notifyUnitByBusChange must surface, got {drained:?}"
         );
     }

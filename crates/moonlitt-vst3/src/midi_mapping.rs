@@ -17,11 +17,11 @@
 //! raw `LegacyMIDICCOutEvent`, preserving compatibility with plug-ins
 //! that *do* read raw CCs.
 
+use vst3::ComPtr;
+use vst3::Steinberg::kResultOk;
 use vst3::Steinberg::Vst::{
     ControllerNumbers_::kPitchBend, IMidiMapping, IMidiMappingTrait, ParamID,
 };
-use vst3::Steinberg::kResultOk;
-use vst3::ComPtr;
 
 use crate::component_handler::PendingParam;
 use crate::events::{MidiEvent, MidiEventKind};
@@ -131,11 +131,19 @@ mod tests {
     fn no_mapping_passes_events_unchanged() {
         let raw = vec![
             MidiEvent {
-                kind: MidiEventKind::CC { channel: 0, cc: 7, value: 100 },
+                kind: MidiEventKind::CC {
+                    channel: 0,
+                    cc: 7,
+                    value: 100,
+                },
                 sample_offset: 0,
             },
             MidiEvent {
-                kind: MidiEventKind::NoteOn { channel: 0, note: 60, velocity: 100 },
+                kind: MidiEventKind::NoteOn {
+                    channel: 0,
+                    note: 60,
+                    velocity: 100,
+                },
                 sample_offset: 0,
             },
         ];
@@ -147,7 +155,10 @@ mod tests {
     #[test]
     fn no_mapping_passes_pitch_bend() {
         let raw = vec![MidiEvent {
-            kind: MidiEventKind::PitchBend { channel: 0, value: 4096 },
+            kind: MidiEventKind::PitchBend {
+                channel: 0,
+                value: 4096,
+            },
             sample_offset: 0,
         }];
         let out = split_for_param_routing(None, 0, raw);
@@ -160,7 +171,10 @@ mod tests {
     #[test]
     fn unmapped_program_change_is_not_split() {
         let raw = vec![MidiEvent {
-            kind: MidiEventKind::ProgramChange { channel: 0, program: 5 },
+            kind: MidiEventKind::ProgramChange {
+                channel: 0,
+                program: 5,
+            },
             sample_offset: 0,
         }];
         let out = split_for_param_routing(None, 0, raw);

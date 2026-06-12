@@ -3,7 +3,10 @@ mod wav;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "moonlitt", about = "Audio engine CLI for scanning, playing, and rendering")]
+#[command(
+    name = "moonlitt",
+    about = "Audio engine CLI for scanning, playing, and rendering"
+)]
 #[command(version)]
 struct Cli {
     #[command(subcommand)]
@@ -126,16 +129,41 @@ fn main() {
             if live {
                 cmd_play_live(&path, note, velocity, duration, sample_rate, buffer_size);
             } else {
-                cmd_play(&path, note, velocity, duration, &output, sample_rate, buffer_size);
+                cmd_play(
+                    &path,
+                    note,
+                    velocity,
+                    duration,
+                    &output,
+                    sample_rate,
+                    buffer_size,
+                );
             }
         }
         Commands::Presets { path } => cmd_presets(&path),
         Commands::Live { path } => cmd_live(&path),
-        Commands::Midi { midi, sound, live, sampler, insert, output, preset, state } => {
+        Commands::Midi {
+            midi,
+            sound,
+            live,
+            sampler,
+            insert,
+            output,
+            preset,
+            state,
+        } => {
             if live {
                 cmd_midi_live(&midi, &sound, sampler, &insert, preset, state.as_deref());
             } else {
-                cmd_midi_render(&midi, &sound, &output, sampler, &insert, preset, state.as_deref());
+                cmd_midi_render(
+                    &midi,
+                    &sound,
+                    &output,
+                    sampler,
+                    &insert,
+                    preset,
+                    state.as_deref(),
+                );
             }
         }
         Commands::MidiDevices => cmd_midi_devices(),
@@ -258,7 +286,14 @@ fn cmd_play(
     }
 }
 
-fn cmd_play_live(path: &str, note: u8, velocity: u8, duration: f32, sample_rate: u32, buffer_size: u32) {
+fn cmd_play_live(
+    path: &str,
+    note: u8,
+    velocity: u8,
+    duration: f32,
+    sample_rate: u32,
+    buffer_size: u32,
+) {
     use moonlitt_audio_io::Runtime;
     use std::thread;
     use std::time::Duration;
@@ -412,7 +447,9 @@ fn parse_midi_file(path: &str) -> Result<(Vec<MidiNote>, Vec<ProgramChange>), St
         let mut prev_tick = 0u64;
         let mut prev_tempo = 500_000u32;
         for &(t, tempo) in &tempo_events {
-            if t >= tick { break; }
+            if t >= tick {
+                break;
+            }
             elapsed += (t - prev_tick) as f64 * prev_tempo as f64 / (tpb * 1_000_000.0);
             prev_tick = t;
             prev_tempo = tempo;
@@ -425,7 +462,8 @@ fn parse_midi_file(path: &str) -> Result<(Vec<MidiNote>, Vec<ProgramChange>), St
 
     for track in &smf.tracks {
         let mut abs = 0u64;
-        let mut active: std::collections::HashMap<(u8, u8), (u64, u8)> = std::collections::HashMap::new();
+        let mut active: std::collections::HashMap<(u8, u8), (u64, u8)> =
+            std::collections::HashMap::new();
 
         for ev in track {
             abs += ev.delta.as_int() as u64;
@@ -442,8 +480,11 @@ fn parse_midi_file(path: &str) -> Result<(Vec<MidiNote>, Vec<ProgramChange>), St
                                 let s = tick_to_sec(start);
                                 let e = tick_to_sec(abs);
                                 notes.push(MidiNote {
-                                    time_sec: s, channel: ch, note: key.as_int(),
-                                    velocity: vel, duration_sec: e - s,
+                                    time_sec: s,
+                                    channel: ch,
+                                    note: key.as_int(),
+                                    velocity: vel,
+                                    duration_sec: e - s,
                                 });
                             }
                         } else {
@@ -455,8 +496,11 @@ fn parse_midi_file(path: &str) -> Result<(Vec<MidiNote>, Vec<ProgramChange>), St
                             let s = tick_to_sec(start);
                             let e = tick_to_sec(abs);
                             notes.push(MidiNote {
-                                time_sec: s, channel: ch, note: key.as_int(),
-                                velocity: vel, duration_sec: e - s,
+                                time_sec: s,
+                                channel: ch,
+                                note: key.as_int(),
+                                velocity: vel,
+                                duration_sec: e - s,
                             });
                         }
                     }
@@ -484,7 +528,14 @@ fn warm_up_if_recommended(backend: &mut dyn moonlitt_core::AudioBackend) {
     }
 }
 
-fn cmd_midi_live(midi_path: &str, sound_path: &str, use_sampler: bool, insert_specs: &[String], preset: Option<i32>, state_path: Option<&str>) {
+fn cmd_midi_live(
+    midi_path: &str,
+    sound_path: &str,
+    use_sampler: bool,
+    insert_specs: &[String],
+    preset: Option<i32>,
+    state_path: Option<&str>,
+) {
     use moonlitt_audio_io::Runtime;
     use moonlitt_mixer::Mixer;
     use std::thread;
@@ -495,10 +546,14 @@ fn cmd_midi_live(midi_path: &str, sound_path: &str, use_sampler: bool, insert_sp
 
     let (notes, program_changes) = match parse_midi_file(midi_path) {
         Ok(v) => v,
-        Err(e) => { eprintln!("MIDI parse error: {e}"); std::process::exit(1); }
+        Err(e) => {
+            eprintln!("MIDI parse error: {e}");
+            std::process::exit(1);
+        }
     };
 
-    let duration = notes.iter()
+    let duration = notes
+        .iter()
         .map(|n| n.time_sec + n.duration_sec)
         .fold(0.0f64, f64::max);
 
@@ -565,7 +620,10 @@ fn cmd_midi_live(midi_path: &str, sound_path: &str, use_sampler: bool, insert_sp
 
     let mut rt = match Runtime::with_mixer(mixer, BUFFER_SIZE) {
         Ok(r) => r,
-        Err(e) => { eprintln!("Audio error: {e}"); std::process::exit(1); }
+        Err(e) => {
+            eprintln!("Audio error: {e}");
+            std::process::exit(1);
+        }
     };
     if let Err(e) = rt.start() {
         eprintln!("Failed to start audio output: {e}");
@@ -581,7 +639,9 @@ fn cmd_midi_live(midi_path: &str, sound_path: &str, use_sampler: bool, insert_sp
 
     loop {
         let elapsed = start.elapsed().as_secs_f64();
-        if elapsed > duration + 1.0 { break; }
+        if elapsed > duration + 1.0 {
+            break;
+        }
 
         // Process note-offs
         pending_offs.retain(|&(off_time, ch, note)| {
@@ -608,17 +668,30 @@ fn cmd_midi_live(midi_path: &str, sound_path: &str, use_sampler: bool, insert_sp
     rt.shutdown();
 }
 
-fn cmd_midi_render(midi_path: &str, sound_path: &str, output: &str, use_sampler: bool, insert_specs: &[String], preset: Option<i32>, state_path: Option<&str>) {
+fn cmd_midi_render(
+    midi_path: &str,
+    sound_path: &str,
+    output: &str,
+    use_sampler: bool,
+    insert_specs: &[String],
+    preset: Option<i32>,
+    state_path: Option<&str>,
+) {
     use moonlitt_mixer::Mixer;
 
     let (notes, program_changes) = match parse_midi_file(midi_path) {
         Ok(v) => v,
-        Err(e) => { eprintln!("MIDI parse error: {e}"); std::process::exit(1); }
+        Err(e) => {
+            eprintln!("MIDI parse error: {e}");
+            std::process::exit(1);
+        }
     };
 
-    let duration = notes.iter()
+    let duration = notes
+        .iter()
         .map(|n| n.time_sec + n.duration_sec)
-        .fold(0.0f64, f64::max) + 2.0; // 2s tail
+        .fold(0.0f64, f64::max)
+        + 2.0; // 2s tail
 
     println!("MIDI: {} notes, rendering {:.1}s", notes.len(), duration);
 
@@ -731,8 +804,11 @@ fn cmd_midi_render(midi_path: &str, sound_path: &str, output: &str, use_sampler:
     all_left.truncate(total_samples);
     all_right.truncate(total_samples);
 
-    let peak = all_left.iter().chain(all_right.iter())
-        .map(|s| s.abs()).fold(0.0f32, f32::max);
+    let peak = all_left
+        .iter()
+        .chain(all_right.iter())
+        .map(|s| s.abs())
+        .fold(0.0f32, f32::max);
 
     match wav::write_wav(output, sample_rate, &all_left, &all_right) {
         Ok(()) => {
@@ -774,7 +850,10 @@ fn cmd_presets(path: &str) {
 // Each effect type maps human-readable param names to numeric IDs to keep
 // the CLI ergonomic without exposing trait param IDs to users.
 
-fn build_insert(spec: &str, sample_rate: u32) -> Result<Box<dyn moonlitt_core::AudioBackend>, String> {
+fn build_insert(
+    spec: &str,
+    sample_rate: u32,
+) -> Result<Box<dyn moonlitt_core::AudioBackend>, String> {
     let (kind, params_str) = match spec.split_once(':') {
         Some((k, p)) => (k.trim(), p.trim()),
         None => (spec.trim(), ""),
@@ -786,8 +865,13 @@ fn build_insert(spec: &str, sample_rate: u32) -> Result<Box<dyn moonlitt_core::A
         params_str
             .split(',')
             .map(|kv| {
-                let (k, v) = kv.split_once('=').ok_or_else(|| format!("expected k=v in '{kv}'"))?;
-                let val: f64 = v.trim().parse().map_err(|e| format!("bad number '{v}': {e}"))?;
+                let (k, v) = kv
+                    .split_once('=')
+                    .ok_or_else(|| format!("expected k=v in '{kv}'"))?;
+                let val: f64 = v
+                    .trim()
+                    .parse()
+                    .map_err(|e| format!("bad number '{v}': {e}"))?;
                 Ok::<_, String>((k.trim().to_string(), val))
             })
             .collect::<Result<Vec<_>, _>>()?
@@ -801,14 +885,14 @@ fn build_insert(spec: &str, sample_rate: u32) -> Result<Box<dyn moonlitt_core::A
             for (k, v) in &pairs {
                 let id = match k.as_str() {
                     "threshold" => 0,
-                    "ratio"     => 1,
-                    "attack"    => 2,
-                    "release"   => 3,
-                    "knee"      => 4,
-                    "makeup"    => 5,
-                    "sc_hpf"    => 6,
-                    "detect"    => 7,
-                    "bypass"    => 8,
+                    "ratio" => 1,
+                    "attack" => 2,
+                    "release" => 3,
+                    "knee" => 4,
+                    "makeup" => 5,
+                    "sc_hpf" => 6,
+                    "detect" => 7,
+                    "bypass" => 8,
                     other => return Err(format!("compressor: unknown param '{other}'")),
                 };
                 e.set_param(id, *v);
@@ -819,15 +903,15 @@ fn build_insert(spec: &str, sample_rate: u32) -> Result<Box<dyn moonlitt_core::A
             let mut e = moonlitt_effects::DattorroReverb::new(sample_rate);
             for (k, v) in &pairs {
                 let id = match k.as_str() {
-                    "predelay"  => 0,
-                    "decay"     => 1,
-                    "damping"   => 2,
+                    "predelay" => 0,
+                    "decay" => 1,
+                    "damping" => 2,
                     "diffusion" => 3,
-                    "wet_lp"    => 4,
-                    "wet_hp"    => 5,
-                    "width"     => 6,
+                    "wet_lp" => 4,
+                    "wet_hp" => 5,
+                    "width" => 6,
                     "wet" | "mix" | "dry_wet" => 7,
-                    "bypass"    => 8,
+                    "bypass" => 8,
                     other => return Err(format!("plate: unknown param '{other}'")),
                 };
                 e.set_param(id, *v);
@@ -838,15 +922,15 @@ fn build_insert(spec: &str, sample_rate: u32) -> Result<Box<dyn moonlitt_core::A
             let mut e = moonlitt_effects::Reverb::new(sample_rate);
             for (k, v) in &pairs {
                 let id = match k.as_str() {
-                    "predelay"  => 0,
+                    "predelay" => 0,
                     "room" | "room_size" => 1,
-                    "damping"   => 2,
+                    "damping" => 2,
                     "diffusion" => 3,
-                    "wet_lp"    => 4,
-                    "wet_hp"    => 5,
-                    "width"     => 6,
+                    "wet_lp" => 4,
+                    "wet_hp" => 5,
+                    "width" => 6,
                     "wet" | "mix" | "dry_wet" => 7,
-                    "bypass"    => 8,
+                    "bypass" => 8,
                     other => return Err(format!("freeverb: unknown param '{other}'")),
                 };
                 e.set_param(id, *v);

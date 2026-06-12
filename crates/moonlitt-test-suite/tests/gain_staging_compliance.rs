@@ -2,10 +2,9 @@
 //!
 //! Zero tolerance: machine epsilon only.
 
-
+use moonlitt_audio_io::mixer::Mixer;
 use moonlitt_core::AudioBackend;
 use moonlitt_effects::ParametricEq;
-use moonlitt_audio_io::mixer::Mixer;
 use std::path::Path;
 
 const SF2_PATH: &str = "/Users/wangyan/Desktop/stardew valley mods/mods/piano-block/assets/soundfonts/GeneralUser_GS.sf2";
@@ -81,9 +80,7 @@ fn g07_pan_law_constant_power() {
     //            gain_l = cos(angle), gain_r = sin(angle)
     //            power = gain_l^2 + gain_r^2 = cos^2 + sin^2 = 1.0
 
-    let test_pans = [
-        -1.0, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75, 1.0,
-    ];
+    let test_pans = [-1.0, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75, 1.0];
 
     for &pan in &test_pans {
         let angle = (pan + 1.0) * 0.25 * std::f32::consts::PI;
@@ -97,7 +94,10 @@ fn g07_pan_law_constant_power() {
             "Pan law total power at pan={pan} should be 1.0, got {power} (err={err:.2e})"
         );
     }
-    eprintln!("g07: Pan law cos^2+sin^2=1 verified for {} positions", test_pans.len());
+    eprintln!(
+        "g07: Pan law cos^2+sin^2=1 verified for {} positions",
+        test_pans.len()
+    );
 
     // Also verify through the mixer with a real SF2 render, using a single
     // identical engine render and comparing total power at different pan values.
@@ -132,22 +132,34 @@ fn g07_pan_law_constant_power() {
 
     // Apply center pan
     let angle_c = (0.0f32 + 1.0) * 0.25 * std::f32::consts::PI;
-    for s in l_center.iter_mut() { *s *= angle_c.cos(); }
-    for s in r_center.iter_mut() { *s *= angle_c.sin(); }
+    for s in l_center.iter_mut() {
+        *s *= angle_c.cos();
+    }
+    for s in r_center.iter_mut() {
+        *s *= angle_c.sin();
+    }
     let power_center = total_power(&l_center, &r_center);
 
     let mut l_left = mono_buf.clone();
     let mut r_left = mono_buf.clone();
     let angle_l = (-1.0f32 + 1.0) * 0.25 * std::f32::consts::PI;
-    for s in l_left.iter_mut() { *s *= angle_l.cos(); }
-    for s in r_left.iter_mut() { *s *= angle_l.sin(); }
+    for s in l_left.iter_mut() {
+        *s *= angle_l.cos();
+    }
+    for s in r_left.iter_mut() {
+        *s *= angle_l.sin();
+    }
     let power_left = total_power(&l_left, &r_left);
 
     let mut l_right = mono_buf.clone();
     let mut r_right = mono_buf.clone();
     let angle_r = (1.0f32 + 1.0) * 0.25 * std::f32::consts::PI;
-    for s in l_right.iter_mut() { *s *= angle_r.cos(); }
-    for s in r_right.iter_mut() { *s *= angle_r.sin(); }
+    for s in l_right.iter_mut() {
+        *s *= angle_r.cos();
+    }
+    for s in r_right.iter_mut() {
+        *s *= angle_r.sin();
+    }
     let power_right = total_power(&l_right, &r_right);
 
     eprintln!(
@@ -160,10 +172,14 @@ fn g07_pan_law_constant_power() {
 
     let rel_err_cl = if power_center > 0.0 {
         ((power_center - power_left) / power_center).abs()
-    } else { 0.0 };
+    } else {
+        0.0
+    };
     let rel_err_cr = if power_center > 0.0 {
         ((power_center - power_right) / power_center).abs()
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     assert!(
         rel_err_cl < eps,
@@ -207,9 +223,7 @@ fn g08_signal_chain_order() {
     let rms_base = rms_dbfs(&left_base);
 
     // Render with trim=+6dB, flat EQ insert
-    let engine1 = {
-        moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap()
-    };
+    let engine1 = { moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap() };
     let mut mixer_trim = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
     mixer_trim.master_mut().limiter_threshold = 1.0;
     let id1 = mixer_trim.add_track(engine1, 0xFFFF);
@@ -225,7 +239,9 @@ fn g08_signal_chain_order() {
     let rms_trim = rms_dbfs(&left_trim);
 
     let delta_db = rms_trim - rms_base;
-    eprintln!("g08 part 1: rms_base={rms_base:.2}dB, rms_trim={rms_trim:.2}dB, delta={delta_db:.3}dB");
+    eprintln!(
+        "g08 part 1: rms_base={rms_base:.2}dB, rms_trim={rms_trim:.2}dB, delta={delta_db:.3}dB"
+    );
 
     // Trim +6dB through passthrough insert should yield ~+6dB more output
     assert!(
@@ -236,15 +252,14 @@ fn g08_signal_chain_order() {
     // --- Part 2: Fader before Send (post-fader send) ---
     // Set fader=0.0 with send=1.0. Send bus should receive zero signal.
 
-    let engine2 = {
-        moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap()
-    };
+    let engine2 = { moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap() };
     let mut mixer_send = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
     mixer_send.master_mut().limiter_threshold = 1.0;
     let id2 = mixer_send.add_track(engine2, 0xFFFF);
 
     // Add a send bus with a no-backend engine (acts as passthrough accumulator)
-    let send_engine = Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>;
+    let send_engine =
+        Box::new(moonlitt_core::NullBackend::new(SAMPLE_RATE)) as Box<dyn AudioBackend>;
     let _bus_id = mixer_send.add_send_bus(send_engine);
 
     // Set fader=0.0 and send=1.0
@@ -273,9 +288,7 @@ fn g08_signal_chain_order() {
     );
 
     // --- Part 3: Verify fader > 0 with send produces signal ---
-    let engine3 = {
-        moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap()
-    };
+    let engine3 = { moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap() };
     let mut mixer_send2 = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
     mixer_send2.master_mut().limiter_threshold = 1.0;
     let id3 = mixer_send2.add_track(engine3, 0xFFFF);

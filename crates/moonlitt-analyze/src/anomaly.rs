@@ -20,10 +20,18 @@ pub fn scan(left: &[f32], right: &[f32], sample_rate: u32) -> Anomalies {
         let l = left[i];
         let r = right[i];
 
-        if l.is_nan() { a.nan_count += 1; }
-        if r.is_nan() { a.nan_count += 1; }
-        if l.is_infinite() { a.inf_count += 1; }
-        if r.is_infinite() { a.inf_count += 1; }
+        if l.is_nan() {
+            a.nan_count += 1;
+        }
+        if r.is_nan() {
+            a.nan_count += 1;
+        }
+        if l.is_infinite() {
+            a.inf_count += 1;
+        }
+        if r.is_infinite() {
+            a.inf_count += 1;
+        }
 
         // Subnormal floats (denormals) — typically a DSP feedback bug.
         // f32::MIN_POSITIVE is the smallest normal value; anything smaller
@@ -35,8 +43,12 @@ pub fn scan(left: &[f32], right: &[f32], sample_rate: u32) -> Anomalies {
             a.denormal_count += 1;
         }
 
-        if l.is_finite() { sum_l += l as f64; }
-        if r.is_finite() { sum_r += r as f64; }
+        if l.is_finite() {
+            sum_l += l as f64;
+        }
+        if r.is_finite() {
+            sum_r += r as f64;
+        }
     }
 
     if frames > 0 {

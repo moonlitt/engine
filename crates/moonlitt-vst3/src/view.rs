@@ -11,9 +11,9 @@
 
 use std::ffi::{c_void, CStr};
 
+use vst3::ComPtr;
 use vst3::Steinberg::Vst::IEditControllerTrait;
 use vst3::Steinberg::{kResultOk, IPlugView, IPlugViewTrait, ViewRect};
-use vst3::ComPtr;
 
 use crate::{Error, Result, Vst3Plugin};
 

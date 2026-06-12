@@ -27,7 +27,7 @@ fn test_sfizz_load_sfz_via_state() {
                 let str_len = i32::from_le_bytes(state[8..12].try_into().unwrap());
                 eprintln!("sfzFile length: {str_len}");
                 if str_len > 0 && state.len() >= 12 + str_len as usize {
-                    let s = String::from_utf8_lossy(&state[12..12+str_len as usize]);
+                    let s = String::from_utf8_lossy(&state[12..12 + str_len as usize]);
                     eprintln!("sfzFile: '{s}'");
                 }
             }
@@ -74,7 +74,9 @@ fn test_sfizz_load_sfz_via_state() {
 
     for block in 0..64 {
         plugin.render(&mut left, &mut right).unwrap();
-        let block_max = left.iter().chain(right.iter())
+        let block_max = left
+            .iter()
+            .chain(right.iter())
             .map(|s| s.abs())
             .fold(0.0f32, f32::max);
         if block_max > max_sample {

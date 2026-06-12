@@ -2,7 +2,11 @@ use moonlitt_audio_io::AudioEvent;
 
 #[test]
 fn event_is_copy() {
-    let e = AudioEvent::NoteOn { channel: 0, note: 60, velocity: 100 };
+    let e = AudioEvent::NoteOn {
+        channel: 0,
+        note: 60,
+        velocity: 100,
+    };
     let e2 = e; // Copy
     let e3 = e; // Still valid — it's Copy
     assert!(matches!(e2, AudioEvent::NoteOn { note: 60, .. }));
@@ -20,7 +24,13 @@ fn event_queue_roundtrip() {
     use rtrb::RingBuffer;
     let (mut producer, mut consumer) = RingBuffer::<AudioEvent>::new(64);
 
-    producer.push(AudioEvent::NoteOn { channel: 0, note: 60, velocity: 100 }).unwrap();
+    producer
+        .push(AudioEvent::NoteOn {
+            channel: 0,
+            note: 60,
+            velocity: 100,
+        })
+        .unwrap();
     producer.push(AudioEvent::SetVolume(0.5)).unwrap();
     producer.push(AudioEvent::AllNotesOff).unwrap();
 

@@ -49,7 +49,11 @@ impl Runtime {
     /// Audio device and config compatibility are checked BEFORE consuming the
     /// backend. On failure the backend is returned via the error tuple so the
     /// caller can retry or continue using it for offline rendering.
-    pub fn new(backend: Box<dyn AudioBackend>, sample_rate: u32, buffer_size: u32) -> Result<Self, (String, Box<dyn AudioBackend>)> {
+    pub fn new(
+        backend: Box<dyn AudioBackend>,
+        sample_rate: u32,
+        buffer_size: u32,
+    ) -> Result<Self, (String, Box<dyn AudioBackend>)> {
         // Pre-check audio device AND config compatibility BEFORE consuming
         // the backend into a Mixer. This ensures the backend is not lost on
         // predictable failures (no device, incompatible config).
@@ -61,8 +65,12 @@ impl Runtime {
         let mut mixer = Mixer::new(sample_rate, buffer_size as usize);
         mixer.add_track(backend, 0xFFFF); // all 16 channels
 
-        Self::with_mixer(mixer, buffer_size)
-            .map_err(|e| (e, Box::new(moonlitt_core::NullBackend::new(sample_rate)) as Box<dyn AudioBackend>))
+        Self::with_mixer(mixer, buffer_size).map_err(|e| {
+            (
+                e,
+                Box::new(moonlitt_core::NullBackend::new(sample_rate)) as Box<dyn AudioBackend>,
+            )
+        })
     }
 
     /// Create a runtime with a pre-configured Mixer and a fresh Transport.
@@ -88,10 +96,8 @@ impl Runtime {
         // LevelMeter uses Arc<AtomicU32> internally, so clones share the same
         // atomic storage — the audio thread writes, the main thread reads.
         let master_meter = mixer.clone_master_meter();
-        let track_meters: HashMap<u32, LevelMeter> = mixer
-            .clone_track_meters()
-            .into_iter()
-            .collect();
+        let track_meters: HashMap<u32, LevelMeter> =
+            mixer.clone_track_meters().into_iter().collect();
 
         // Ring buffer capacity: 1024 events. Sufficient for real-time MIDI at
         // typical rates; events are drained every audio callback (~5ms).
@@ -187,10 +193,14 @@ impl Runtime {
     /// `dropped_events`) when the ring buffer is full — the event is
     /// dropped, never blocked on.
     fn send(&mut self, event: AudioEvent) -> bool {
-        if self.producer.push(TimedEvent {
-            event,
-            delay_samples: 0,
-        }).is_err() {
+        if self
+            .producer
+            .push(TimedEvent {
+                event,
+                delay_samples: 0,
+            })
+            .is_err()
+        {
             self.dropped_events.fetch_add(1, Ordering::Relaxed);
             false
         } else {
@@ -199,10 +209,14 @@ impl Runtime {
     }
 
     fn send_delayed(&mut self, event: AudioEvent, delay_samples: u32) -> bool {
-        if self.producer.push(TimedEvent {
-            event,
-            delay_samples,
-        }).is_err() {
+        if self
+            .producer
+            .push(TimedEvent {
+                event,
+                delay_samples,
+            })
+            .is_err()
+        {
             self.dropped_events.fetch_add(1, Ordering::Relaxed);
             false
         } else {
@@ -224,7 +238,13 @@ impl Runtime {
         })
     }
 
-    pub fn note_on_delayed(&mut self, channel: u8, note: u8, velocity: u8, delay_samples: u32) -> bool {
+    pub fn note_on_delayed(
+        &mut self,
+        channel: u8,
+        note: u8,
+        velocity: u8,
+        delay_samples: u32,
+    ) -> bool {
         self.send_delayed(
             AudioEvent::NoteOn {
                 channel,
@@ -301,7 +321,11 @@ impl Runtime {
     }
 
     pub fn mixer_set_track_send(&mut self, track_id: u8, bus_id: u8, level: f32) -> bool {
-        self.send(AudioEvent::MixerTrackSend { track_id, bus_id, level })
+        self.send(AudioEvent::MixerTrackSend {
+            track_id,
+            bus_id,
+            level,
+        })
     }
 
     pub fn mixer_set_master_volume(&mut self, volume: f32) -> bool {
@@ -309,29 +333,60 @@ impl Runtime {
     }
 
     pub fn mixer_set_insert_bypass(&mut self, track_id: u8, insert_id: u8, bypass: bool) -> bool {
-        self.send(AudioEvent::InsertBypass { track_id, insert_id, bypass })
+        self.send(AudioEvent::InsertBypass {
+            track_id,
+            insert_id,
+            bypass,
+        })
     }
 
     pub fn set_param_for_track(&mut self, track_id: u8, param_id: u16, value: f64) -> bool {
-        self.send(AudioEvent::SetParamForTrack { track_id, param_id, value })
+        self.send(AudioEvent::SetParamForTrack {
+            track_id,
+            param_id,
+            value,
+        })
     }
 
-    pub fn set_insert_param(&mut self, track_id: u8, insert_id: u8, param_id: u16, value: f64) -> bool {
-        self.send(AudioEvent::SetInsertParam { track_id, insert_id, param_id, value })
+    pub fn set_insert_param(
+        &mut self,
+        track_id: u8,
+        insert_id: u8,
+        param_id: u16,
+        value: f64,
+    ) -> bool {
+        self.send(AudioEvent::SetInsertParam {
+            track_id,
+            insert_id,
+            param_id,
+            value,
+        })
     }
 
     pub fn set_send_bus_param(&mut self, bus_id: u8, param_id: u16, value: f64) -> bool {
-        self.send(AudioEvent::SetSendBusParam { bus_id, param_id, value })
+        self.send(AudioEvent::SetSendBusParam {
+            bus_id,
+            param_id,
+            value,
+        })
     }
 
     /// Route a track's output. target_id = 0xFF for master, else group track ID.
     pub fn mixer_set_track_route(&mut self, track_id: u8, target_id: u8) -> bool {
-        self.send(AudioEvent::MixerTrackRoute { track_id, target_id })
+        self.send(AudioEvent::MixerTrackRoute {
+            track_id,
+            target_id,
+        })
     }
 
     /// Set external sidechain source for an insert effect.
     /// source_track_id = None means revert to internal sidechain.
-    pub fn set_insert_sidechain(&mut self, track_id: u8, insert_id: u8, source_track_id: Option<u8>) -> bool {
+    pub fn set_insert_sidechain(
+        &mut self,
+        track_id: u8,
+        insert_id: u8,
+        source_track_id: Option<u8>,
+    ) -> bool {
         let src = source_track_id.unwrap_or(0xFF);
         self.send(AudioEvent::SetInsertSidechain {
             track_id,

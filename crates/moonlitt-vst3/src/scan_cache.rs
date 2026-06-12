@@ -67,8 +67,7 @@ impl PluginScanCache {
     /// Persist the cache to `path` atomically (write to a sibling then
     /// rename) so a crashed write doesn't corrupt the file.
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
-        let bytes = serde_json::to_vec_pretty(self)
-            .map_err(std::io::Error::other)?;
+        let bytes = serde_json::to_vec_pretty(self).map_err(std::io::Error::other)?;
         let tmp = path.with_extension("json.tmp");
         if let Some(parent) = path.parent() {
             let _ = fs::create_dir_all(parent);
@@ -122,7 +121,13 @@ impl PluginScanCache {
                 version: p.version.clone(),
             })
             .collect();
-        self.entries.insert(path, CacheEntry { mtime_ns, plugins: cached });
+        self.entries.insert(
+            path,
+            CacheEntry {
+                mtime_ns,
+                plugins: cached,
+            },
+        );
     }
 
     /// Drop any entry whose path is not in `live`. Called at the end of

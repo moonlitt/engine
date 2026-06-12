@@ -3,20 +3,13 @@ use moonlitt_core::AudioBackend;
 
 fn bench_compressor_process_512(c: &mut Criterion) {
     let mut comp = moonlitt_effects::Compressor::new(44100);
-    let input: Vec<f32> = (0..512)
-        .map(|i| (i as f32 * 0.02).sin() * 0.5)
-        .collect();
+    let input: Vec<f32> = (0..512).map(|i| (i as f32 * 0.02).sin() * 0.5).collect();
     let mut out_l = vec![0.0f32; 512];
     let mut out_r = vec![0.0f32; 512];
 
     c.bench_function("compressor_process_512", |b| {
         b.iter(|| {
-            comp.process_effect(
-                black_box(&input),
-                black_box(&input),
-                &mut out_l,
-                &mut out_r,
-            );
+            comp.process_effect(black_box(&input), black_box(&input), &mut out_l, &mut out_r);
             black_box(&out_l);
         })
     });
@@ -49,9 +42,7 @@ fn bench_db_to_linear_lut_1000(c: &mut Criterion) {
 
 fn bench_oversampler_2x_512(c: &mut Criterion) {
     let mut os = moonlitt_effects::common::Oversampler::new(2, 512);
-    let input: Vec<f32> = (0..512)
-        .map(|i| (i as f32 * 0.02).sin())
-        .collect();
+    let input: Vec<f32> = (0..512).map(|i| (i as f32 * 0.02).sin()).collect();
     let mut upsampled = vec![0.0f32; 1024];
     let mut output = vec![0.0f32; 512];
 

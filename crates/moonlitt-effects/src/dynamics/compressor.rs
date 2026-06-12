@@ -204,7 +204,10 @@ impl Compressor {
             envelope_left: EnvelopeFollower::new(sr),
             envelope_right: EnvelopeFollower::new(sr),
             sidechain_hpf: [Biquad::new(), Biquad::new()],
-            rms_window: [RmsWindow::new(rms_window_size), RmsWindow::new(rms_window_size)],
+            rms_window: [
+                RmsWindow::new(rms_window_size),
+                RmsWindow::new(rms_window_size),
+            ],
 
             sidechain_ext_l: Vec::new(),
             sidechain_ext_r: Vec::new(),
@@ -246,7 +249,6 @@ impl Compressor {
     pub fn compute_gain_db(&self, level_db: f64) -> f64 {
         compute_gain_db_static(self.threshold_db, self.ratio, self.knee_db, level_db)
     }
-
 }
 
 /// Process a single channel's sample through detection and gain computation.
@@ -363,15 +365,11 @@ impl AudioBackend for Compressor {
         self.use_external_sidechain = true;
     }
 
-    fn supports_sidechain(&self) -> bool { true }
+    fn supports_sidechain(&self) -> bool {
+        true
+    }
 
-    fn process_effect(
-        &mut self,
-        in_l: &[f32],
-        in_r: &[f32],
-        out_l: &mut [f32],
-        out_r: &mut [f32],
-    ) {
+    fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
         let len = in_l.len();
 
         // Bypass: bit-exact copy
@@ -391,8 +389,16 @@ impl AudioBackend for Compressor {
             let r = in_r[i] as f64;
 
             // Detection source: external sidechain or input
-            let det_l = if use_ext { self.sidechain_ext_l[i] as f64 } else { l };
-            let det_r = if use_ext { self.sidechain_ext_r[i] as f64 } else { r };
+            let det_l = if use_ext {
+                self.sidechain_ext_l[i] as f64
+            } else {
+                l
+            };
+            let det_r = if use_ext {
+                self.sidechain_ext_r[i] as f64
+            } else {
+                r
+            };
 
             // Sidechain: filter through HPF (does NOT modify audio path)
             let sc_l = self.sidechain_hpf[0].process(det_l);
@@ -590,7 +596,11 @@ impl AudioBackend for Compressor {
             5 => self.makeup_db = value.clamp(0.0, 30.0),
             6 => {
                 // 0 = bypass (identity), 20..500 = active HPF
-                self.sidechain_hpf_freq = if value < 1.0 { 0.0 } else { value.clamp(20.0, 500.0) };
+                self.sidechain_hpf_freq = if value < 1.0 {
+                    0.0
+                } else {
+                    value.clamp(20.0, 500.0)
+                };
                 self.update_hpf();
             }
             7 => {
@@ -620,8 +630,16 @@ impl AudioBackend for Compressor {
             4 => Some(format!("{:.1} dB", value)),
             5 => Some(format!("{:.1} dB", value)),
             6 => Some(format!("{:.0} Hz", value)),
-            7 => Some(if value >= 0.5 { "RMS".into() } else { "Peak".into() }),
-            8 => Some(if value >= 0.5 { "On".into() } else { "Off".into() }),
+            7 => Some(if value >= 0.5 {
+                "RMS".into()
+            } else {
+                "Peak".into()
+            }),
+            8 => Some(if value >= 0.5 {
+                "On".into()
+            } else {
+                "Off".into()
+            }),
             _ => None,
         }
     }
@@ -698,10 +716,10 @@ mod tests {
         comp.set_param(1, 4.0); // ratio = 4:1
         comp.set_param(4, 0.0); // knee = 0
         comp.set_param(5, 0.0); // makeup = 0
-        // Use very fast attack/release so envelope settles quickly
+                                // Use very fast attack/release so envelope settles quickly
         comp.set_param(2, 0.1); // attack = 0.1ms
         comp.set_param(3, 10.0); // release = 10ms
-        // Set HPF to minimum to avoid filtering effects
+                                 // Set HPF to minimum to avoid filtering effects
         comp.set_param(6, 20.0);
 
         // Input at -20 dB (well below threshold of 0 dB)
@@ -744,9 +762,9 @@ mod tests {
         comp.set_param(4, 0.0);
         comp.set_param(5, 0.0);
         // Very fast attack, very slow release → envelope "peak holds"
-        comp.set_param(2, 0.1);    // 0.1ms attack
+        comp.set_param(2, 0.1); // 0.1ms attack
         comp.set_param(3, 1000.0); // 1000ms release (holds near peak)
-        comp.set_param(6, 20.0);   // HPF at 20Hz
+        comp.set_param(6, 20.0); // HPF at 20Hz
 
         // Input at -10 dB peak (10 dB above threshold)
         let amplitude = 10.0_f64.powf(-10.0 / 20.0);
@@ -771,7 +789,9 @@ mod tests {
         assert!(
             error < 0.5,
             "steady-state gain: expected {:.1} dB, got {:.4} dB (error {:.4} dB)",
-            expected_gain_db, measured_gain, error
+            expected_gain_db,
+            measured_gain,
+            error
         );
     }
 
@@ -783,13 +803,13 @@ mod tests {
     fn test_attack_timing() {
         let sr = 44100u32;
         let mut comp = Compressor::new(sr);
-        comp.set_param(0, -40.0);  // threshold = -40 dB (low, so signal triggers)
-        comp.set_param(1, 100.0);  // ratio = inf (limiter)
-        comp.set_param(2, 10.0);   // attack = 10ms
+        comp.set_param(0, -40.0); // threshold = -40 dB (low, so signal triggers)
+        comp.set_param(1, 100.0); // ratio = inf (limiter)
+        comp.set_param(2, 10.0); // attack = 10ms
         comp.set_param(3, 1000.0); // release = 1s (slow, so we measure attack)
-        comp.set_param(4, 0.0);    // knee = 0
-        comp.set_param(5, 0.0);    // makeup = 0
-        comp.set_param(6, 20.0);   // HPF off essentially
+        comp.set_param(4, 0.0); // knee = 0
+        comp.set_param(5, 0.0); // makeup = 0
+        comp.set_param(6, 20.0); // HPF off essentially
 
         // Start with silence (1 second to ensure envelope at 0)
         let silence_samples = sr as usize;
@@ -892,7 +912,8 @@ mod tests {
         assert!(
             (gain_at_knee_end - expected_hard_knee).abs() < 1e-6,
             "at knee end (-17dB), gain should match hard-knee ({:.4} dB), got {:.4} dB",
-            expected_hard_knee, gain_at_knee_end
+            expected_hard_knee,
+            gain_at_knee_end
         );
 
         // Verify smooth transition: no discontinuity across knee region
@@ -904,7 +925,8 @@ mod tests {
             assert!(
                 diff < 0.5, // No jump larger than 0.5 dB per 0.1 dB step
                 "discontinuity at {:.1} dB: gain jumped by {:.4} dB",
-                level, diff
+                level,
+                diff
             );
             prev_gain = gain;
         }
@@ -921,13 +943,13 @@ mod tests {
     fn test_infinite_ratio() {
         let sr = 44100;
         let mut comp = Compressor::new(sr);
-        comp.set_param(0, -20.0);   // threshold = -20 dB
-        comp.set_param(1, 100.0);   // ratio = inf (limiter)
-        comp.set_param(4, 0.0);     // knee = 0
-        comp.set_param(5, 0.0);     // makeup = 0
-        comp.set_param(2, 0.1);     // very fast attack
-        comp.set_param(3, 1000.0);  // slow release (peak hold)
-        comp.set_param(6, 20.0);    // HPF at minimum
+        comp.set_param(0, -20.0); // threshold = -20 dB
+        comp.set_param(1, 100.0); // ratio = inf (limiter)
+        comp.set_param(4, 0.0); // knee = 0
+        comp.set_param(5, 0.0); // makeup = 0
+        comp.set_param(2, 0.1); // very fast attack
+        comp.set_param(3, 1000.0); // slow release (peak hold)
+        comp.set_param(6, 20.0); // HPF at minimum
 
         // Input at -10 dB peak (10 dB above threshold)
         let amplitude = 10.0_f64.powf(-10.0 / 20.0);
@@ -952,7 +974,9 @@ mod tests {
         assert!(
             error < 1.0,
             "limiter (inf ratio): expected gain ~{:.1} dB, got {:.2} dB (error {:.2} dB)",
-            expected_gain_db, measured_gain, error
+            expected_gain_db,
+            measured_gain,
+            error
         );
     }
 
@@ -1052,10 +1076,10 @@ mod tests {
         // Compressor A: no external sidechain — quiet signal, no compression
         let mut comp_internal = Compressor::new(sr);
         comp_internal.set_param(0, -20.0); // threshold = -20 dB
-        comp_internal.set_param(1, 10.0);  // ratio = 10:1
-        comp_internal.set_param(2, 0.1);   // fast attack
-        comp_internal.set_param(3, 10.0);  // fast release
-        comp_internal.set_param(5, 0.0);   // no makeup
+        comp_internal.set_param(1, 10.0); // ratio = 10:1
+        comp_internal.set_param(2, 0.1); // fast attack
+        comp_internal.set_param(3, 10.0); // fast release
+        comp_internal.set_param(5, 0.0); // no makeup
 
         let mut out_internal_l = vec![0.0f32; num_samples];
         let mut out_internal_r = vec![0.0f32; num_samples];

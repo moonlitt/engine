@@ -291,13 +291,7 @@ impl AudioBackend for Limiter {
     // -- Audio: generator render is a no-op (this is an effect) --
     fn render(&mut self, _left: &mut [f32], _right: &mut [f32]) {}
 
-    fn process_effect(
-        &mut self,
-        in_l: &[f32],
-        in_r: &[f32],
-        out_l: &mut [f32],
-        out_r: &mut [f32],
-    ) {
+    fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
         let len = in_l.len();
 
         // Bypass: bit-exact copy
@@ -513,8 +507,16 @@ impl AudioBackend for Limiter {
             3 => Some(format!("{:.1} ms", value)),
             4 => Some(format!("{:.2} ms", value)),
             5 => Some(format!("{}x", value as u32)),
-            6 => Some(if value >= 0.5 { "On".into() } else { "Off".into() }),
-            7 => Some(if value >= 0.5 { "On".into() } else { "Off".into() }),
+            6 => Some(if value >= 0.5 {
+                "On".into()
+            } else {
+                "Off".into()
+            }),
+            7 => Some(if value >= 0.5 {
+                "On".into()
+            } else {
+                "Off".into()
+            }),
             _ => None,
         }
     }

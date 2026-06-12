@@ -24,9 +24,7 @@ unsafe impl Send for HostContext {}
 impl HostContext {
     /// Create a new host context.
     pub fn new() -> Pin<Box<Self>> {
-        let name = Box::pin(
-            std::ffi::CString::new("Moonlitt").expect("CString::new failed"),
-        );
+        let name = Box::pin(std::ffi::CString::new("Moonlitt").expect("CString::new failed"));
 
         let name_ptr = name.as_ptr();
 

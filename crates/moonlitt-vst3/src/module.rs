@@ -51,8 +51,7 @@ fn load_module_macos(path: &Path) -> Result<Module> {
         .ok_or_else(|| Error::LoadFailed("invalid path".into()))?;
 
     let binary = format!("{}/Contents/MacOS/{}", path.display(), stem);
-    let c_path = CString::new(binary.as_str())
-        .map_err(|e| Error::LoadFailed(e.to_string()))?;
+    let c_path = CString::new(binary.as_str()).map_err(|e| Error::LoadFailed(e.to_string()))?;
 
     unsafe {
         let handle = libc::dlopen(c_path.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL);

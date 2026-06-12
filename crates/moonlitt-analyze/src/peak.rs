@@ -32,8 +32,12 @@ fn measure_channel(samples: &[f32]) -> (f32, f32) {
     let mut tp: f32 = 0.0;
     for i in 0..samples.len() {
         let a = samples[i].abs();
-        if a > sp { sp = a; }
-        if a > tp { tp = a; }
+        if a > sp {
+            sp = a;
+        }
+        if a > tp {
+            tp = a;
+        }
         // 4× linear interpolation between this and next sample.
         if i + 1 < samples.len() {
             let next = samples[i + 1];
@@ -41,7 +45,9 @@ fn measure_channel(samples: &[f32]) -> (f32, f32) {
                 let t = k as f32 * 0.25;
                 let interp = samples[i] + t * (next - samples[i]);
                 let ia = interp.abs();
-                if ia > tp { tp = ia; }
+                if ia > tp {
+                    tp = ia;
+                }
             }
         }
     }

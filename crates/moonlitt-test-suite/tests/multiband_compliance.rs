@@ -53,10 +53,8 @@ fn band_energy(buf: &[f32], lo_hz: f64, hi_hz: f64) -> f64 {
     let mut planner = FftPlanner::<f64>::new();
     let fft = planner.plan_fft_forward(n);
 
-    let mut spectrum: Vec<Complex<f64>> = buf
-        .iter()
-        .map(|&s| Complex::new(s as f64, 0.0))
-        .collect();
+    let mut spectrum: Vec<Complex<f64>> =
+        buf.iter().map(|&s| Complex::new(s as f64, 0.0)).collect();
     fft.process(&mut spectrum);
 
     let bin_width = SR as f64 / n as f64;
@@ -78,11 +76,11 @@ fn band_energy(buf: &[f32], lo_hz: f64, hi_hz: f64) -> f64 {
 fn disable_all_compression(mb: &mut MultibandCompressor) {
     for band in 0..6 {
         let base = (8 + band * 5) as u32;
-        mb.set_param(base, 0.0);       // threshold = 0 dB
-        mb.set_param(base + 1, 1.0);   // ratio = 1:1 (no compression)
-        mb.set_param(base + 2, 0.1);   // fast attack
-        mb.set_param(base + 3, 10.0);  // fast release
-        mb.set_param(base + 4, 0.0);   // no makeup
+        mb.set_param(base, 0.0); // threshold = 0 dB
+        mb.set_param(base + 1, 1.0); // ratio = 1:1 (no compression)
+        mb.set_param(base + 2, 0.1); // fast attack
+        mb.set_param(base + 3, 10.0); // fast release
+        mb.set_param(base + 4, 0.0); // no makeup
     }
 }
 
@@ -120,7 +118,10 @@ fn mb1_crossover_flatness() {
             deviation_db < 1.0,
             "mb1: crossover sum not flat at {:.0} Hz: deviation = {:.3} dB \
              (input_rms={:.6}, output_rms={:.6})",
-            freq, deviation_db, input_rms, output_rms
+            freq,
+            deviation_db,
+            input_rms,
+            output_rms
         );
     }
 }
@@ -137,9 +138,9 @@ fn mb1_crossover_flatness() {
 #[test]
 fn mb2_crossover_slope_24db_oct() {
     let mut mb = MultibandCompressor::new(SR);
-    mb.set_param(0, 2.0);     // band_count = 2
-    mb.set_param(1, 0.0);     // output gain = 0
-    mb.set_param(3, 1000.0);  // crossover_1 = 1000 Hz
+    mb.set_param(0, 2.0); // band_count = 2
+    mb.set_param(1, 0.0); // output gain = 0
+    mb.set_param(3, 1000.0); // crossover_1 = 1000 Hz
     disable_all_compression(&mut mb);
 
     let num_samples = SR as usize * 2;
@@ -160,11 +161,11 @@ fn mb2_crossover_slope_24db_oct() {
     // Since we're using MultibandCompressor (which sums all bands), we instead
     // suppress the HP band by heavily compressing it, and measure only LP output.
     // Set band 1 (HP) to extreme compression: threshold=-60, ratio=100, makeup=-12
-    mb.set_param(13, -60.0);  // band 1 threshold
-    mb.set_param(14, 100.0);  // band 1 ratio (inf-like)
-    mb.set_param(15, 0.1);    // band 1 attack
-    mb.set_param(16, 10.0);   // band 1 release
-    mb.set_param(17, -12.0);  // band 1 makeup = -12 dB (further suppress)
+    mb.set_param(13, -60.0); // band 1 threshold
+    mb.set_param(14, 100.0); // band 1 ratio (inf-like)
+    mb.set_param(15, 0.1); // band 1 attack
+    mb.set_param(16, 10.0); // band 1 release
+    mb.set_param(17, -12.0); // band 1 makeup = -12 dB (further suppress)
 
     mb.unload();
     let input_stop = sine_f32(2000.0, amplitude, num_samples);
@@ -182,7 +183,9 @@ fn mb2_crossover_slope_24db_oct() {
         attenuation > 18.0,
         "mb2: LR4 slope at 1 octave above crossover: expected attenuation ≈24 dB, \
          got {:.1} dB (passband={:.1} dB, stopband={:.1} dB)",
-        attenuation, passband_rms_db, stopband_rms_db
+        attenuation,
+        passband_rms_db,
+        stopband_rms_db
     );
 }
 
@@ -193,21 +196,21 @@ fn mb2_crossover_slope_24db_oct() {
 #[test]
 fn mb3_band_independence() {
     let mut mb = MultibandCompressor::new(SR);
-    mb.set_param(0, 4.0);     // band_count = 4
-    mb.set_param(1, 0.0);     // output gain = 0
-    mb.set_param(3, 200.0);   // crossover_1 = 200 Hz
-    mb.set_param(4, 1000.0);  // crossover_2 = 1000 Hz
-    mb.set_param(5, 5000.0);  // crossover_3 = 5000 Hz
+    mb.set_param(0, 4.0); // band_count = 4
+    mb.set_param(1, 0.0); // output gain = 0
+    mb.set_param(3, 200.0); // crossover_1 = 200 Hz
+    mb.set_param(4, 1000.0); // crossover_2 = 1000 Hz
+    mb.set_param(5, 5000.0); // crossover_3 = 5000 Hz
 
     disable_all_compression(&mut mb);
 
     // Compress only band 1 (200-1000 Hz range): threshold=-30, ratio=10
     let band1_base = 8 + 5; // band index 1: 8 + 1*5 = 13
-    mb.set_param(band1_base as u32, -30.0);       // threshold
-    mb.set_param((band1_base + 1) as u32, 10.0);  // ratio
-    mb.set_param((band1_base + 2) as u32, 0.1);   // fast attack
-    mb.set_param((band1_base + 3) as u32, 10.0);  // fast release
-    mb.set_param((band1_base + 4) as u32, 0.0);   // no makeup
+    mb.set_param(band1_base as u32, -30.0); // threshold
+    mb.set_param((band1_base + 1) as u32, 10.0); // ratio
+    mb.set_param((band1_base + 2) as u32, 0.1); // fast attack
+    mb.set_param((band1_base + 3) as u32, 10.0); // fast release
+    mb.set_param((band1_base + 4) as u32, 0.0); // no makeup
 
     // Build broadband signal: mix of 100 Hz + 500 Hz + 2000 Hz + 10000 Hz
     let num_samples = SR as usize * 4;
@@ -245,19 +248,22 @@ fn mb3_band_independence() {
         db_500 < db_100 - 3.0,
         "mb3: band 1 (500Hz) should be >3 dB below band 0 (100Hz): \
          500Hz={:.1} dB, 100Hz={:.1} dB",
-        db_500, db_100
+        db_500,
+        db_100
     );
     assert!(
         db_500 < db_2k - 3.0,
         "mb3: band 1 (500Hz) should be >3 dB below band 2 (2kHz): \
          500Hz={:.1} dB, 2kHz={:.1} dB",
-        db_500, db_2k
+        db_500,
+        db_2k
     );
     assert!(
         db_500 < db_10k - 3.0,
         "mb3: band 1 (500Hz) should be >3 dB below band 3 (10kHz): \
          500Hz={:.1} dB, 10kHz={:.1} dB",
-        db_500, db_10k
+        db_500,
+        db_10k
     );
 }
 
@@ -273,9 +279,9 @@ fn mb3_band_independence() {
 #[test]
 fn mb4_crossover_phase_alignment() {
     let mut mb = MultibandCompressor::new(SR);
-    mb.set_param(0, 2.0);     // band_count = 2
-    mb.set_param(1, 0.0);     // output gain = 0
-    mb.set_param(3, 1000.0);  // crossover_1 = 1000 Hz
+    mb.set_param(0, 2.0); // band_count = 2
+    mb.set_param(1, 0.0); // output gain = 0
+    mb.set_param(3, 1000.0); // crossover_1 = 1000 Hz
     disable_all_compression(&mut mb);
 
     let num_samples = SR as usize * 2;
@@ -296,7 +302,9 @@ fn mb4_crossover_phase_alignment() {
         deviation_db < 1.0,
         "mb4: at crossover frequency (1 kHz), LP+HP sum should be near unity: \
          deviation = {:.3} dB (input={:.6}, output={:.6})",
-        deviation_db, input_rms, output_rms
+        deviation_db,
+        input_rms,
+        output_rms
     );
 }
 
@@ -316,15 +324,15 @@ fn mb5_single_band_degenerates() {
 
     // --- Multiband (1 band) ---
     let mut mb = MultibandCompressor::new(SR);
-    mb.set_param(0, 1.0);   // band_count = 1
-    mb.set_param(1, 0.0);   // output gain = 0
+    mb.set_param(0, 1.0); // band_count = 1
+    mb.set_param(1, 0.0); // output gain = 0
 
     // Band 0 compression: threshold=-20, ratio=4, fast attack, slow release
-    mb.set_param(8, -20.0);    // threshold
-    mb.set_param(9, 4.0);     // ratio
-    mb.set_param(10, 0.1);    // attack
+    mb.set_param(8, -20.0); // threshold
+    mb.set_param(9, 4.0); // ratio
+    mb.set_param(10, 0.1); // attack
     mb.set_param(11, 1000.0); // release
-    mb.set_param(12, 0.0);    // makeup
+    mb.set_param(12, 0.0); // makeup
 
     let input = sine_f32(1000.0, amplitude, num_samples);
     let silent = vec![0.0f32; num_samples];
@@ -334,13 +342,13 @@ fn mb5_single_band_degenerates() {
 
     // --- Regular Compressor with same settings ---
     let mut comp = Compressor::new(SR);
-    comp.set_param(0, -20.0);   // threshold
-    comp.set_param(1, 4.0);     // ratio
-    comp.set_param(2, 0.1);     // attack
-    comp.set_param(3, 1000.0);  // release
-    comp.set_param(4, 0.0);     // knee = 0 (hard knee)
-    comp.set_param(5, 0.0);     // makeup = 0
-    comp.set_param(6, 0.0);     // sidechain HPF bypassed
+    comp.set_param(0, -20.0); // threshold
+    comp.set_param(1, 4.0); // ratio
+    comp.set_param(2, 0.1); // attack
+    comp.set_param(3, 1000.0); // release
+    comp.set_param(4, 0.0); // knee = 0 (hard knee)
+    comp.set_param(5, 0.0); // makeup = 0
+    comp.set_param(6, 0.0); // sidechain HPF bypassed
 
     let mut comp_out_l = vec![0.0f32; num_samples];
     let mut comp_out_r = vec![0.0f32; num_samples];
@@ -356,7 +364,9 @@ fn mb5_single_band_degenerates() {
         diff_db < 1.0,
         "mb5: single-band multiband should match regular compressor within 1 dB: \
          multiband={:.2} dB, compressor={:.2} dB, diff={:.2} dB",
-        mb_rms_db, comp_rms_db, diff_db
+        mb_rms_db,
+        comp_rms_db,
+        diff_db
     );
 }
 
@@ -373,20 +383,20 @@ fn mb5_single_band_degenerates() {
 #[test]
 fn mb6_per_band_ratio_precision() {
     let mut mb = MultibandCompressor::new(SR);
-    mb.set_param(0, 2.0);     // band_count = 2
-    mb.set_param(1, 0.0);     // output gain = 0
-    mb.set_param(3, 2000.0);  // crossover_1 = 2000 Hz
+    mb.set_param(0, 2.0); // band_count = 2
+    mb.set_param(1, 0.0); // output gain = 0
+    mb.set_param(3, 2000.0); // crossover_1 = 2000 Hz
 
     // Band 0 (low): compress
-    mb.set_param(8, -20.0);   // threshold = -20 dB
-    mb.set_param(9, 4.0);     // ratio = 4:1
-    mb.set_param(10, 0.1);    // fast attack
+    mb.set_param(8, -20.0); // threshold = -20 dB
+    mb.set_param(9, 4.0); // ratio = 4:1
+    mb.set_param(10, 0.1); // fast attack
     mb.set_param(11, 1000.0); // slow release
-    mb.set_param(12, 0.0);    // no makeup
+    mb.set_param(12, 0.0); // no makeup
 
     // Band 1 (high): no compression — keep signal in band 1 from interfering
-    mb.set_param(13, 0.0);    // threshold = 0 dB
-    mb.set_param(14, 1.0);    // ratio = 1:1
+    mb.set_param(13, 0.0); // threshold = 0 dB
+    mb.set_param(14, 1.0); // ratio = 1:1
     mb.set_param(15, 0.1);
     mb.set_param(16, 10.0);
     mb.set_param(17, 0.0);
@@ -418,6 +428,8 @@ fn mb6_per_band_ratio_precision() {
     assert!(
         error < 4.0,
         "mb6: per-band ratio precision: expected ≈{:.1} dBFS, got {:.2} dBFS (error={:.2} dB)",
-        expected_db, output_rms_db, error
+        expected_db,
+        output_rms_db,
+        error
     );
 }

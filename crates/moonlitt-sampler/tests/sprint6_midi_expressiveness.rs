@@ -183,7 +183,10 @@ fn t5_cc_on_one_channel_does_not_affect_another() {
     b.cc(3, 7, 0); // silence channel 3 only
     b.note_on(0, 60, 100);
     let out = settled_rms(&mut b);
-    assert!(out > 1e-5, "channel 0 must be unaffected by channel 3's CC7");
+    assert!(
+        out > 1e-5,
+        "channel 0 must be unaffected by channel 3's CC7"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -217,7 +220,10 @@ fn t6_pitch_bend_changes_output_and_stays_finite() {
     let bent_down = render(-8192);
 
     assert!(unbent != bent_up, "full bend up must alter the waveform");
-    assert!(unbent != bent_down, "full bend down must alter the waveform");
+    assert!(
+        unbent != bent_down,
+        "full bend down must alter the waveform"
+    );
     assert!(bent_up != bent_down, "up and down bends must differ");
 }
 

@@ -154,8 +154,16 @@ impl Chorus {
         let default_voices = 4u32;
 
         for i in 0..MAX_VOICES {
-            delay_lines_l.push(FractionalDelayLine::new(MAX_DELAY_MS, sample_rate, SINC_POINTS));
-            delay_lines_r.push(FractionalDelayLine::new(MAX_DELAY_MS, sample_rate, SINC_POINTS));
+            delay_lines_l.push(FractionalDelayLine::new(
+                MAX_DELAY_MS,
+                sample_rate,
+                SINC_POINTS,
+            ));
+            delay_lines_r.push(FractionalDelayLine::new(
+                MAX_DELAY_MS,
+                sample_rate,
+                SINC_POINTS,
+            ));
 
             let mut lfo = Lfo::new(sample_rate);
             // Distribute phases evenly across active voices
@@ -266,13 +274,7 @@ impl AudioBackend for Chorus {
     // -- Audio: generator render is a no-op (this is an effect) --
     fn render(&mut self, _left: &mut [f32], _right: &mut [f32]) {}
 
-    fn process_effect(
-        &mut self,
-        in_l: &[f32],
-        in_r: &[f32],
-        out_l: &mut [f32],
-        out_r: &mut [f32],
-    ) {
+    fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
         let len = in_l.len();
 
         // Bypass: bit-exact copy
@@ -616,9 +618,7 @@ mod tests {
 
         // Generate a 440 Hz sine input
         let input: Vec<f32> = (0..num_samples)
-            .map(|i| {
-                ((i as f64 / sr as f64) * 440.0 * std::f64::consts::TAU).sin() as f32
-            })
+            .map(|i| ((i as f64 / sr as f64) * 440.0 * std::f64::consts::TAU).sin() as f32)
             .collect();
 
         // --- 1 voice ---
@@ -626,7 +626,7 @@ mod tests {
         chorus_1v.set_param(3, 1.0); // 1 voice
         chorus_1v.set_param(1, 0.5); // depth
         chorus_1v.set_param(6, 1.0); // 100% wet
-        // Jump smoothers
+                                     // Jump smoothers
         chorus_1v.depth_smoother.reset(0.5);
         chorus_1v.mix_smoother.reset(1.0);
 
@@ -639,7 +639,7 @@ mod tests {
         chorus_4v.set_param(3, 4.0); // 4 voices
         chorus_4v.set_param(1, 0.5); // depth
         chorus_4v.set_param(6, 1.0); // 100% wet
-        // Jump smoothers
+                                     // Jump smoothers
         chorus_4v.depth_smoother.reset(0.5);
         chorus_4v.mix_smoother.reset(1.0);
 
@@ -675,9 +675,7 @@ mod tests {
         let num_samples = sr as usize; // 1 second
 
         let input: Vec<f32> = (0..num_samples)
-            .map(|i| {
-                ((i as f64 / sr as f64) * 440.0 * std::f64::consts::TAU).sin() as f32
-            })
+            .map(|i| ((i as f64 / sr as f64) * 440.0 * std::f64::consts::TAU).sin() as f32)
             .collect();
 
         let mut chorus = Chorus::new(sr);
@@ -685,7 +683,7 @@ mod tests {
         chorus.set_param(4, 1.0); // spread = 1.0 (full)
         chorus.set_param(6, 1.0); // 100% wet
         chorus.set_param(1, 0.5); // depth
-        // Jump smoothers
+                                  // Jump smoothers
         chorus.depth_smoother.reset(0.5);
         chorus.mix_smoother.reset(1.0);
         chorus.spread_smoother.reset(1.0);
@@ -716,15 +714,13 @@ mod tests {
         let num_samples = sr as usize; // 1 second
 
         let input: Vec<f32> = (0..num_samples)
-            .map(|i| {
-                ((i as f64 / sr as f64) * 440.0 * std::f64::consts::TAU).sin() as f32
-            })
+            .map(|i| ((i as f64 / sr as f64) * 440.0 * std::f64::consts::TAU).sin() as f32)
             .collect();
 
         let mut chorus = Chorus::new(sr);
         chorus.set_param(1, 0.0); // depth = 0
         chorus.set_param(6, 1.0); // 100% wet
-        // Jump smoothers
+                                  // Jump smoothers
         chorus.depth_smoother.reset(0.0);
         chorus.mix_smoother.reset(1.0);
 
@@ -769,14 +765,14 @@ mod tests {
 
         for i in 0..8 {
             let info = chorus.param_info(i);
-            assert!(
-                info.is_some(),
-                "param_info({}) should return Some",
-                i
-            );
+            assert!(info.is_some(), "param_info({}) should return Some", i);
             let info = info.unwrap();
             assert_eq!(info.id, i);
-            assert!(!info.name.is_empty(), "param {} name should not be empty", i);
+            assert!(
+                !info.name.is_empty(),
+                "param {} name should not be empty",
+                i
+            );
             assert!(
                 !info.group.is_empty(),
                 "param {} group should not be empty",

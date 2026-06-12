@@ -34,7 +34,8 @@ pub struct ChunkedState {
 
 impl ChunkedState {
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(HEADER_LEN + self.component.len() + 8 + self.controller.len());
+        let mut out =
+            Vec::with_capacity(HEADER_LEN + self.component.len() + 8 + self.controller.len());
         out.extend_from_slice(MAGIC);
         out.extend_from_slice(&VERSION.to_le_bytes());
         out.extend_from_slice(&(self.component.len() as u64).to_le_bytes());
@@ -67,7 +68,10 @@ impl ChunkedState {
             return None;
         }
         let controller = data[comp_end + 8..ctrl_end].to_vec();
-        Some(Self { component, controller })
+        Some(Self {
+            component,
+            controller,
+        })
     }
 }
 
@@ -114,8 +118,10 @@ mod tests {
     fn parse_rejects_legacy_single_blob() {
         // 250 KB of arbitrary bytes that don't begin with MLST.
         let legacy = vec![0xCDu8; 250_000];
-        assert!(ChunkedState::parse(&legacy).is_none(),
-            "legacy single-blob fixtures must NOT be parsed as chunked");
+        assert!(
+            ChunkedState::parse(&legacy).is_none(),
+            "legacy single-blob fixtures must NOT be parsed as chunked"
+        );
     }
 
     #[test]

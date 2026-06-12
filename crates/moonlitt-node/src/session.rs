@@ -26,11 +26,7 @@ impl Session {
     /// The backend is consumed (moved into the internal mixer).
     /// To add more instruments, use `addTrack()` afterward.
     #[napi(factory)]
-    pub fn create(
-        backend: &mut Backend,
-        sample_rate: u32,
-        buffer_size: u32,
-    ) -> Result<Session> {
+    pub fn create(backend: &mut Backend, sample_rate: u32, buffer_size: u32) -> Result<Session> {
         let b = backend
             .inner
             .take()
@@ -47,17 +43,13 @@ impl Session {
     /// Start audio output (opens the system audio device).
     #[napi]
     pub fn start(&self) -> Result<()> {
-        self.rt()?
-            .start()
-            .map_err(napi::Error::from_reason)
+        self.rt()?.start().map_err(napi::Error::from_reason)
     }
 
     /// Stop (pause) audio output.
     #[napi]
     pub fn stop(&self) -> Result<()> {
-        self.rt()?
-            .stop()
-            .map_err(napi::Error::from_reason)
+        self.rt()?.stop().map_err(napi::Error::from_reason)
     }
 
     // --- Transport ---
@@ -252,7 +244,8 @@ impl Session {
     /// Set track volume (0.0 to 1.0).
     #[napi]
     pub fn set_track_volume(&mut self, track_id: u8, volume: f64) -> Result<()> {
-        self.rt_mut()?.mixer_set_track_volume(track_id, volume as f32);
+        self.rt_mut()?
+            .mixer_set_track_volume(track_id, volume as f32);
         Ok(())
     }
 
@@ -266,7 +259,8 @@ impl Session {
     /// Set track trim in dB.
     #[napi]
     pub fn set_track_trim(&mut self, track_id: u8, trim_db: f64) -> Result<()> {
-        self.rt_mut()?.mixer_set_track_trim(track_id, trim_db as f32);
+        self.rt_mut()?
+            .mixer_set_track_trim(track_id, trim_db as f32);
         Ok(())
     }
 
@@ -287,7 +281,8 @@ impl Session {
     /// Set track send level to a bus.
     #[napi]
     pub fn set_track_send(&mut self, track_id: u8, bus_id: u8, level: f64) -> Result<()> {
-        self.rt_mut()?.mixer_set_track_send(track_id, bus_id, level as f32);
+        self.rt_mut()?
+            .mixer_set_track_send(track_id, bus_id, level as f32);
         Ok(())
     }
 
@@ -300,13 +295,9 @@ impl Session {
 
     /// Bypass or enable an insert effect.
     #[napi]
-    pub fn set_insert_bypass(
-        &mut self,
-        track_id: u8,
-        insert_id: u8,
-        bypass: bool,
-    ) -> Result<()> {
-        self.rt_mut()?.mixer_set_insert_bypass(track_id, insert_id, bypass);
+    pub fn set_insert_bypass(&mut self, track_id: u8, insert_id: u8, bypass: bool) -> Result<()> {
+        self.rt_mut()?
+            .mixer_set_insert_bypass(track_id, insert_id, bypass);
         Ok(())
     }
 
@@ -326,19 +317,16 @@ impl Session {
         insert_id: u8,
         source_track_id: Option<u8>,
     ) -> Result<()> {
-        self.rt_mut()?.set_insert_sidechain(track_id, insert_id, source_track_id);
+        self.rt_mut()?
+            .set_insert_sidechain(track_id, insert_id, source_track_id);
         Ok(())
     }
 
     /// Set a parameter on a track's backend.
     #[napi]
-    pub fn set_param_for_track(
-        &mut self,
-        track_id: u8,
-        param_id: u16,
-        value: f64,
-    ) -> Result<()> {
-        self.rt_mut()?.set_param_for_track(track_id, param_id, value);
+    pub fn set_param_for_track(&mut self, track_id: u8, param_id: u16, value: f64) -> Result<()> {
+        self.rt_mut()?
+            .set_param_for_track(track_id, param_id, value);
         Ok(())
     }
 
@@ -351,18 +339,14 @@ impl Session {
         param_id: u16,
         value: f64,
     ) -> Result<()> {
-        self.rt_mut()?.set_insert_param(track_id, insert_id, param_id, value);
+        self.rt_mut()?
+            .set_insert_param(track_id, insert_id, param_id, value);
         Ok(())
     }
 
     /// Set a parameter on a send bus effect.
     #[napi]
-    pub fn set_send_bus_param(
-        &mut self,
-        bus_id: u8,
-        param_id: u16,
-        value: f64,
-    ) -> Result<()> {
+    pub fn set_send_bus_param(&mut self, bus_id: u8, param_id: u16, value: f64) -> Result<()> {
         self.rt_mut()?.set_send_bus_param(bus_id, param_id, value);
         Ok(())
     }

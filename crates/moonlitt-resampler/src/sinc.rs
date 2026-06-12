@@ -159,8 +159,16 @@ impl SincInterpolator {
     }
 
     fn linear_interp_safe(samples: &[f32], index: usize, frac: f32) -> f32 {
-        let a = if index < samples.len() { samples[index] } else { 0.0 };
-        let b = if index + 1 < samples.len() { samples[index + 1] } else { a };
+        let a = if index < samples.len() {
+            samples[index]
+        } else {
+            0.0
+        };
+        let b = if index + 1 < samples.len() {
+            samples[index + 1]
+        } else {
+            a
+        };
         a * (1.0 - frac) + b * frac
     }
 }

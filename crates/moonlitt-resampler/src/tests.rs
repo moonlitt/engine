@@ -48,7 +48,10 @@ fn test_sinc72_midpoint_sine() {
     let val = interp.interpolate(&samples, idx, frac);
     let expected = (2.0 * std::f32::consts::PI * freq * (idx as f32 + frac)).sin();
     let error = (val - expected).abs();
-    assert!(error < 0.001, "Sinc72 sine interpolation error: {error} (got {val}, expected {expected})");
+    assert!(
+        error < 0.001,
+        "Sinc72 sine interpolation error: {error} (got {val}, expected {expected})"
+    );
 }
 
 #[test]

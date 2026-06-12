@@ -14,8 +14,8 @@ pub mod error;
 pub mod plugin_info;
 
 // Re-export factory functions at crate level for convenience.
-pub use engine::{create, create_high_quality, scan_plugins, supported_formats};
 #[cfg(feature = "sf2")]
 pub use engine::create_from_shared_sf2;
 #[cfg(feature = "sf2-sampler")]
 pub use engine::create_with_sampler;
+pub use engine::{create, create_high_quality, scan_plugins, supported_formats};

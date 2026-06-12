@@ -66,10 +66,7 @@ impl IConnectionPointTrait for ConnectionBridge {
                 cstr.to_string_lossy().into_owned()
             }
         };
-        crate::trace::emit(&format!(
-            "CP[{}] notify msg=\"{}\"",
-            self.label, msg_id
-        ));
+        crate::trace::emit(&format!("CP[{}] notify msg=\"{}\"", self.label, msg_id));
 
         // Forward to real target.
         let target = match self.target.lock() {

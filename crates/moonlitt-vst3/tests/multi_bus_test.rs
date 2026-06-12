@@ -21,7 +21,9 @@ fn peak(samples: &[f32]) -> f32 {
 /// `Vst3Host::load` exclusive.
 fn plugin_lock() -> MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|e| e.into_inner())
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
 }
 
 #[test]
@@ -41,7 +43,10 @@ fn audio_output_topology_is_exposed() {
 
     let plugin = host.load(info).unwrap();
     let buses = plugin.audio_output_buses();
-    assert!(!buses.is_empty(), "plugin must declare at least one audio output bus");
+    assert!(
+        !buses.is_empty(),
+        "plugin must declare at least one audio output bus"
+    );
     assert_eq!(plugin.audio_output_bus_count(), buses.len());
     assert!(
         plugin.audio_output_bus_info(0).is_some(),
@@ -130,7 +135,10 @@ fn render_one_and_render_all_agree_on_bus_zero() {
     // Same plugin + same MIDI + same warmup → both paths should produce
     // signal in the same order of magnitude. Allow generous slack since
     // sample-level reproducibility is not guaranteed across instances.
-    assert!(pa > 1e-3 && pb > 1e-3, "both paths must produce audio (a={pa}, b={pb})");
+    assert!(
+        pa > 1e-3 && pb > 1e-3,
+        "both paths must produce audio (a={pa}, b={pb})"
+    );
     assert!(
         (pa - pb).abs() / pa.max(pb) < 0.5,
         "render and render_all bus 0 peaks diverge: a={pa} b={pb}"

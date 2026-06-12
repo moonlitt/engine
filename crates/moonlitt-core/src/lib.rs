@@ -20,8 +20,7 @@ pub use null_backend::NullBackend;
 /// [`AudioBackend::state_capture_handle`]. Calling it serialises the
 /// backend's current patch state; safe from any thread (the backend
 /// guards its own internals — e.g. a brief plugin mutex).
-pub type StateCaptureHandle =
-    std::sync::Arc<dyn Fn() -> Result<Vec<u8>, String> + Send + Sync>;
+pub type StateCaptureHandle = std::sync::Arc<dyn Fn() -> Result<Vec<u8>, String> + Send + Sync>;
 
 /// All backends implement this trait. Public — community can extend.
 pub trait AudioBackend: Send {
@@ -50,17 +49,29 @@ pub trait AudioBackend: Send {
     /// Report processing latency in samples.
     /// Used for Plugin Delay Compensation (PDC).
     /// Default: 0 (no latency).
-    fn latency(&self) -> u32 { 0 }
+    fn latency(&self) -> u32 {
+        0
+    }
 
     // Parameters — backends opt in by overriding these defaults
-    fn param_count(&self) -> u32 { 0 }
-    fn param_info(&self, _index: u32) -> Option<ParamInfo> { None }
-    fn get_param(&self, _id: u32) -> Option<f64> { None }
+    fn param_count(&self) -> u32 {
+        0
+    }
+    fn param_info(&self, _index: u32) -> Option<ParamInfo> {
+        None
+    }
+    fn get_param(&self, _id: u32) -> Option<f64> {
+        None
+    }
     fn set_param(&mut self, _id: u32, _value: f64) {}
-    fn param_display(&self, _id: u32, _value: f64) -> Option<String> { None }
+    fn param_display(&self, _id: u32, _value: f64) -> Option<String> {
+        None
+    }
 
     // Presets
-    fn presets(&self) -> Vec<PresetInfo> { vec![] }
+    fn presets(&self) -> Vec<PresetInfo> {
+        vec![]
+    }
     fn load_preset(&mut self, _id: i32) -> Result<(), Box<dyn std::error::Error>> {
         Err("not supported".into())
     }
@@ -108,7 +119,9 @@ pub trait AudioBackend: Send {
     /// Back-ends override this when they ship asynchronously-loading
     /// content (sample streamers identify themselves here by returning
     /// a non-zero value). Default 0 means "no warm-up needed".
-    fn recommended_warm_up_blocks(&self) -> usize { 0 }
+    fn recommended_warm_up_blocks(&self) -> usize {
+        0
+    }
 
     // Sidechain — effects opt in by overriding these defaults
 
@@ -119,7 +132,9 @@ pub trait AudioBackend: Send {
     fn set_sidechain(&mut self, _left: &[f32], _right: &[f32]) {}
 
     /// Whether this effect supports external sidechain input.
-    fn supports_sidechain(&self) -> bool { false }
+    fn supports_sidechain(&self) -> bool {
+        false
+    }
 }
 
 pub struct BackendInfo {

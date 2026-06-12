@@ -1,8 +1,8 @@
-use moonlitt_core::{AudioEvent, TimedEvent};
-use moonlitt_mixer::Mixer;
 use crate::metronome::Metronome;
 use crate::sequencer::Sequencer;
 use crate::transport::Transport;
+use moonlitt_core::{AudioEvent, TimedEvent};
+use moonlitt_mixer::Mixer;
 use rtrb::Consumer;
 use std::sync::mpsc;
 use std::sync::Arc;
@@ -134,8 +134,10 @@ impl AudioThread {
             // 4. Render with sample-accurate event insertion
             if self.pending.is_empty() {
                 // Fast path: no delayed events
-                self.mixer
-                    .render(&mut self.render_left[..chunk], &mut self.render_right[..chunk]);
+                self.mixer.render(
+                    &mut self.render_left[..chunk],
+                    &mut self.render_right[..chunk],
+                );
             } else {
                 self.render_with_splits(chunk);
             }
@@ -233,21 +235,33 @@ fn dispatch_to_mixer(mixer: &mut Mixer, event: AudioEvent) {
         AudioEvent::SetVolume(v) => mixer.set_volume(v),
         AudioEvent::SetParam { id, value } => mixer.set_param(id, value),
         AudioEvent::MixerTrackVolume { track_id, volume } => {
-            if let Some(t) = mixer.track_mut(track_id as u32) { t.volume = volume; }
+            if let Some(t) = mixer.track_mut(track_id as u32) {
+                t.volume = volume;
+            }
         }
         AudioEvent::MixerTrackPan { track_id, pan } => {
-            if let Some(t) = mixer.track_mut(track_id as u32) { t.pan = pan; }
+            if let Some(t) = mixer.track_mut(track_id as u32) {
+                t.pan = pan;
+            }
         }
         AudioEvent::MixerTrackTrim { track_id, trim_db } => {
             mixer.set_track_trim(track_id as u32, trim_db);
         }
         AudioEvent::MixerTrackMute { track_id, mute } => {
-            if let Some(t) = mixer.track_mut(track_id as u32) { t.mute = mute; }
+            if let Some(t) = mixer.track_mut(track_id as u32) {
+                t.mute = mute;
+            }
         }
         AudioEvent::MixerTrackSolo { track_id, solo } => {
-            if let Some(t) = mixer.track_mut(track_id as u32) { t.solo = solo; }
+            if let Some(t) = mixer.track_mut(track_id as u32) {
+                t.solo = solo;
+            }
         }
-        AudioEvent::MixerTrackSend { track_id, bus_id, level } => {
+        AudioEvent::MixerTrackSend {
+            track_id,
+            bus_id,
+            level,
+        } => {
             if let Some(t) = mixer.track_mut(track_id as u32) {
                 if (bus_id as usize) < t.send_levels.len() {
                     t.send_levels[bus_id as usize] = level;
@@ -255,19 +269,39 @@ fn dispatch_to_mixer(mixer: &mut Mixer, event: AudioEvent) {
             }
         }
         AudioEvent::MixerMasterVolume(v) => mixer.set_master_volume(v),
-        AudioEvent::InsertBypass { track_id, insert_id, bypass } => {
+        AudioEvent::InsertBypass {
+            track_id,
+            insert_id,
+            bypass,
+        } => {
             mixer.set_insert_bypass(track_id as u32, insert_id as u32, bypass);
         }
-        AudioEvent::SetParamForTrack { track_id, param_id, value } => {
+        AudioEvent::SetParamForTrack {
+            track_id,
+            param_id,
+            value,
+        } => {
             mixer.set_param_for_track(track_id as u32, param_id as u32, value);
         }
-        AudioEvent::SetInsertParam { track_id, insert_id, param_id, value } => {
+        AudioEvent::SetInsertParam {
+            track_id,
+            insert_id,
+            param_id,
+            value,
+        } => {
             mixer.set_insert_param(track_id as u32, insert_id as u32, param_id as u32, value);
         }
-        AudioEvent::SetSendBusParam { bus_id, param_id, value } => {
+        AudioEvent::SetSendBusParam {
+            bus_id,
+            param_id,
+            value,
+        } => {
             mixer.set_send_bus_param(bus_id as u32, param_id as u32, value);
         }
-        AudioEvent::MixerTrackRoute { track_id, target_id } => {
+        AudioEvent::MixerTrackRoute {
+            track_id,
+            target_id,
+        } => {
             let target = if target_id == 0xFF {
                 moonlitt_mixer::OutputTarget::Master
             } else {
@@ -275,8 +309,16 @@ fn dispatch_to_mixer(mixer: &mut Mixer, event: AudioEvent) {
             };
             mixer.set_track_output(track_id as u32, target);
         }
-        AudioEvent::SetInsertSidechain { track_id, insert_id, source_track_id } => {
-            let source = if source_track_id == 0xFF { None } else { Some(source_track_id as u32) };
+        AudioEvent::SetInsertSidechain {
+            track_id,
+            insert_id,
+            source_track_id,
+        } => {
+            let source = if source_track_id == 0xFF {
+                None
+            } else {
+                Some(source_track_id as u32)
+            };
             mixer.set_insert_sidechain(track_id as u32, insert_id as u32, source);
         }
         AudioEvent::Stop => mixer.all_notes_off(),

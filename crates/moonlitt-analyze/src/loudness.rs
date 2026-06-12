@@ -6,7 +6,11 @@
 use crate::report::LoudnessStats;
 use ebur128::{EbuR128, Mode};
 
-pub fn measure(left: &[f32], right: &[f32], sample_rate: u32) -> Result<LoudnessStats, ebur128::Error> {
+pub fn measure(
+    left: &[f32],
+    right: &[f32],
+    sample_rate: u32,
+) -> Result<LoudnessStats, ebur128::Error> {
     let frames = left.len().min(right.len());
     let mode = Mode::I | Mode::M | Mode::S | Mode::LRA | Mode::HISTOGRAM;
     let mut meter = EbuR128::new(2, sample_rate, mode)?;
@@ -23,10 +27,14 @@ pub fn measure(left: &[f32], right: &[f32], sample_rate: u32) -> Result<Loudness
         meter.add_frames_planar_f32(&[&left[i..end], &right[i..end]])?;
 
         if let Ok(m) = meter.loudness_momentary() {
-            if m.is_finite() && m > momentary_max { momentary_max = m; }
+            if m.is_finite() && m > momentary_max {
+                momentary_max = m;
+            }
         }
         if let Ok(s) = meter.loudness_shortterm() {
-            if s.is_finite() && s > short_term_max { short_term_max = s; }
+            if s.is_finite() && s > short_term_max {
+                short_term_max = s;
+            }
         }
 
         i = end;
@@ -48,5 +56,9 @@ pub fn measure(left: &[f32], right: &[f32], sample_rate: u32) -> Result<Loudness
 const MIN_LUFS: f64 = -200.0;
 
 fn clean(v: f64) -> f64 {
-    if v.is_finite() { v.max(MIN_LUFS) } else { MIN_LUFS }
+    if v.is_finite() {
+        v.max(MIN_LUFS)
+    } else {
+        MIN_LUFS
+    }
 }

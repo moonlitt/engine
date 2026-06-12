@@ -122,9 +122,15 @@ impl AudioBackend for ClapBackend {
         const IS_HIDDEN: u32 = 1 << 2;
         const IS_READONLY: u32 = 1 << 3;
         const IS_STEPPED: u32 = 1 << 0;
-        if cinfo.flags & IS_HIDDEN != 0 { flags |= ParamFlags::HIDDEN; }
-        if cinfo.flags & IS_READONLY != 0 { flags |= ParamFlags::READONLY; }
-        if cinfo.flags & IS_STEPPED != 0 { flags |= ParamFlags::STEPPED; }
+        if cinfo.flags & IS_HIDDEN != 0 {
+            flags |= ParamFlags::HIDDEN;
+        }
+        if cinfo.flags & IS_READONLY != 0 {
+            flags |= ParamFlags::READONLY;
+        }
+        if cinfo.flags & IS_STEPPED != 0 {
+            flags |= ParamFlags::STEPPED;
+        }
         Some(ParamInfo {
             id: cinfo.id,
             name: cinfo.name,

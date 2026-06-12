@@ -288,19 +288,13 @@ mod tests {
     #[test]
     fn note_value_quarter_at_120bpm() {
         let ms = NoteValue::Quarter.to_ms(120.0);
-        assert!(
-            (ms - 500.0).abs() < 0.01,
-            "1/4 @ 120 BPM = 500ms, got {ms}"
-        );
+        assert!((ms - 500.0).abs() < 0.01, "1/4 @ 120 BPM = 500ms, got {ms}");
     }
 
     #[test]
     fn note_value_eighth_at_120bpm() {
         let ms = NoteValue::Eighth.to_ms(120.0);
-        assert!(
-            (ms - 250.0).abs() < 0.01,
-            "1/8 @ 120 BPM = 250ms, got {ms}"
-        );
+        assert!((ms - 250.0).abs() < 0.01, "1/8 @ 120 BPM = 250ms, got {ms}");
     }
 
     #[test]

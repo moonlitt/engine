@@ -298,8 +298,7 @@ impl Saturator {
 
     /// Update tone LP/HP filters for the oversampled rate.
     fn update_tone_filters(&mut self) {
-        let os_sr = self.sample_rate as f64
-            * os_param_to_factor(self.oversampling_param) as f64;
+        let os_sr = self.sample_rate as f64 * os_param_to_factor(self.oversampling_param) as f64;
         // Tone LP: 1 kHz center
         self.tone_lp_l.set_lowpass(os_sr, 1000.0);
         self.tone_lp_r.set_lowpass(os_sr, 1000.0);
@@ -310,8 +309,7 @@ impl Saturator {
 
     /// Update tape mode LP filter (gentle HF rolloff at ~8 kHz).
     fn update_tape_lp(&mut self) {
-        let os_sr = self.sample_rate as f64
-            * os_param_to_factor(self.oversampling_param) as f64;
+        let os_sr = self.sample_rate as f64 * os_param_to_factor(self.oversampling_param) as f64;
         self.tape_lp_l.set_lowpass(os_sr, 8000.0);
         self.tape_lp_r.set_lowpass(os_sr, 8000.0);
     }
@@ -322,7 +320,6 @@ impl Saturator {
         self.highcut_lp_l.set_lowpass(sr, self.high_cut);
         self.highcut_lp_r.set_lowpass(sr, self.high_cut);
     }
-
 }
 
 /// Map oversampling parameter (0..2) to actual factor.
@@ -378,13 +375,7 @@ impl AudioBackend for Saturator {
     // Audio: generator render is a no-op (this is an effect)
     fn render(&mut self, _left: &mut [f32], _right: &mut [f32]) {}
 
-    fn process_effect(
-        &mut self,
-        in_l: &[f32],
-        in_r: &[f32],
-        out_l: &mut [f32],
-        out_r: &mut [f32],
-    ) {
+    fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
         let len = in_l.len();
 
         // Bypass: bit-exact copy
@@ -425,20 +416,16 @@ impl AudioBackend for Saturator {
             let tape_lp = &mut self.tape_lp_l;
             let os_factor = os_param_to_factor(self.oversampling_param);
 
-            self.oversampler_l.process(
-                &in_l[..len],
-                &mut self.work_buf[..len],
-                |buf| {
+            self.oversampler_l
+                .process(&in_l[..len], &mut self.work_buf[..len], |buf| {
                     // buf is at oversampled rate; length = len * os_factor
                     for (i, sample) in buf.iter_mut().enumerate() {
                         // Map oversampled index back to original-rate param index
                         let param_idx = i / os_factor;
                         let param_idx = param_idx.min(len - 1);
 
-                        let drive_lin =
-                            10.0_f64.powf(drive_vals[param_idx] / 20.0);
-                        let output_lin =
-                            10.0_f64.powf(output_vals[param_idx] / 20.0);
+                        let drive_lin = 10.0_f64.powf(drive_vals[param_idx] / 20.0);
+                        let output_lin = 10.0_f64.powf(output_vals[param_idx] / 20.0);
                         let t = tone_vals[param_idx];
                         let asym = asym_vals[param_idx];
 
@@ -475,8 +462,7 @@ impl AudioBackend for Saturator {
 
                         *sample = x as f32;
                     }
-                },
-            );
+                });
 
             // Post-downsample: high-cut filter and dry/wet mix
             for i in 0..len {
@@ -528,10 +514,8 @@ impl AudioBackend for Saturator {
             let tone_hp = &mut self.tone_hp_r;
             let tape_lp = &mut self.tape_lp_r;
 
-            self.oversampler_r.process(
-                &in_r[..len],
-                &mut self.work_buf[..len],
-                |buf| {
+            self.oversampler_r
+                .process(&in_r[..len], &mut self.work_buf[..len], |buf| {
                     for sample in buf.iter_mut() {
                         let mut x = *sample as f64;
 
@@ -559,8 +543,7 @@ impl AudioBackend for Saturator {
 
                         *sample = x as f32;
                     }
-                },
-            );
+                });
 
             for i in 0..len {
                 let wet = self.highcut_lp_r.process_lp(self.work_buf[i] as f64) as f32;
@@ -764,7 +747,11 @@ impl AudioBackend for Saturator {
             5 => Some(format!("{:.0}%", value * 100.0)),
             6 => Some(format!("{:.0}%", value * 100.0)),
             7 => Some(format!("{:.0} Hz", value)),
-            8 => Some(if value >= 0.5 { "On".into() } else { "Off".into() }),
+            8 => Some(if value >= 0.5 {
+                "On".into()
+            } else {
+                "Off".into()
+            }),
             _ => None,
         }
     }
@@ -856,13 +843,13 @@ mod tests {
         // close to the input (identity-like).
         let sr = 44100;
         let mut sat = Saturator::new(sr);
-        sat.set_param(0, 0.0);   // drive = 0 dB
-        sat.set_param(1, 2.0);   // transistor (tanh, closest to linear at low drive)
-        sat.set_param(2, 0.5);   // tone neutral
-        sat.set_param(3, 0.0);   // output = 0 dB
-        sat.set_param(4, 0.0);   // 1x (no oversampling)
-        sat.set_param(5, 0.0);   // no asymmetry
-        sat.set_param(6, 1.0);   // mix = 100%
+        sat.set_param(0, 0.0); // drive = 0 dB
+        sat.set_param(1, 2.0); // transistor (tanh, closest to linear at low drive)
+        sat.set_param(2, 0.5); // tone neutral
+        sat.set_param(3, 0.0); // output = 0 dB
+        sat.set_param(4, 0.0); // 1x (no oversampling)
+        sat.set_param(5, 0.0); // no asymmetry
+        sat.set_param(6, 1.0); // mix = 100%
         sat.set_param(7, 20000.0); // high cut at max
 
         // Use a low-amplitude sine so tanh(x) ~ x
@@ -920,11 +907,11 @@ mod tests {
 
         for mode_val in 0..5 {
             let mut sat = Saturator::new(sr);
-            sat.set_param(0, 24.0);  // high drive to emphasize differences
+            sat.set_param(0, 24.0); // high drive to emphasize differences
             sat.set_param(1, mode_val as f64);
-            sat.set_param(2, 0.5);   // neutral tone
+            sat.set_param(2, 0.5); // neutral tone
             sat.set_param(3, 0.0);
-            sat.set_param(4, 0.0);   // 1x (no oversampling, faster test)
+            sat.set_param(4, 0.0); // 1x (no oversampling, faster test)
             sat.set_param(5, 0.0);
             sat.set_param(6, 1.0);
             sat.set_param(7, 20000.0);

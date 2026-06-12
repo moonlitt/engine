@@ -97,10 +97,7 @@ fn gui_side_set_state_audible_through_audio_backend() {
     // we'd read back through the GUI-side handle. Identical bytes prove
     // "same instance" without depending on audio rendering working.
     let backend_state = backend.save_state().expect("backend save_state");
-    let gui_state = gui_handle
-        .lock()
-        .get_state()
-        .expect("gui handle get_state");
+    let gui_state = gui_handle.lock().get_state().expect("gui handle get_state");
     assert_eq!(
         backend_state, gui_state,
         "shared handle and audio backend must serialise identical state — \

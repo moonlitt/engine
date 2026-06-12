@@ -5,8 +5,8 @@
 //! - The required plugin is not installed
 //! - No audio output device is available
 
-use moonlitt_core::AudioBackend;
 use moonlitt_audio_io::Runtime;
+use moonlitt_core::AudioBackend;
 use std::thread;
 use std::time::Duration;
 
@@ -29,7 +29,11 @@ fn is_no_device_error(msg: &str) -> bool {
 
 /// Try to create and start a Runtime, returning None only if no audio device
 /// is present. Panics on any other error to surface real regressions.
-fn try_create_runtime(backend: Box<dyn AudioBackend>, sample_rate: u32, buffer_size: u32) -> Option<Runtime> {
+fn try_create_runtime(
+    backend: Box<dyn AudioBackend>,
+    sample_rate: u32,
+    buffer_size: u32,
+) -> Option<Runtime> {
     match Runtime::new(backend, sample_rate, buffer_size) {
         Ok(rt) => match rt.start() {
             Ok(()) => Some(rt),
@@ -72,8 +76,8 @@ fn e2e_pianoteq_runtime() {
 
     // Play a C major chord
     rt.note_on(0, 60, 100); // C4
-    rt.note_on(0, 64, 90);  // E4
-    rt.note_on(0, 67, 85);  // G4
+    rt.note_on(0, 64, 90); // E4
+    rt.note_on(0, 67, 85); // G4
     eprintln!("Playing C major chord via Pianoteq...");
 
     thread::sleep(Duration::from_millis(800));

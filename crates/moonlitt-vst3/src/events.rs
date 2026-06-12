@@ -4,8 +4,8 @@
 //! a Rust COM object so it can be passed directly to IAudioProcessor::process().
 
 use vst3::Steinberg::Vst::{
-    Event, Event_, Event__type0, IEventList, IEventListTrait, LegacyMIDICCOutEvent,
-    NoteOffEvent, NoteOnEvent,
+    Event, Event_, Event__type0, IEventList, IEventListTrait, LegacyMIDICCOutEvent, NoteOffEvent,
+    NoteOnEvent,
 };
 use vst3::Steinberg::{int32, tresult};
 use vst3::Steinberg::{kResultFalse, kResultOk};
@@ -21,28 +21,11 @@ pub struct MidiEvent {
 /// The kind of MIDI event.
 #[derive(Debug, Clone)]
 pub enum MidiEventKind {
-    NoteOn {
-        channel: u8,
-        note: u8,
-        velocity: u8,
-    },
-    NoteOff {
-        channel: u8,
-        note: u8,
-    },
-    CC {
-        channel: u8,
-        cc: u8,
-        value: u8,
-    },
-    PitchBend {
-        channel: u8,
-        value: i16,
-    },
-    ProgramChange {
-        channel: u8,
-        program: u8,
-    },
+    NoteOn { channel: u8, note: u8, velocity: u8 },
+    NoteOff { channel: u8, note: u8 },
+    CC { channel: u8, cc: u8, value: u8 },
+    PitchBend { channel: u8, value: i16 },
+    ProgramChange { channel: u8, program: u8 },
 }
 
 /// Convert a slice of MidiEvents into VST3 Event structs.
@@ -90,11 +73,7 @@ fn midi_to_vst3_events(events: &[MidiEvent]) -> Vec<Event> {
                 };
                 out.push(e);
             }
-            MidiEventKind::CC {
-                channel,
-                cc,
-                value,
-            } => {
+            MidiEventKind::CC { channel, cc, value } => {
                 // VST3 has no direct CC event; use LegacyMIDICCOutEvent
                 let mut e = zeroed_event();
                 e.busIndex = 0;
@@ -122,16 +101,13 @@ fn midi_to_vst3_events(events: &[MidiEvent]) -> Vec<Event> {
                     midiCCOut: LegacyMIDICCOutEvent {
                         controlNumber: 129, // kPitchBend
                         channel: channel as i8,
-                        value: (unsigned & 0x7F) as i8,       // LSB
+                        value: (unsigned & 0x7F) as i8,         // LSB
                         value2: ((unsigned >> 7) & 0x7F) as i8, // MSB
                     },
                 };
                 out.push(e);
             }
-            MidiEventKind::ProgramChange {
-                channel,
-                program,
-            } => {
+            MidiEventKind::ProgramChange { channel, program } => {
                 // Program change as legacy MIDI (controlNumber=130 = kCtrlProgramChange)
                 let mut e = zeroed_event();
                 e.busIndex = 0;
@@ -336,4 +312,3 @@ fn vst3_event_to_midi(e: &Event) -> Option<MidiEvent> {
         _ => None,
     }
 }
-

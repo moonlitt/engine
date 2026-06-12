@@ -65,8 +65,14 @@ struct Lr4Crossover {
 impl Lr4Crossover {
     fn new(sample_rate: f64, freq: f64) -> Self {
         let mut xover = Self {
-            lp: [[Biquad::new(), Biquad::new()], [Biquad::new(), Biquad::new()]],
-            hp: [[Biquad::new(), Biquad::new()], [Biquad::new(), Biquad::new()]],
+            lp: [
+                [Biquad::new(), Biquad::new()],
+                [Biquad::new(), Biquad::new()],
+            ],
+            hp: [
+                [Biquad::new(), Biquad::new()],
+                [Biquad::new(), Biquad::new()],
+            ],
             freq,
         };
         xover.update_coeffs(sample_rate, freq);
@@ -75,8 +81,10 @@ impl Lr4Crossover {
 
     fn update_coeffs(&mut self, sample_rate: f64, freq: f64) {
         self.freq = freq;
-        let lp_coeffs = BiquadCoeffs::design(FilterType::Lowpass, sample_rate, freq, 0.0, BUTTERWORTH_Q);
-        let hp_coeffs = BiquadCoeffs::design(FilterType::Highpass, sample_rate, freq, 0.0, BUTTERWORTH_Q);
+        let lp_coeffs =
+            BiquadCoeffs::design(FilterType::Lowpass, sample_rate, freq, 0.0, BUTTERWORTH_Q);
+        let hp_coeffs =
+            BiquadCoeffs::design(FilterType::Highpass, sample_rate, freq, 0.0, BUTTERWORTH_Q);
 
         for ch in 0..2 {
             self.lp[ch][0].set_coeffs(lp_coeffs);
@@ -263,9 +271,7 @@ impl MultibandCompressor {
             .map(|&freq| Lr4Crossover::new(sr, freq))
             .collect();
 
-        let bands: Vec<BandCompressor> = (0..MAX_BANDS)
-            .map(|_| BandCompressor::new(sr))
-            .collect();
+        let bands: Vec<BandCompressor> = (0..MAX_BANDS).map(|_| BandCompressor::new(sr)).collect();
 
         Self {
             sample_rate,
@@ -388,13 +394,7 @@ impl AudioBackend for MultibandCompressor {
     // -- Audio: generator render is a no-op (this is an effect) --
     fn render(&mut self, _left: &mut [f32], _right: &mut [f32]) {}
 
-    fn process_effect(
-        &mut self,
-        in_l: &[f32],
-        in_r: &[f32],
-        out_l: &mut [f32],
-        out_r: &mut [f32],
-    ) {
+    fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
         let len = in_l.len();
 
         // Bypass: bit-exact copy
@@ -487,11 +487,39 @@ impl AudioBackend for MultibandCompressor {
                 let param_in_band = offset % 5;
 
                 let (name, min, max, default, step_count, flags) = match param_in_band {
-                    0 => ("Threshold", -60.0, 0.0, DEFAULT_THRESHOLD_DB, 0, ParamFlags::empty()),
+                    0 => (
+                        "Threshold",
+                        -60.0,
+                        0.0,
+                        DEFAULT_THRESHOLD_DB,
+                        0,
+                        ParamFlags::empty(),
+                    ),
                     1 => ("Ratio", 1.0, 100.0, DEFAULT_RATIO, 0, ParamFlags::empty()),
-                    2 => ("Attack", 0.1, 100.0, DEFAULT_ATTACK_MS, 0, ParamFlags::empty()),
-                    3 => ("Release", 10.0, 1000.0, DEFAULT_RELEASE_MS, 0, ParamFlags::empty()),
-                    4 => ("Makeup", -12.0, 24.0, DEFAULT_MAKEUP_DB, 0, ParamFlags::empty()),
+                    2 => (
+                        "Attack",
+                        0.1,
+                        100.0,
+                        DEFAULT_ATTACK_MS,
+                        0,
+                        ParamFlags::empty(),
+                    ),
+                    3 => (
+                        "Release",
+                        10.0,
+                        1000.0,
+                        DEFAULT_RELEASE_MS,
+                        0,
+                        ParamFlags::empty(),
+                    ),
+                    4 => (
+                        "Makeup",
+                        -12.0,
+                        24.0,
+                        DEFAULT_MAKEUP_DB,
+                        0,
+                        ParamFlags::empty(),
+                    ),
                     _ => return None,
                 };
 
@@ -589,7 +617,11 @@ impl AudioBackend for MultibandCompressor {
         match id {
             0 => Some(format!("{}", value.round() as u32)),
             1 => Some(format!("{:.1} dB", value)),
-            2 => Some(if value >= 0.5 { "On".into() } else { "Off".into() }),
+            2 => Some(if value >= 0.5 {
+                "On".into()
+            } else {
+                "Off".into()
+            }),
 
             3..=7 => {
                 if value >= 1000.0 {
@@ -716,26 +748,26 @@ mod tests {
         assert_eq!(mb.get_param(7), Some(18000.0));
 
         // Per-band params (band 0)
-        mb.set_param(8, -30.0);  // threshold
+        mb.set_param(8, -30.0); // threshold
         assert_eq!(mb.get_param(8), Some(-30.0));
 
-        mb.set_param(9, 8.0);   // ratio
+        mb.set_param(9, 8.0); // ratio
         assert_eq!(mb.get_param(9), Some(8.0));
 
-        mb.set_param(10, 5.0);  // attack
+        mb.set_param(10, 5.0); // attack
         assert_eq!(mb.get_param(10), Some(5.0));
 
         mb.set_param(11, 200.0); // release
         assert_eq!(mb.get_param(11), Some(200.0));
 
-        mb.set_param(12, 3.0);  // makeup
+        mb.set_param(12, 3.0); // makeup
         assert_eq!(mb.get_param(12), Some(3.0));
 
         // Per-band params (band 5, last)
         mb.set_param(33, -40.0); // threshold
         assert_eq!(mb.get_param(33), Some(-40.0));
 
-        mb.set_param(34, 2.0);  // ratio
+        mb.set_param(34, 2.0); // ratio
         assert_eq!(mb.get_param(34), Some(2.0));
 
         mb.set_param(35, 20.0); // attack
@@ -780,7 +812,7 @@ mod tests {
 
         for band in 0..MAX_BANDS {
             let base = 8 + band * 5;
-            mb.set_param(base as u32, 0.0);      // threshold = 0 dB
+            mb.set_param(base as u32, 0.0); // threshold = 0 dB
             mb.set_param((base + 1) as u32, 1.0); // ratio = 1:1 (no compression)
             mb.set_param((base + 2) as u32, 0.1); // fast attack
             mb.set_param((base + 3) as u32, 10.0); // fast release
@@ -811,7 +843,10 @@ mod tests {
             assert!(
                 deviation < 0.5,
                 "crossover sum not flat at {} Hz: deviation = {:.3} dB (in={:.3}, out={:.3})",
-                freq, deviation, input_rms, output_rms
+                freq,
+                deviation,
+                input_rms,
+                output_rms
             );
         }
     }
@@ -830,11 +865,11 @@ mod tests {
         mb.set_param(1, 0.0); // output gain = 0
 
         // Set compression: threshold=-20, ratio=4:1
-        mb.set_param(8, -20.0);  // threshold
-        mb.set_param(9, 4.0);    // ratio
-        mb.set_param(10, 0.1);   // fast attack
+        mb.set_param(8, -20.0); // threshold
+        mb.set_param(9, 4.0); // ratio
+        mb.set_param(10, 0.1); // fast attack
         mb.set_param(11, 1000.0); // slow release
-        mb.set_param(12, 0.0);   // no makeup
+        mb.set_param(12, 0.0); // no makeup
 
         // Input at -10 dB (10 dB above threshold)
         let amplitude = 10.0_f64.powf(-10.0 / 20.0);
@@ -859,7 +894,9 @@ mod tests {
         assert!(
             error < 0.5,
             "single-band compression: expected {:.1} dB gain, got {:.4} dB (error {:.4} dB)",
-            expected_gain_db, measured_gain, error
+            expected_gain_db,
+            measured_gain,
+            error
         );
     }
 
@@ -874,11 +911,7 @@ mod tests {
 
         for i in 0..38 {
             let info = mb.param_info(i);
-            assert!(
-                info.is_some(),
-                "param_info({}) should exist",
-                i
-            );
+            assert!(info.is_some(), "param_info({}) should exist", i);
             let info = info.unwrap();
             assert_eq!(info.id, i, "param_info({}).id mismatch", i);
             assert!(!info.name.is_empty(), "param_info({}).name is empty", i);
@@ -906,7 +939,17 @@ mod tests {
         let xover1 = mb.get_param(3).unwrap();
         let xover2 = mb.get_param(4).unwrap();
         let xover3 = mb.get_param(5).unwrap();
-        assert!(xover1 <= xover2, "xover1 ({}) > xover2 ({})", xover1, xover2);
-        assert!(xover2 <= xover3, "xover2 ({}) > xover3 ({})", xover2, xover3);
+        assert!(
+            xover1 <= xover2,
+            "xover1 ({}) > xover2 ({})",
+            xover1,
+            xover2
+        );
+        assert!(
+            xover2 <= xover3,
+            "xover2 ({}) > xover3 ({})",
+            xover2,
+            xover3
+        );
     }
 }

@@ -59,8 +59,7 @@ impl EnvelopeFollower {
         if input_level > self.level {
             self.level = self.attack_coeff * self.level + (1.0 - self.attack_coeff) * input_level;
         } else {
-            self.level =
-                self.release_coeff * self.level + (1.0 - self.release_coeff) * input_level;
+            self.level = self.release_coeff * self.level + (1.0 - self.release_coeff) * input_level;
         }
         self.level
     }

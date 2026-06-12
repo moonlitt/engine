@@ -28,7 +28,11 @@ fn transport_play_pause_stop() {
 #[test]
 fn transport_tempo_default_is_none() {
     let t = Transport::new();
-    assert_eq!(t.tempo(), None, "default should be None (use MIDI file tempo)");
+    assert_eq!(
+        t.tempo(),
+        None,
+        "default should be None (use MIDI file tempo)"
+    );
 }
 
 #[test]

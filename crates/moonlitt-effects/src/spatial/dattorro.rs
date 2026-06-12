@@ -68,7 +68,7 @@ const L_TAP_FROM_L_DELAY1_B: usize = 2974;
 const L_TAP_FROM_L_AP: usize = 1913; // subtracted
 const L_TAP_FROM_L_DELAY2: usize = 1996;
 const L_TAP_FROM_R_DELAY1: usize = 1990; // subtracted
-const L_TAP_FROM_R_AP: usize = 187;  // subtracted
+const L_TAP_FROM_R_AP: usize = 187; // subtracted
 const L_TAP_FROM_R_DELAY2: usize = 1066; // subtracted
 
 // Right output taps
@@ -77,7 +77,7 @@ const R_TAP_FROM_R_DELAY1_B: usize = 3627;
 const R_TAP_FROM_R_AP: usize = 1228; // subtracted
 const R_TAP_FROM_R_DELAY2: usize = 2111;
 const R_TAP_FROM_L_DELAY1: usize = 2673; // subtracted
-const R_TAP_FROM_L_AP: usize = 335;  // subtracted
+const R_TAP_FROM_L_AP: usize = 335; // subtracted
 const R_TAP_FROM_L_DELAY2: usize = 121; // subtracted
 
 // ---------------------------------------------------------------------------
@@ -464,8 +464,7 @@ impl DattorroReverb {
 
     /// Update predelay from ms to samples.
     fn update_predelay(&mut self) {
-        let samples =
-            (self.predelay_ms / 1000.0 * self.sample_rate as f64).round() as usize;
+        let samples = (self.predelay_ms / 1000.0 * self.sample_rate as f64).round() as usize;
         self.predelay.set_delay(samples);
     }
 }
@@ -521,13 +520,7 @@ impl AudioBackend for DattorroReverb {
         // Reverb is an effect — use process_effect instead.
     }
 
-    fn process_effect(
-        &mut self,
-        in_l: &[f32],
-        in_r: &[f32],
-        out_l: &mut [f32],
-        out_r: &mut [f32],
-    ) {
+    fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
         let len = in_l.len().min(in_r.len()).min(out_l.len()).min(out_r.len());
 
         // Bypass: bit-exact copy
@@ -589,8 +582,7 @@ impl AudioBackend for DattorroReverb {
 
             // 4. LFO for tank modulation
             let lfo_l = (self.lfo_phase * std::f64::consts::TAU).sin() as f32 * mod_depth;
-            let lfo_r =
-                ((self.lfo_phase + 0.5) * std::f64::consts::TAU).sin() as f32 * mod_depth;
+            let lfo_r = ((self.lfo_phase + 0.5) * std::f64::consts::TAU).sin() as f32 * mod_depth;
             self.lfo_phase += lfo_inc;
             if self.lfo_phase >= 1.0 {
                 self.lfo_phase -= 1.0;
@@ -1058,7 +1050,10 @@ mod tests {
         rev.set_param(PARAM_DECAY, 0.5);
 
         let predelay_samples = ((50.0 / 1000.0) * SR as f64).round() as usize; // 2205
-        assert_eq!(predelay_samples, 2205, "sanity: 50ms at 44100Hz = 2205 samples");
+        assert_eq!(
+            predelay_samples, 2205,
+            "sanity: 50ms at 44100Hz = 2205 samples"
+        );
 
         let total_len = predelay_samples + 4096; // enough room after predelay
         let (out_l, _out_r) = process_impulse(&mut rev, total_len);

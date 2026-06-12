@@ -15,7 +15,7 @@ use base64::Engine as Base64Engine;
 use moonlitt_audio_io::mixer::Mixer;
 use moonlitt_core::{AudioBackend, StateCaptureHandle};
 use moonlitt_session::persistence::{
-    InsertState, MasterState, Session, SendBusState, SourceState, TrackState, TransportSnapshot,
+    InsertState, MasterState, SendBusState, Session, SourceState, TrackState, TransportSnapshot,
 };
 
 pub(crate) struct ShadowSource {
@@ -263,9 +263,10 @@ impl SessionShadow {
                     mute: t.mute,
                     solo: t.solo,
                     send_levels: t.send_levels.clone(),
-                    source: t.source.to_state().map_err(|e| {
-                        format!("track {}: state capture failed: {e}", t.id)
-                    })?,
+                    source: t
+                        .source
+                        .to_state()
+                        .map_err(|e| format!("track {}: state capture failed: {e}", t.id))?,
                     inserts: t
                         .inserts
                         .iter()

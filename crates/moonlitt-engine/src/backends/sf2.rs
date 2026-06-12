@@ -19,7 +19,15 @@ const PARAM_GAIN: u32 = 20;
 const SF2_PARAMS: &[(u32, &str, &str, f64, f64, f64, u32)] = &[
     // (id, name, group, min, max, default, step_count)
     (PARAM_REVERB_ON, "Reverb On", "Reverb", 0.0, 1.0, 1.0, 1),
-    (PARAM_REVERB_ROOMSIZE, "Room Size", "Reverb", 0.0, 1.2, 0.2, 0),
+    (
+        PARAM_REVERB_ROOMSIZE,
+        "Room Size",
+        "Reverb",
+        0.0,
+        1.2,
+        0.2,
+        0,
+    ),
     (PARAM_REVERB_DAMP, "Damping", "Reverb", 0.0, 1.0, 0.0, 0),
     (PARAM_REVERB_WIDTH, "Width", "Reverb", 0.0, 100.0, 0.5, 0),
     (PARAM_REVERB_LEVEL, "Level", "Reverb", 0.0, 1.0, 0.9, 0),
@@ -115,9 +123,7 @@ impl AudioBackend for Sf2Backend {
     }
 
     fn program_change(&mut self, channel: u8, program: u8) {
-        let _ = self
-            .synth
-            .program_change(channel as u32, program as u32);
+        let _ = self.synth.program_change(channel as u32, program as u32);
     }
 
     fn all_notes_off(&mut self) {
@@ -148,10 +154,7 @@ impl AudioBackend for Sf2Backend {
             for program in 0..128 {
                 // Use bank 0 (GM)
                 let name = format!("Bank 0, Program {program}");
-                presets.push(PresetInfo {
-                    id: program,
-                    name,
-                });
+                presets.push(PresetInfo { id: program, name });
             }
         }
         presets
@@ -233,8 +236,8 @@ impl AudioBackend for Sf2Backend {
                     PARAM_CHORUS_DEPTH => depth = value,
                     _ => {}
                 }
-                self.synth.set_chorus_params(nr, level, speed, depth,
-                    Default::default());
+                self.synth
+                    .set_chorus_params(nr, level, speed, depth, Default::default());
             }
             PARAM_GAIN => {
                 self.volume = value as f32;

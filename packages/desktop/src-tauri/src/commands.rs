@@ -277,7 +277,10 @@ pub fn cmd_channel_remove_override(
     channel: u8,
 ) -> Result<(), String> {
     state.engine.remove_channel_override(channel)?;
-    let _ = app.emit("channel:override_removed", ChannelOverrideRemoved { channel });
+    let _ = app.emit(
+        "channel:override_removed",
+        ChannelOverrideRemoved { channel },
+    );
     Ok(())
 }
 
@@ -291,7 +294,10 @@ pub fn cmd_channel_set_volume(
     state.engine.set_channel_volume(channel, db)?;
     let _ = app.emit(
         "channel:updated",
-        ChannelUpdated { volume: Some(db), ..ChannelUpdated::for_channel(channel) },
+        ChannelUpdated {
+            volume: Some(db),
+            ..ChannelUpdated::for_channel(channel)
+        },
     );
     Ok(())
 }
@@ -306,7 +312,10 @@ pub fn cmd_channel_set_pan(
     state.engine.set_channel_pan(channel, pan)?;
     let _ = app.emit(
         "channel:updated",
-        ChannelUpdated { pan: Some(pan), ..ChannelUpdated::for_channel(channel) },
+        ChannelUpdated {
+            pan: Some(pan),
+            ..ChannelUpdated::for_channel(channel)
+        },
     );
     Ok(())
 }
@@ -321,7 +330,10 @@ pub fn cmd_channel_set_mute(
     state.engine.set_channel_mute(channel, muted)?;
     let _ = app.emit(
         "channel:updated",
-        ChannelUpdated { muted: Some(muted), ..ChannelUpdated::for_channel(channel) },
+        ChannelUpdated {
+            muted: Some(muted),
+            ..ChannelUpdated::for_channel(channel)
+        },
     );
     Ok(())
 }
@@ -336,7 +348,10 @@ pub fn cmd_channel_set_solo(
     state.engine.set_channel_solo(channel, solo)?;
     let _ = app.emit(
         "channel:updated",
-        ChannelUpdated { solo: Some(solo), ..ChannelUpdated::for_channel(channel) },
+        ChannelUpdated {
+            solo: Some(solo),
+            ..ChannelUpdated::for_channel(channel)
+        },
     );
     Ok(())
 }
@@ -351,7 +366,10 @@ pub fn cmd_channel_set_color(
     state.engine.set_channel_color(channel, color.as_deref())?;
     let _ = app.emit(
         "channel:updated",
-        ChannelUpdated { color: Some(color), ..ChannelUpdated::for_channel(channel) },
+        ChannelUpdated {
+            color: Some(color),
+            ..ChannelUpdated::for_channel(channel)
+        },
     );
     Ok(())
 }
@@ -366,7 +384,10 @@ pub fn cmd_channel_set_program(
     state.engine.set_channel_program(channel, program)?;
     let _ = app.emit(
         "channel:updated",
-        ChannelUpdated { user_program: Some(program), ..ChannelUpdated::for_channel(channel) },
+        ChannelUpdated {
+            user_program: Some(program),
+            ..ChannelUpdated::for_channel(channel)
+        },
     );
     Ok(())
 }
@@ -399,13 +420,7 @@ pub fn cmd_insert_remove(
     insert_id: u32,
 ) -> Result<(), String> {
     state.engine.remove_insert(channel, insert_id)?;
-    let _ = app.emit(
-        "insert:removed",
-        InsertRemoved {
-            channel,
-            insert_id,
-        },
-    );
+    let _ = app.emit("insert:removed", InsertRemoved { channel, insert_id });
     Ok(())
 }
 
@@ -441,10 +456,16 @@ pub fn cmd_channel_set_send_level(
     bus_id: u32,
     level: f32,
 ) -> Result<(), String> {
-    state.engine.set_channel_send_level(channel, bus_id, level)?;
+    state
+        .engine
+        .set_channel_send_level(channel, bus_id, level)?;
     let _ = app.emit(
         "channel:send_level_changed",
-        ChannelSendLevelChanged { channel, bus_id, level },
+        ChannelSendLevelChanged {
+            channel,
+            bus_id,
+            level,
+        },
     );
     Ok(())
 }
@@ -457,10 +478,16 @@ pub fn cmd_insert_set_bypass(
     insert_id: u32,
     bypassed: bool,
 ) -> Result<(), String> {
-    state.engine.set_insert_bypass(channel, insert_id, bypassed)?;
+    state
+        .engine
+        .set_insert_bypass(channel, insert_id, bypassed)?;
     let _ = app.emit(
         "insert:bypass_changed",
-        InsertBypassChanged { channel, insert_id, bypassed },
+        InsertBypassChanged {
+            channel,
+            insert_id,
+            bypassed,
+        },
     );
     Ok(())
 }
@@ -497,12 +524,7 @@ pub fn cmd_load_midi(
         .unwrap_or(&path)
         .to_string();
     let midi = state.engine.load_midi(&path, &name)?;
-    let _ = app.emit(
-        "midi:loaded",
-        MidiLoaded {
-            midi: midi.clone(),
-        },
-    );
+    let _ = app.emit("midi:loaded", MidiLoaded { midi: midi.clone() });
     if let Some(bpm) = midi.tempo_bpm.filter(|b| b.is_finite()) {
         let _ = app.emit("transport:tempo_changed", TempoChanged { bpm });
     }
@@ -540,10 +562,13 @@ pub fn cmd_open_plugin_gui(
     {
         let view_target: ViewTarget = target.into();
         let path = state.engine.instrument_path_for(view_target)?;
-        let plugin = state.engine.vst3_plugin_handle(view_target).ok_or_else(|| {
-            "selected slot does not host a VST3 instrument — GUI is only available for VST3"
-                .to_string()
-        })?;
+        let plugin = state
+            .engine
+            .vst3_plugin_handle(view_target)
+            .ok_or_else(|| {
+                "selected slot does not host a VST3 instrument — GUI is only available for VST3"
+                    .to_string()
+            })?;
         let window_target = match view_target {
             ViewTarget::Default => crate::plugin_window::WindowTarget::Default,
             ViewTarget::Channel(ch) => crate::plugin_window::WindowTarget::Channel(ch),

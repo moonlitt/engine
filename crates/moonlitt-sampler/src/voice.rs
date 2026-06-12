@@ -46,8 +46,8 @@ impl Voice {
 
     /// Activate voice with a sample and note parameters.
     pub fn note_on(&mut self, sample: SampleInfo, note: u8, velocity: u8) {
-        let semitone_diff = note as f64 - sample.root_key as f64
-            + sample.pitch_correction as f64 / 100.0;
+        let semitone_diff =
+            note as f64 - sample.root_key as f64 + sample.pitch_correction as f64 / 100.0;
         let pitch_ratio = 2.0f64.powf(semitone_diff / 12.0);
         let rate_ratio = sample.sample_rate as f64 / self.output_rate as f64;
 
@@ -60,12 +60,12 @@ impl Voice {
         // Start envelope: short attack to avoid click, natural decay
         self.envelope = Envelope::new(
             EnvelopeParams {
-                delay: -12000,    // instant
-                attack: -4800,    // ~60ms attack (smooth onset, no click)
-                hold: -12000,     // instant
-                decay: 1200,      // 2s decay
-                sustain: 0.5,     // sustain at 50%
-                release: -2400,   // ~250ms release (smooth tail)
+                delay: -12000,  // instant
+                attack: -4800,  // ~60ms attack (smooth onset, no click)
+                hold: -12000,   // instant
+                decay: 1200,    // 2s decay
+                sustain: 0.5,   // sustain at 50%
+                release: -2400, // ~250ms release (smooth tail)
             },
             self.output_rate,
         );

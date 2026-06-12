@@ -92,12 +92,7 @@ fn design_bandpass(sample_rate: f64, freq: f64, q: f64) -> BiquadCoeffs {
 }
 
 /// Design filter coefficients for the auto-filter, dispatching by type.
-fn design_filter(
-    filter_type: AutoFilterType,
-    sample_rate: f64,
-    freq: f64,
-    q: f64,
-) -> BiquadCoeffs {
+fn design_filter(filter_type: AutoFilterType, sample_rate: f64, freq: f64, q: f64) -> BiquadCoeffs {
     // Clamp frequency to valid range for biquad stability
     let freq = freq.clamp(10.0, sample_rate * 0.499);
     let q = q.max(0.1);
@@ -252,13 +247,7 @@ impl AudioBackend for AutoFilter {
     // -- Audio: generator render is a no-op (this is an effect) --
     fn render(&mut self, _left: &mut [f32], _right: &mut [f32]) {}
 
-    fn process_effect(
-        &mut self,
-        in_l: &[f32],
-        in_r: &[f32],
-        out_l: &mut [f32],
-        out_r: &mut [f32],
-    ) {
+    fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
         let len = in_l.len();
 
         // Bypass: bit-exact copy
@@ -540,14 +529,7 @@ impl AudioBackend for AutoFilter {
 
     fn param_display(&self, id: u32, value: f64) -> Option<String> {
         match id {
-            0 => Some(
-                if value >= 0.5 {
-                    "LFO"
-                } else {
-                    "Envelope"
-                }
-                .into(),
-            ),
+            0 => Some(if value >= 0.5 { "LFO" } else { "Envelope" }.into()),
             1 => {
                 let i = value.round() as u32;
                 Some(
@@ -580,7 +562,11 @@ impl AudioBackend for AutoFilter {
                 )
             }
             10 => Some(format!("{:.0}%", value * 100.0)),
-            11 => Some(if value >= 0.5 { "On".into() } else { "Off".into() }),
+            11 => Some(if value >= 0.5 {
+                "On".into()
+            } else {
+                "Off".into()
+            }),
             _ => None,
         }
     }
@@ -769,7 +755,9 @@ mod tests {
         // Split output into 4 quarters and compare RMS — they should differ
         // because the LFO sweeps the cutoff frequency
         let quarter = num_samples / 4;
-        let rms_values: Vec<f64> = (0..4).map(|q| rms(&out_l[q * quarter..(q + 1) * quarter])).collect();
+        let rms_values: Vec<f64> = (0..4)
+            .map(|q| rms(&out_l[q * quarter..(q + 1) * quarter]))
+            .collect();
 
         // At least some quarters should differ by > 10%
         let mut found_variation = false;
@@ -804,11 +792,7 @@ mod tests {
 
         for i in 0..12 {
             let info = af.param_info(i);
-            assert!(
-                info.is_some(),
-                "param_info({}) should return Some",
-                i
-            );
+            assert!(info.is_some(), "param_info({}) should return Some", i);
             let info = info.unwrap();
             assert_eq!(info.id, i, "param_info({}).id mismatch", i);
             assert!(!info.name.is_empty(), "param_info({}).name is empty", i);

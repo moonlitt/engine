@@ -575,7 +575,10 @@ mod tests {
           "send_buses": []
         }"#;
         match Session::from_json(v1) {
-            Err(SessionError::UnsupportedVersion { found: 1, expected: 2 }) => {}
+            Err(SessionError::UnsupportedVersion {
+                found: 1,
+                expected: 2,
+            }) => {}
             other => panic!("expected UnsupportedVersion, got {other:?}"),
         }
     }

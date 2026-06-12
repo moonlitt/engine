@@ -6,9 +6,8 @@
 //! Each test cites the specific SF2 spec section it validates.
 //! Zero tolerance: machine epsilon only.
 
-
-use moonlitt_core::AudioBackend;
 use moonlitt_audio_io::mixer::Mixer;
+use moonlitt_core::AudioBackend;
 use std::path::Path;
 
 const SF2_PATH: &str = "/Users/wangyan/Desktop/stardew valley mods/mods/piano-block/assets/soundfonts/GeneralUser_GS.sf2";
@@ -109,11 +108,7 @@ fn measure_fundamental(samples: &[f32], sample_rate: u32) -> f64 {
     let bin_hz = sample_rate as f64 / n as f64;
 
     // Find the global maximum power for reference
-    let max_power = spectrum
-        .iter()
-        .skip(1)
-        .cloned()
-        .fold(0.0f64, f64::max);
+    let max_power = spectrum.iter().skip(1).cloned().fold(0.0f64, f64::max);
 
     // Threshold: a "significant" peak is at least 5% of the max power.
     // This catches fundamentals that are weaker than their harmonics.
@@ -244,9 +239,7 @@ fn s01_initial_filter_fc() {
     let lower_power: f64 = spectrum[1..half].iter().sum();
     let upper_power: f64 = spectrum[half..].iter().sum();
 
-    eprintln!(
-        "s01: Lower half power = {lower_power:.4e}, Upper half power = {upper_power:.4e}"
-    );
+    eprintln!("s01: Lower half power = {lower_power:.4e}, Upper half power = {upper_power:.4e}");
     eprintln!(
         "s01: Ratio upper/lower = {:.4}",
         upper_power / lower_power.max(1e-30)
@@ -541,9 +534,7 @@ fn s06_fine_tune() {
     let relative_error = (ratio - expected_ratio).abs() / expected_ratio;
 
     eprintln!("s06: freq60={freq60:.3} Hz, freq61={freq61:.3} Hz, ratio={ratio:.6}");
-    eprintln!(
-        "s06: Expected ratio={expected_ratio:.10}, relative error={relative_error:.2e}"
-    );
+    eprintln!("s06: Expected ratio={expected_ratio:.10}, relative error={relative_error:.2e}");
 
     // Same FFT precision analysis as S5. Allow < 1% relative error.
     assert!(
@@ -795,12 +786,12 @@ fn s10_mod_env_to_pitch() {
     {
         let freq_attack =
             measure_fundamental(&left[attack_start..attack_start + attack_len], SAMPLE_RATE);
-        let freq_sustain =
-            measure_fundamental(&left[sustain_start..sustain_start + sustain_len], SAMPLE_RATE);
-
-        eprintln!(
-            "s10: Attack freq={freq_attack:.3} Hz, Sustain freq={freq_sustain:.3} Hz"
+        let freq_sustain = measure_fundamental(
+            &left[sustain_start..sustain_start + sustain_len],
+            SAMPLE_RATE,
         );
+
+        eprintln!("s10: Attack freq={freq_attack:.3} Hz, Sustain freq={freq_sustain:.3} Hz");
         eprintln!(
             "s10: Pitch change = {:.3} cents",
             1200.0 * (freq_attack / freq_sustain).log2()
@@ -879,9 +870,7 @@ fn s11_mod_lfo_to_filter_fc() {
             / centroids.len() as f64;
         let std_dev = variance.sqrt();
 
-        eprintln!(
-            "s11: Mean centroid={mean:.1} Hz, std_dev={std_dev:.1} Hz"
-        );
+        eprintln!("s11: Mean centroid={mean:.1} Hz, std_dev={std_dev:.1} Hz");
 
         // The spectral centroid should be a positive, reasonable frequency
         assert!(
@@ -1033,8 +1022,7 @@ fn s13_vol_env_dahdsr() {
     // Sustain: latter half of on-phase should have relatively stable amplitude
     if env_on.len() >= 8 {
         let sustain_region: Vec<f64> = env_on[env_on.len() / 2..].to_vec();
-        let mean_sustain: f64 =
-            sustain_region.iter().sum::<f64>() / sustain_region.len() as f64;
+        let mean_sustain: f64 = sustain_region.iter().sum::<f64>() / sustain_region.len() as f64;
         eprintln!("s13: Sustain mean RMS={mean_sustain:.6}");
 
         assert!(
@@ -1148,7 +1136,8 @@ fn s15_sample_modes() {
 
     // Test looping: Organ (program 16 — Drawbar Organ) should sustain indefinitely
     {
-        let mut engine_organ = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
+        let mut engine_organ =
+            moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
         engine_organ.program_change(0, 16);
 
         let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
@@ -1185,7 +1174,8 @@ fn s15_sample_modes() {
 
     // Test non-looping: Percussion / one-shot (channel 9, note 38 = Acoustic Snare)
     {
-        let engine_perc = moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
+        let engine_perc =
+            moonlitt_engine::create(SF2_PATH, SAMPLE_RATE, BUFFER_SIZE as u32).unwrap();
 
         let mut mixer = Mixer::new(SAMPLE_RATE, BUFFER_SIZE);
         mixer.add_track(engine_perc, 0xFFFF);
@@ -1204,9 +1194,7 @@ fn s15_sample_modes() {
             let rms_early = rms(&left[rms_start..rms_start + window]);
             let rms_late = rms(&left[rms_late_start..rms_late_start + window]);
 
-            eprintln!(
-                "s15 [snare]: RMS@early={rms_early:.6}, RMS@2.5s={rms_late:.6}"
-            );
+            eprintln!("s15 [snare]: RMS@early={rms_early:.6}, RMS@2.5s={rms_late:.6}");
 
             // Non-looping percussion should decay significantly
             if rms_early > 0.001 {
@@ -1444,9 +1432,7 @@ fn s19_sm24_24bit_precision() {
     let unique_count = unique_values.len();
     let total_count = sample_window.len();
 
-    eprintln!(
-        "s19: Unique values in 1024-sample window: {unique_count}/{total_count}"
-    );
+    eprintln!("s19: Unique values in 1024-sample window: {unique_count}/{total_count}");
 
     // With 24-bit precision and a quiet signal, most samples should be unique
     // (many distinct values). With 16-bit, quantization would reduce uniqueness.

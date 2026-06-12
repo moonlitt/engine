@@ -167,9 +167,7 @@ impl Envelope {
                 self.samples_remaining -= 1;
                 self.level
             }
-            Stage::Sustain => {
-                self.sustain
-            }
+            Stage::Sustain => self.sustain,
             Stage::Release => {
                 if self.samples_remaining == 0 || self.level <= 0.0 {
                     self.level = 0.0;

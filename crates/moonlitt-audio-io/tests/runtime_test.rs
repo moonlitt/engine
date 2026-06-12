@@ -1,5 +1,5 @@
-use moonlitt_core::AudioBackend;
 use moonlitt_audio_io::Runtime;
+use moonlitt_core::AudioBackend;
 use std::thread;
 use std::time::Duration;
 
@@ -15,7 +15,11 @@ fn is_no_device_error(msg: &str) -> bool {
 
 /// Try to create and start a Runtime, returning None only if no audio device
 /// is present. Panics on any other error to surface real regressions.
-fn try_create_runtime(backend: Box<dyn AudioBackend>, sample_rate: u32, buffer_size: u32) -> Option<Runtime> {
+fn try_create_runtime(
+    backend: Box<dyn AudioBackend>,
+    sample_rate: u32,
+    buffer_size: u32,
+) -> Option<Runtime> {
     match Runtime::new(backend, sample_rate, buffer_size) {
         Ok(rt) => match rt.start() {
             Ok(()) => Some(rt),

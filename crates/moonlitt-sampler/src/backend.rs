@@ -3,8 +3,8 @@
 //! Wraps SamplePool + VoicePool behind the standard AudioBackend trait,
 //! making moonlitt-sampler a drop-in replacement for OxiSynth.
 
-use crate::SamplePool;
 use crate::voicepool::VoicePool;
+use crate::SamplePool;
 use moonlitt_core::{AudioBackend, BackendInfo, BackendType, PresetInfo};
 
 pub struct SamplerBackend {
@@ -39,8 +39,8 @@ impl AudioBackend for SamplerBackend {
 
     fn load(&mut self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
         self.unload();
-        let pool = SamplePool::from_file(path)
-            .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+        let pool =
+            SamplePool::from_file(path).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
         self.pool = Some(pool);
         self.channel_programs = [0; 16];
         Ok(())
@@ -55,7 +55,8 @@ impl AudioBackend for SamplerBackend {
         if let Some(pool) = &self.pool {
             let ch = (channel as usize).min(15);
             let program = self.channel_programs[ch];
-            self.voices.note_on(pool, channel, 0, program, note, velocity);
+            self.voices
+                .note_on(pool, channel, 0, program, note, velocity);
         }
     }
 

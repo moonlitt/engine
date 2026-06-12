@@ -5,16 +5,20 @@
 
 use crate::backend::AudioBackend;
 use crate::error::EngineError;
-use crate::plugin_info::PluginInfo;
 #[cfg(any(feature = "vst3", feature = "clap", feature = "sf2"))]
 use crate::plugin_info::PluginFormat;
+use crate::plugin_info::PluginInfo;
 use std::path::Path;
 
 /// Create an audio backend by auto-detecting format from file extension.
 ///
 /// Supports `.sf2` (SoundFont), `.vst3` (VST3 plugin), `.clap` (CLAP plugin).
 #[allow(unused_variables)]
-pub fn create(path: &str, sample_rate: u32, buffer_size: u32) -> Result<Box<dyn AudioBackend>, EngineError> {
+pub fn create(
+    path: &str,
+    sample_rate: u32,
+    buffer_size: u32,
+) -> Result<Box<dyn AudioBackend>, EngineError> {
     let ext = Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
@@ -32,9 +36,8 @@ pub fn create(path: &str, sample_rate: u32, buffer_size: u32) -> Result<Box<dyn 
         }
         #[cfg(feature = "vst3")]
         Some("vst3") => {
-            let mut backend =
-                crate::backends::vst3::Vst3Backend::new(sample_rate, buffer_size)
-                    .map_err(|e| EngineError::BackendError(e.to_string()))?;
+            let mut backend = crate::backends::vst3::Vst3Backend::new(sample_rate, buffer_size)
+                .map_err(|e| EngineError::BackendError(e.to_string()))?;
             backend
                 .load(path)
                 .map_err(|e| EngineError::BackendError(e.to_string()))?;
@@ -42,9 +45,8 @@ pub fn create(path: &str, sample_rate: u32, buffer_size: u32) -> Result<Box<dyn 
         }
         #[cfg(feature = "clap")]
         Some("clap") => {
-            let mut backend =
-                crate::backends::clap::ClapBackend::new(sample_rate, buffer_size)
-                    .map_err(|e| EngineError::BackendError(e.to_string()))?;
+            let mut backend = crate::backends::clap::ClapBackend::new(sample_rate, buffer_size)
+                .map_err(|e| EngineError::BackendError(e.to_string()))?;
             backend
                 .load(path)
                 .map_err(|e| EngineError::BackendError(e.to_string()))?;
@@ -57,12 +59,18 @@ pub fn create(path: &str, sample_rate: u32, buffer_size: u32) -> Result<Box<dyn 
 
 /// Create an audio backend with highest quality interpolation (Sinc72 for SF2).
 /// Use for offline rendering. Real-time uses SeventhOrder by default.
-pub fn create_high_quality(path: &str, sample_rate: u32, buffer_size: u32) -> Result<Box<dyn AudioBackend>, EngineError> {
+pub fn create_high_quality(
+    path: &str,
+    sample_rate: u32,
+    buffer_size: u32,
+) -> Result<Box<dyn AudioBackend>, EngineError> {
     #[cfg(feature = "sf2")]
     if path.to_lowercase().ends_with(".sf2") {
         let mut backend = crate::backends::oxisynth::OxiSynthBackend::new_high_quality(sample_rate)
             .map_err(|e| EngineError::BackendError(e.to_string()))?;
-        backend.load(path).map_err(|e| EngineError::BackendError(e.to_string()))?;
+        backend
+            .load(path)
+            .map_err(|e| EngineError::BackendError(e.to_string()))?;
         return Ok(Box::new(backend));
     }
     create(path, sample_rate, buffer_size)
@@ -70,7 +78,10 @@ pub fn create_high_quality(path: &str, sample_rate: u32, buffer_size: u32) -> Re
 
 /// Create an audio backend from a pre-loaded SF2 SoundFont (Arc-shared, no data copy).
 #[cfg(feature = "sf2")]
-pub fn create_from_shared_sf2(font: oxisynth::SoundFont, sample_rate: u32) -> Result<Box<dyn AudioBackend>, EngineError> {
+pub fn create_from_shared_sf2(
+    font: oxisynth::SoundFont,
+    sample_rate: u32,
+) -> Result<Box<dyn AudioBackend>, EngineError> {
     let backend = crate::backends::oxisynth::OxiSynthBackend::new_with_font(sample_rate, font)
         .map_err(|e| EngineError::BackendError(e.to_string()))?;
     Ok(Box::new(backend))
@@ -81,15 +92,20 @@ pub fn create_from_shared_sf2(font: oxisynth::SoundFont, sample_rate: u32) -> Re
 /// Drop-in replacement for `create()` when feature `sf2-sampler` is enabled.
 /// Only valid for `.sf2` files.
 #[cfg(feature = "sf2-sampler")]
-pub fn create_with_sampler(path: &str, sample_rate: u32, _buffer_size: u32) -> Result<Box<dyn AudioBackend>, EngineError> {
+pub fn create_with_sampler(
+    path: &str,
+    sample_rate: u32,
+    _buffer_size: u32,
+) -> Result<Box<dyn AudioBackend>, EngineError> {
     if !path.to_lowercase().ends_with(".sf2") {
         return Err(EngineError::UnsupportedFormat(
-            "create_with_sampler only supports .sf2 files".into()
+            "create_with_sampler only supports .sf2 files".into(),
         ));
     }
     let mut backend = crate::backends::sampler::SamplerBackend::new(sample_rate)
         .map_err(|e| EngineError::BackendError(e.to_string()))?;
-    backend.load(path)
+    backend
+        .load(path)
         .map_err(|e| EngineError::BackendError(e.to_string()))?;
     Ok(Box::new(backend))
 }
@@ -194,7 +210,15 @@ fn scan_sf2_into(out: &mut Vec<PluginInfo>) {
         if out.len() >= MAX_RESULTS {
             break;
         }
-        walk_sf2(&root, 0, MAX_DEPTH, MIN_SIZE_BYTES, MAX_RESULTS, &mut seen, out);
+        walk_sf2(
+            &root,
+            0,
+            MAX_DEPTH,
+            MIN_SIZE_BYTES,
+            MAX_RESULTS,
+            &mut seen,
+            out,
+        );
     }
 }
 
@@ -225,8 +249,21 @@ fn walk_sf2(
         // which made every symlinked SoundFont look like ~80 bytes and got
         // skipped by the size threshold.
         if path.is_dir() {
-            walk_sf2(&path, depth + 1, max_depth, min_size, max_results, seen, out);
-        } else if path.extension().and_then(|e| e.to_str()).map(|s| s.eq_ignore_ascii_case("sf2")).unwrap_or(false) {
+            walk_sf2(
+                &path,
+                depth + 1,
+                max_depth,
+                min_size,
+                max_results,
+                seen,
+                out,
+            );
+        } else if path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|s| s.eq_ignore_ascii_case("sf2"))
+            .unwrap_or(false)
+        {
             let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
             if !seen.insert(canonical.clone()) {
                 continue;
@@ -236,7 +273,11 @@ fn walk_sf2(
                     continue;
                 }
             }
-            let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("(unnamed)").to_string();
+            let name = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("(unnamed)")
+                .to_string();
             out.push(PluginInfo {
                 name,
                 path: canonical.to_string_lossy().into_owned(),

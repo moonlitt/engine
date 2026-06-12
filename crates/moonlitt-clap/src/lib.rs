@@ -115,8 +115,8 @@ impl ClapHost {
         let host_ctx = HostContext::new();
 
         // 3. Create plugin instance via factory
-        let plugin_id = CString::new(info.plugin_id.as_str())
-            .map_err(|e| Error::LoadFailed(e.to_string()))?;
+        let plugin_id =
+            CString::new(info.plugin_id.as_str()).map_err(|e| Error::LoadFailed(e.to_string()))?;
 
         let factory = module.factory();
         let plugin = unsafe {
@@ -135,9 +135,7 @@ impl ClapHost {
 
         // 4. plugin.init()
         unsafe {
-            let init_fn = (*plugin)
-                .init
-                .ok_or(Error::PluginError("init is null"))?;
+            let init_fn = (*plugin).init.ok_or(Error::PluginError("init is null"))?;
             if !init_fn(plugin) {
                 // Must destroy on failure
                 if let Some(destroy) = (*plugin).destroy {
@@ -175,7 +173,11 @@ impl ClapHost {
             match (*plugin).get_extension {
                 Some(get_ext) => {
                     let ext = get_ext(plugin, CLAP_EXT_PARAMS.as_ptr());
-                    if ext.is_null() { None } else { Some(ext as *const clap_plugin_params) }
+                    if ext.is_null() {
+                        None
+                    } else {
+                        Some(ext as *const clap_plugin_params)
+                    }
                 }
                 None => None,
             }
@@ -240,7 +242,7 @@ impl ClapPlugin {
             self.pending_events.push(MidiEvent {
                 kind: MidiEventKind::CC {
                     channel,
-                    cc: 123,  // All Notes Off
+                    cc: 123, // All Notes Off
                     value: 0,
                 },
                 sample_offset: 0,
@@ -312,7 +314,11 @@ impl ClapPlugin {
         out_left: &mut [f32],
         out_right: &mut [f32],
     ) -> Result<()> {
-        let num_frames = in_left.len().min(in_right.len()).min(out_left.len()).min(out_right.len()) as u32;
+        let num_frames = in_left
+            .len()
+            .min(in_right.len())
+            .min(out_left.len())
+            .min(out_right.len()) as u32;
         if num_frames == 0 {
             return Ok(());
         }
@@ -422,7 +428,11 @@ impl ClapPlugin {
         let get_value = unsafe { (*ext).get_value? };
         let mut value = 0.0f64;
         let ok = unsafe { get_value(self.plugin, id, &mut value) };
-        if ok { Some(value) } else { None }
+        if ok {
+            Some(value)
+        } else {
+            None
+        }
     }
 
     pub fn set_param(&mut self, _id: u32, _value: f64) {
@@ -431,7 +441,9 @@ impl ClapPlugin {
         // Currently this is a no-op — callers should be aware that parameter
         // changes are silently discarded until this is implemented.
         #[cfg(debug_assertions)]
-        eprintln!("warning: ClapPlugin::set_param() is not yet implemented — parameter change discarded");
+        eprintln!(
+            "warning: ClapPlugin::set_param() is not yet implemented — parameter change discarded"
+        );
     }
 
     pub fn param_display(&self, id: u32, value: f64) -> Option<String> {

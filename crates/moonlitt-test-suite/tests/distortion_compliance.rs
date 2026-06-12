@@ -97,11 +97,11 @@ fn band_power_db(spectrum: &[f64], fft_len: usize, lo_hz: f64, hi_hz: f64) -> f6
 fn make_saturator(overrides: &[(u32, f64)]) -> Saturator {
     let mut sat = Saturator::new(SR);
     // Set sensible test defaults: tone=0.5, output=0dB, mix=1.0, high_cut=20kHz
-    sat.set_param(2, 0.5);  // tone
-    sat.set_param(3, 0.0);  // output_db
-    sat.set_param(6, 1.0);  // mix
+    sat.set_param(2, 0.5); // tone
+    sat.set_param(3, 0.0); // output_db
+    sat.set_param(6, 1.0); // mix
     sat.set_param(7, 20000.0); // high_cut
-    sat.set_param(8, 0.0);  // bypass off
+    sat.set_param(8, 0.0); // bypass off
 
     for &(id, val) in overrides {
         sat.set_param(id, val);
@@ -179,10 +179,10 @@ fn s1_tube_even_harmonics() {
 
     // Symmetric (no asymmetry) — baseline
     let mut sat_sym = make_saturator(&[
-        (0, 12.0),  // drive = 12 dB
-        (1, 0.0),   // mode = Tube
-        (4, 1.0),   // oversampling = 2x
-        (5, 0.0),   // asymmetry = 0 (symmetric)
+        (0, 12.0), // drive = 12 dB
+        (1, 0.0),  // mode = Tube
+        (4, 1.0),  // oversampling = 2x
+        (5, 0.0),  // asymmetry = 0 (symmetric)
     ]);
     let out_sym = process_mono(&mut sat_sym, &input);
     let spec_sym = power_spectrum(&out_sym);
@@ -193,10 +193,10 @@ fn s1_tube_even_harmonics() {
 
     // Asymmetric — should boost even harmonics
     let mut sat_asym = make_saturator(&[
-        (0, 12.0),  // drive = 12 dB
-        (1, 0.0),   // mode = Tube
-        (4, 1.0),   // oversampling = 2x
-        (5, 0.8),   // asymmetry = 0.8
+        (0, 12.0), // drive = 12 dB
+        (1, 0.0),  // mode = Tube
+        (4, 1.0),  // oversampling = 2x
+        (5, 0.8),  // asymmetry = 0.8
     ]);
     let out_asym = process_mono(&mut sat_asym, &input);
     let spec_asym = power_spectrum(&out_asym);
@@ -211,10 +211,7 @@ fn s1_tube_even_harmonics() {
         "S1 Tube: sym H2/H3 = {:.1} dB, asym H2/H3 = {:.1} dB, improvement = {:.1} dB",
         ratio_sym, ratio_asym, improvement
     );
-    eprintln!(
-        "  symmetric:  H2 = {:.1} dB, H3 = {:.1} dB",
-        h2_sym, h3_sym
-    );
+    eprintln!("  symmetric:  H2 = {:.1} dB, H3 = {:.1} dB", h2_sym, h3_sym);
     eprintln!(
         "  asymmetric: H2 = {:.1} dB, H3 = {:.1} dB",
         h2_asym, h3_asym
@@ -239,10 +236,10 @@ fn s1_tube_even_harmonics() {
 #[test]
 fn s2_transistor_odd_harmonics() {
     let mut sat = make_saturator(&[
-        (0, 24.0),  // drive = 24 dB
-        (1, 2.0),   // mode = Transistor
-        (4, 1.0),   // oversampling = 2x
-        (5, 0.0),   // asymmetry = 0 (symmetric clipping)
+        (0, 24.0), // drive = 24 dB
+        (1, 2.0),  // mode = Transistor
+        (4, 1.0),  // oversampling = 2x
+        (5, 0.0),  // asymmetry = 0 (symmetric clipping)
     ]);
 
     let num_samples = SR as usize;
@@ -260,7 +257,9 @@ fn s2_transistor_odd_harmonics() {
 
     eprintln!(
         "S2 Transistor: H2 = {:.1} dB, H3 = {:.1} dB, diff = {:.1} dB",
-        h2_db, h3_db, h3_db - h2_db
+        h2_db,
+        h3_db,
+        h3_db - h2_db
     );
 
     assert!(
@@ -291,10 +290,10 @@ fn s3_oversampling_alias_rejection() {
 
     // 1x oversampling (no anti-aliasing)
     let mut sat_1x = make_saturator(&[
-        (0, 36.0),  // drive = 36 dB
-        (1, 2.0),   // mode = Transistor
-        (4, 0.0),   // oversampling = 1x
-        (5, 0.0),   // asymmetry = 0
+        (0, 36.0), // drive = 36 dB
+        (1, 2.0),  // mode = Transistor
+        (4, 0.0),  // oversampling = 1x
+        (5, 0.0),  // asymmetry = 0
     ]);
     let out_1x = process_mono(&mut sat_1x, &input);
     let spec_1x = power_spectrum(&out_1x);
@@ -303,7 +302,7 @@ fn s3_oversampling_alias_rejection() {
     let mut sat_2x = make_saturator(&[
         (0, 36.0),
         (1, 2.0),
-        (4, 1.0),   // oversampling = 2x
+        (4, 1.0), // oversampling = 2x
         (5, 0.0),
     ]);
     let out_2x = process_mono(&mut sat_2x, &input);
@@ -338,10 +337,10 @@ fn s3_oversampling_alias_rejection() {
 #[test]
 fn s4_asymmetry_dc_blocked() {
     let mut sat = make_saturator(&[
-        (0, 24.0),  // drive = 24 dB
-        (1, 2.0),   // mode = Transistor
-        (4, 1.0),   // oversampling = 2x
-        (5, 0.8),   // asymmetry = 0.8 (strong asymmetry)
+        (0, 24.0), // drive = 24 dB
+        (1, 2.0),  // mode = Transistor
+        (4, 1.0),  // oversampling = 2x
+        (5, 0.8),  // asymmetry = 0.8 (strong asymmetry)
     ]);
 
     let num_samples = SR as usize;
@@ -374,12 +373,12 @@ fn s4_asymmetry_dc_blocked() {
 #[test]
 fn s5_drive_zero_thd() {
     let mut sat = make_saturator(&[
-        (0, 0.0),   // drive = 0 dB
-        (1, 2.0),   // mode = Transistor
-        (3, 0.0),   // output = 0 dB
-        (4, 1.0),   // oversampling = 2x
-        (5, 0.0),   // asymmetry = 0
-        (6, 1.0),   // mix = 1.0
+        (0, 0.0), // drive = 0 dB
+        (1, 2.0), // mode = Transistor
+        (3, 0.0), // output = 0 dB
+        (4, 1.0), // oversampling = 2x
+        (5, 0.0), // asymmetry = 0
+        (6, 1.0), // mix = 1.0
     ]);
 
     let num_samples = SR as usize;
@@ -395,7 +394,11 @@ fn s5_drive_zero_thd() {
     let harmonic_power: f64 = (2..=5)
         .map(|h| {
             let bin = freq_to_bin(h as f64 * 1000.0, fft_len);
-            if bin < spectrum.len() { spectrum[bin] } else { 0.0 }
+            if bin < spectrum.len() {
+                spectrum[bin]
+            } else {
+                0.0
+            }
         })
         .sum();
 
@@ -436,12 +439,12 @@ fn s5_drive_zero_thd() {
 #[test]
 fn s6_bit_depth_quantization_noise() {
     let mut bc = make_bitcrusher(&[
-        (0, 8.0),   // bit_depth = 8
-        (1, 1.0),   // rate_reduction = 1 (none)
-        (2, 0.0),   // dither = 0
-        (3, 1.0),   // dry_wet = 1.0
-        (4, 0.0),   // jitter = 0
-        (5, 0.0),   // bypass off
+        (0, 8.0), // bit_depth = 8
+        (1, 1.0), // rate_reduction = 1 (none)
+        (2, 0.0), // dither = 0
+        (3, 1.0), // dry_wet = 1.0
+        (4, 0.0), // jitter = 0
+        (5, 0.0), // bypass off
     ]);
 
     let num_samples = SR as usize;
@@ -488,12 +491,12 @@ fn s6_bit_depth_quantization_noise() {
 #[test]
 fn s7_rate_reduction_imaging() {
     let mut bc = make_bitcrusher(&[
-        (0, 24.0),  // bit_depth = 24 (minimize quantization artifacts)
-        (1, 4.0),   // rate_reduction = 4
-        (2, 0.0),   // dither = 0
-        (3, 1.0),   // dry_wet = 1.0
-        (4, 0.0),   // jitter = 0
-        (5, 0.0),   // bypass off
+        (0, 24.0), // bit_depth = 24 (minimize quantization artifacts)
+        (1, 4.0),  // rate_reduction = 4
+        (2, 0.0),  // dither = 0
+        (3, 1.0),  // dry_wet = 1.0
+        (4, 0.0),  // jitter = 0
+        (5, 0.0),  // bypass off
     ]);
 
     let num_samples = SR as usize;

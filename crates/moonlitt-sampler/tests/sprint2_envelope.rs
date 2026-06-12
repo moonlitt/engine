@@ -32,7 +32,10 @@ fn t1_timecents_to_seconds() {
 
     assert!((timecents_to_secs(0) - 1.0).abs() < eps, "0 tc = 1s");
     assert!((timecents_to_secs(1200) - 2.0).abs() < eps, "1200 tc = 2s");
-    assert!((timecents_to_secs(-1200) - 0.5).abs() < eps, "-1200 tc = 0.5s");
+    assert!(
+        (timecents_to_secs(-1200) - 0.5).abs() < eps,
+        "-1200 tc = 0.5s"
+    );
     assert!((timecents_to_secs(2400) - 4.0).abs() < eps, "2400 tc = 4s");
 
     // Very small (effectively instant)
@@ -59,14 +62,20 @@ fn t2_attack_ramp() {
 
     // Sample at start: should be near 0
     let start = env.process();
-    assert!(start < 0.01, "Start of attack should be near 0, got {start}");
+    assert!(
+        start < 0.01,
+        "Start of attack should be near 0, got {start}"
+    );
 
     // Advance ~halfway through attack (0.5s = 22050 samples)
     for _ in 0..22050 {
         env.process();
     }
     let mid = env.process();
-    assert!(mid > 0.3 && mid < 0.7, "Midpoint of 1s attack should be ~0.5, got {mid}");
+    assert!(
+        mid > 0.3 && mid < 0.7,
+        "Midpoint of 1s attack should be ~0.5, got {mid}"
+    );
 
     // Advance to end of attack (~1s total)
     for _ in 0..22049 {
@@ -84,10 +93,10 @@ fn t2_attack_ramp() {
 fn t3_sustain_holds() {
     let params = EnvelopeParams {
         delay: -12000,
-        attack: -12000,  // instant attack
+        attack: -12000, // instant attack
         hold: -12000,
-        decay: -12000,   // instant decay
-        sustain: 0.5,    // sustain at 50%
+        decay: -12000, // instant decay
+        sustain: 0.5,  // sustain at 50%
         release: -12000,
     };
     let mut env = Envelope::new(params, SAMPLE_RATE);
@@ -105,10 +114,19 @@ fn t3_sustain_holds() {
     }
 
     let avg = samples.iter().sum::<f32>() / samples.len() as f32;
-    let max_dev = samples.iter().map(|s| (s - avg).abs()).fold(0.0f32, f32::max);
+    let max_dev = samples
+        .iter()
+        .map(|s| (s - avg).abs())
+        .fold(0.0f32, f32::max);
 
-    assert!((avg - 0.5).abs() < 0.05, "Sustain average should be ~0.5, got {avg}");
-    assert!(max_dev < 0.01, "Sustain should be constant, max deviation {max_dev}");
+    assert!(
+        (avg - 0.5).abs() < 0.05,
+        "Sustain average should be ~0.5, got {avg}"
+    );
+    assert!(
+        max_dev < 0.01,
+        "Sustain should be constant, max deviation {max_dev}"
+    );
 }
 
 // =============================================================================
@@ -122,8 +140,8 @@ fn t4_release_to_zero() {
         attack: -12000,
         hold: -12000,
         decay: -12000,
-        sustain: 1.0,    // full sustain
-        release: 0,      // 1 second release
+        sustain: 1.0, // full sustain
+        release: 0,   // 1 second release
     };
     let mut env = Envelope::new(params, SAMPLE_RATE);
     env.note_on();
@@ -135,7 +153,10 @@ fn t4_release_to_zero() {
 
     // Should be at ~1.0 (sustain)
     let before_off = env.process();
-    assert!(before_off > 0.9, "Before note-off should be ~1.0, got {before_off}");
+    assert!(
+        before_off > 0.9,
+        "Before note-off should be ~1.0, got {before_off}"
+    );
 
     // Note off
     env.note_off();
@@ -145,7 +166,10 @@ fn t4_release_to_zero() {
         env.process();
     }
     let after_release = env.process();
-    assert!(after_release < 0.01, "After 1s release should be ~0, got {after_release}");
+    assert!(
+        after_release < 0.01,
+        "After 1s release should be ~0, got {after_release}"
+    );
 }
 
 // =============================================================================
@@ -172,11 +196,11 @@ fn t5_idle_is_silent() {
 fn t6_full_cycle() {
     let params = EnvelopeParams {
         delay: -12000,
-        attack: -7200,   // ~0.25s attack (2^(-7200/1200) = 2^-6 = 0.015625... no)
+        attack: -7200, // ~0.25s attack (2^(-7200/1200) = 2^-6 = 0.015625... no)
         hold: -12000,
-        decay: -4800,    // ~0.0625s
+        decay: -4800, // ~0.0625s
         sustain: 0.6,
-        release: -4800,  // ~0.0625s
+        release: -4800, // ~0.0625s
     };
     let mut env = Envelope::new(params, SAMPLE_RATE);
     env.note_on();
@@ -195,7 +219,10 @@ fn t6_full_cycle() {
 
     // End of 1s should be at sustain level (0.6)
     let end = values.last().unwrap();
-    assert!((*end - 0.6).abs() < 0.1, "Should settle at sustain 0.6, got {end}");
+    assert!(
+        (*end - 0.6).abs() < 0.1,
+        "Should settle at sustain 0.6, got {end}"
+    );
 
     // Now release
     env.note_off();
@@ -203,5 +230,8 @@ fn t6_full_cycle() {
     for _ in 0..SAMPLE_RATE {
         release_end = env.process();
     }
-    assert!(release_end < 0.01, "After release should be ~0, got {release_end}");
+    assert!(
+        release_end < 0.01,
+        "After release should be ~0, got {release_end}"
+    );
 }

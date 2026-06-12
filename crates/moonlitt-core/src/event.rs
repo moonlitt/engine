@@ -2,34 +2,98 @@
 /// Must be Copy + small for efficient lock-free queue transfer.
 #[derive(Clone, Copy, Debug)]
 pub enum AudioEvent {
-    NoteOn { channel: u8, note: u8, velocity: u8 },
-    NoteOff { channel: u8, note: u8, velocity: u8 },
-    CC { channel: u8, cc: u8, value: u8 },
-    PitchBend { channel: u8, value: i16 },
-    ProgramChange { channel: u8, program: u8 },
+    NoteOn {
+        channel: u8,
+        note: u8,
+        velocity: u8,
+    },
+    NoteOff {
+        channel: u8,
+        note: u8,
+        velocity: u8,
+    },
+    CC {
+        channel: u8,
+        cc: u8,
+        value: u8,
+    },
+    PitchBend {
+        channel: u8,
+        value: i16,
+    },
+    ProgramChange {
+        channel: u8,
+        program: u8,
+    },
     AllNotesOff,
     SetVolume(f32),
-    SetParam { id: u32, value: f64 },
+    SetParam {
+        id: u32,
+        value: f64,
+    },
     // Mixer control events
-    MixerTrackVolume { track_id: u8, volume: f32 },
-    MixerTrackPan { track_id: u8, pan: f32 },
-    MixerTrackTrim { track_id: u8, trim_db: f32 },
-    MixerTrackMute { track_id: u8, mute: bool },
-    MixerTrackSolo { track_id: u8, solo: bool },
-    MixerTrackSend { track_id: u8, bus_id: u8, level: f32 },
+    MixerTrackVolume {
+        track_id: u8,
+        volume: f32,
+    },
+    MixerTrackPan {
+        track_id: u8,
+        pan: f32,
+    },
+    MixerTrackTrim {
+        track_id: u8,
+        trim_db: f32,
+    },
+    MixerTrackMute {
+        track_id: u8,
+        mute: bool,
+    },
+    MixerTrackSolo {
+        track_id: u8,
+        solo: bool,
+    },
+    MixerTrackSend {
+        track_id: u8,
+        bus_id: u8,
+        level: f32,
+    },
     MixerMasterVolume(f32),
     // Insert effect control
-    InsertBypass { track_id: u8, insert_id: u8, bypass: bool },
+    InsertBypass {
+        track_id: u8,
+        insert_id: u8,
+        bypass: bool,
+    },
     // Per-track parameter targeting
-    SetParamForTrack { track_id: u8, param_id: u16, value: f64 },
-    SetInsertParam { track_id: u8, insert_id: u8, param_id: u16, value: f64 },
+    SetParamForTrack {
+        track_id: u8,
+        param_id: u16,
+        value: f64,
+    },
+    SetInsertParam {
+        track_id: u8,
+        insert_id: u8,
+        param_id: u16,
+        value: f64,
+    },
     // Send bus parameter control
-    SetSendBusParam { bus_id: u8, param_id: u16, value: f64 },
+    SetSendBusParam {
+        bus_id: u8,
+        param_id: u16,
+        value: f64,
+    },
     // Track routing (0xFF = master, else = group track ID)
-    MixerTrackRoute { track_id: u8, target_id: u8 },
+    MixerTrackRoute {
+        track_id: u8,
+        target_id: u8,
+    },
     /// Set external sidechain source for an insert effect.
     /// source_track_id = 0xFF means None (revert to internal sidechain).
-    SetInsertSidechain { track_id: u8, insert_id: u8, source_track_id: u8 },
+    SetInsertSidechain {
+        track_id: u8,
+        insert_id: u8,
+        source_track_id: u8,
+    },
     Stop,
 }
 

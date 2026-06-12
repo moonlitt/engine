@@ -202,7 +202,11 @@ impl Reverb {
         }
 
         // Push to comb filters
-        for comb in self.combs_left.iter_mut().chain(self.combs_right.iter_mut()) {
+        for comb in self
+            .combs_left
+            .iter_mut()
+            .chain(self.combs_right.iter_mut())
+        {
             comb.set_feedback(self.feedback);
             comb.set_damp(self.damp1);
         }
@@ -270,10 +274,7 @@ impl Reverb {
         // --- Dry/wet mix ---
         let dry = (1.0 - self.dry_wet) as f32;
         let wet = self.dry_wet as f32;
-        (
-            dry * in_l + wet * out_l,
-            dry * in_r + wet * out_r,
-        )
+        (dry * in_l + wet * out_l, dry * in_r + wet * out_r)
     }
 }
 
@@ -296,10 +297,18 @@ impl AudioBackend for Reverb {
 
     fn unload(&mut self) {
         // Clear all internal state.
-        for c in self.combs_left.iter_mut().chain(self.combs_right.iter_mut()) {
+        for c in self
+            .combs_left
+            .iter_mut()
+            .chain(self.combs_right.iter_mut())
+        {
             c.clear();
         }
-        for a in self.allpasses_left.iter_mut().chain(self.allpasses_right.iter_mut()) {
+        for a in self
+            .allpasses_left
+            .iter_mut()
+            .chain(self.allpasses_right.iter_mut())
+        {
             a.clear();
         }
         self.predelay_buffer_l.fill(0.0);
@@ -325,13 +334,7 @@ impl AudioBackend for Reverb {
         // Reverb is an effect — use process_effect instead.
     }
 
-    fn process_effect(
-        &mut self,
-        in_l: &[f32],
-        in_r: &[f32],
-        out_l: &mut [f32],
-        out_r: &mut [f32],
-    ) {
+    fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
         let len = in_l.len().min(in_r.len()).min(out_l.len()).min(out_r.len());
 
         if self.bypass || self.dry_wet == 0.0 {

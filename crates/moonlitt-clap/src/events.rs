@@ -4,9 +4,8 @@
 //! for note on/off and `clap_event_midi` for raw MIDI (CC, pitch bend, etc.).
 
 use clap_sys::events::{
-    clap_event_header, clap_event_midi, clap_event_note, clap_input_events,
-    clap_output_events, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_NOTE_OFF,
-    CLAP_EVENT_NOTE_ON, CLAP_EVENT_MIDI,
+    clap_event_header, clap_event_midi, clap_event_note, clap_input_events, clap_output_events,
+    CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_MIDI, CLAP_EVENT_NOTE_OFF, CLAP_EVENT_NOTE_ON,
 };
 use std::ffi::c_void;
 use std::mem;
@@ -23,28 +22,11 @@ pub struct MidiEvent {
 /// The kind of MIDI event.
 #[derive(Debug, Clone)]
 pub enum MidiEventKind {
-    NoteOn {
-        channel: u8,
-        note: u8,
-        velocity: u8,
-    },
-    NoteOff {
-        channel: u8,
-        note: u8,
-    },
-    CC {
-        channel: u8,
-        cc: u8,
-        value: u8,
-    },
-    PitchBend {
-        channel: u8,
-        value: i16,
-    },
-    ProgramChange {
-        channel: u8,
-        program: u8,
-    },
+    NoteOn { channel: u8, note: u8, velocity: u8 },
+    NoteOff { channel: u8, note: u8 },
+    CC { channel: u8, cc: u8, value: u8 },
+    PitchBend { channel: u8, value: i16 },
+    ProgramChange { channel: u8, program: u8 },
 }
 
 // ---------------------------------------------------------------------------
@@ -132,11 +114,7 @@ impl InputEventList {
                     };
                     buffer.extend_from_slice(bytes);
                 }
-                MidiEventKind::CC {
-                    channel,
-                    cc,
-                    value,
-                } => {
+                MidiEventKind::CC { channel, cc, value } => {
                     let offset = buffer.len();
                     offsets.push(offset);
 

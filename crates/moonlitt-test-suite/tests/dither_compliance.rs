@@ -79,7 +79,10 @@ fn d05_power_spectral_density_flat() {
     // the averaged power has chi-squared(2K) distribution -> much tighter.
     let num_bands = 16;
     let band_size = usable.len() / num_bands;
-    assert!(band_size > 100, "Each band should contain many bins for stable averaging");
+    assert!(
+        band_size > 100,
+        "Each band should contain many bins for stable averaging"
+    );
 
     let band_powers: Vec<f64> = (0..num_bands)
         .map(|b| {
@@ -91,7 +94,10 @@ fn d05_power_spectral_density_flat() {
 
     // Filter zero-power bands (shouldn't happen)
     let nonzero: Vec<f64> = band_powers.iter().copied().filter(|&p| p > 0.0).collect();
-    assert!(nonzero.len() >= num_bands / 2, "Most bands should have non-zero power");
+    assert!(
+        nonzero.len() >= num_bands / 2,
+        "Most bands should have non-zero power"
+    );
 
     // Convert to dB
     let db_bands: Vec<f64> = nonzero.iter().map(|&p| 10.0 * p.log10()).collect();
@@ -104,7 +110,10 @@ fn d05_power_spectral_density_flat() {
         "d05: {num_bands} bands, {band_size} bins/band, variation={variation:.2} dB (max={max_db:.2}, min={min_db:.2}, mean={mean_db:.2})"
     );
     for (i, db) in db_bands.iter().enumerate() {
-        eprintln!("  Band {i}: {db:.2} dB (delta from mean: {:+.2} dB)", db - mean_db);
+        eprintln!(
+            "  Band {i}: {db:.2} dB (delta from mean: {:+.2} dB)",
+            db - mean_db
+        );
     }
 
     // With band averaging (~4096 bins/band), the variation between bands
@@ -178,9 +187,7 @@ fn d06_quantization_noise_independent() {
         0.0
     };
 
-    eprintln!(
-        "d06: Pearson correlation between signal and quantization error = {correlation:.6}"
-    );
+    eprintln!("d06: Pearson correlation between signal and quantization error = {correlation:.6}");
 
     // TPDF dither should decorrelate quantization error from signal.
     // With xorshift64 PRNG and 500k samples, |r| should be < 0.01

@@ -178,11 +178,10 @@ pub(crate) fn load_plugin(
     // handler also exposes IComponentHandler2, IUnitHandler, IUnitHandler2
     // — plug-ins QI for these to surface setDirty / requestOpenEditor and
     // unit/program list changes.
-    let (component_handler, param_queue, restart_flags, notifications) =
-        match controller.as_ref() {
-            Some(ctrl) => install_component_handler(ctrl),
-            None => (None, None, None, None),
-        };
+    let (component_handler, param_queue, restart_flags, notifications) = match controller.as_ref() {
+        Some(ctrl) => install_component_handler(ctrl),
+        None => (None, None, None, None),
+    };
 
     // 6d. QI the controller for IMidiMapping so we can translate incoming
     // MIDI controller events into parameter changes per the VST3 spec.
@@ -191,7 +190,11 @@ pub(crate) fn load_plugin(
     let midi_mapping = controller.as_ref().and_then(|c| c.cast::<IMidiMapping>());
     crate::trace::emit(&format!(
         "load_plugin: IMidiMapping={}",
-        if midi_mapping.is_some() { "available" } else { "absent" }
+        if midi_mapping.is_some() {
+            "available"
+        } else {
+            "absent"
+        }
     ));
 
     // 7. setupProcessing
@@ -216,7 +219,13 @@ pub(crate) fn load_plugin(
         crate::trace::emit(&format!(
             "load_plugin: buses audio_in={n_a_in} audio_out={n_a_out} event_in={n_e_in} event_out={n_e_out}"
         ));
-        log_bus_details(&component, kAudio as i32, kOutput as i32, n_a_out, "audio_out");
+        log_bus_details(
+            &component,
+            kAudio as i32,
+            kOutput as i32,
+            n_a_out,
+            "audio_out",
+        );
         log_bus_details(&component, kAudio as i32, kInput as i32, n_a_in, "audio_in");
         log_bus_details(&component, kEvent as i32, kInput as i32, n_e_in, "event_in");
     }
@@ -236,7 +245,11 @@ pub(crate) fn load_plugin(
     }
     crate::trace::emit(&format!(
         "load_plugin: setProcessing(1) -> {}",
-        if result == kResultOk { "ok" } else { "kNotImplemented" }
+        if result == kResultOk {
+            "ok"
+        } else {
+            "kNotImplemented"
+        }
     ));
 
     Ok(LoadedPlugin {
@@ -282,7 +295,12 @@ fn install_component_handler(
         return (None, None, None, None);
     }
 
-    (Some(wrapper), Some(queue), Some(restart_flags), Some(notifications))
+    (
+        Some(wrapper),
+        Some(queue),
+        Some(restart_flags),
+        Some(notifications),
+    )
 }
 
 /// Get IPluginFactory from the factory function pointer.
@@ -413,8 +431,7 @@ fn initialize_component(
 
     // IHostApplication inherits from FUnknown, so as_ptr gives us the interface pointer.
     // We pass it as *mut FUnknown to initialize().
-    let result =
-        unsafe { component.initialize(host_ptr.as_ptr() as *mut FUnknown) };
+    let result = unsafe { component.initialize(host_ptr.as_ptr() as *mut FUnknown) };
 
     if result != kResultOk {
         return Err(Error::PluginError(result));
@@ -424,9 +441,7 @@ fn initialize_component(
 }
 
 /// QueryInterface for IAudioProcessor from the component.
-fn query_audio_processor(
-    component: &ComPtr<IComponent>,
-) -> Result<ComPtr<IAudioProcessor>> {
+fn query_audio_processor(component: &ComPtr<IComponent>) -> Result<ComPtr<IAudioProcessor>> {
     component
         .cast::<IAudioProcessor>()
         .ok_or(Error::InterfaceNotFound("IAudioProcessor"))
@@ -471,8 +486,7 @@ fn get_edit_controller(
     use vst3::Steinberg::Vst::IHostApplication;
     let host_ptr = host.to_com_ptr::<IHostApplication>()?;
 
-    let result =
-        unsafe { ctrl.initialize(host_ptr.as_ptr() as *mut FUnknown) };
+    let result = unsafe { ctrl.initialize(host_ptr.as_ptr() as *mut FUnknown) };
 
     if result == kResultOk {
         Some(ctrl)
@@ -546,10 +560,7 @@ fn sync_component_state(
 /// Propose a stereo SpeakerArrangement for every audio bus the plugin
 /// exposes. Plugin can renegotiate or accept silently. Result code is
 /// ignored — plugin's own default layout is the fallback.
-fn negotiate_bus_arrangements(
-    processor: &ComPtr<IAudioProcessor>,
-    component: &ComPtr<IComponent>,
-) {
+fn negotiate_bus_arrangements(processor: &ComPtr<IAudioProcessor>, component: &ComPtr<IComponent>) {
     use vst3::Steinberg::Vst::{SpeakerArr, SpeakerArrangement};
 
     let num_in = unsafe { component.getBusCount(kAudio as i32, kInput as i32) };
@@ -593,10 +604,7 @@ fn log_bus_details(
         let mut info = MaybeUninit::<BusInfo>::uninit();
         let r = unsafe { component.getBusInfo(media_type, direction, i, info.as_mut_ptr()) };
         if r != kResultOk {
-            crate::trace::emit(&format!(
-                "{label}[{i}] getBusInfo -> 0x{:08X}",
-                r as u32
-            ));
+            crate::trace::emit(&format!("{label}[{i}] getBusInfo -> 0x{:08X}", r as u32));
             continue;
         }
         let info = unsafe { info.assume_init() };

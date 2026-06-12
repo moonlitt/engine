@@ -164,7 +164,10 @@ impl Gate {
             sc_hpf: [Biquad::new(), Biquad::new()],
             sc_lpf: [Biquad::new(), Biquad::new()],
 
-            rms_window: [RmsWindow::new(rms_window_size), RmsWindow::new(rms_window_size)],
+            rms_window: [
+                RmsWindow::new(rms_window_size),
+                RmsWindow::new(rms_window_size),
+            ],
 
             sidechain_ext_l: Vec::new(),
             sidechain_ext_r: Vec::new(),
@@ -265,15 +268,11 @@ impl AudioBackend for Gate {
         self.use_external_sidechain = true;
     }
 
-    fn supports_sidechain(&self) -> bool { true }
+    fn supports_sidechain(&self) -> bool {
+        true
+    }
 
-    fn process_effect(
-        &mut self,
-        in_l: &[f32],
-        in_r: &[f32],
-        out_l: &mut [f32],
-        out_r: &mut [f32],
-    ) {
+    fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
         let len = in_l.len();
 
         // Bypass: bit-exact copy
@@ -293,8 +292,16 @@ impl AudioBackend for Gate {
             let r = in_r[i] as f64;
 
             // Detection source: external sidechain or input
-            let det_l = if use_ext { self.sidechain_ext_l[i] as f64 } else { l };
-            let det_r = if use_ext { self.sidechain_ext_r[i] as f64 } else { r };
+            let det_l = if use_ext {
+                self.sidechain_ext_l[i] as f64
+            } else {
+                l
+            };
+            let det_r = if use_ext {
+                self.sidechain_ext_r[i] as f64
+            } else {
+                r
+            };
 
             // Sidechain: HPF → LPF (does NOT modify audio path)
             let sc_l = self.sc_lpf[0].process(self.sc_hpf[0].process(det_l));
@@ -583,8 +590,16 @@ impl AudioBackend for Gate {
             5 => Some(format!("{:.1} dB", value)),
             6 => Some(format!("{:.0} Hz", value)),
             7 => Some(format!("{:.0} Hz", value)),
-            8 => Some(if value >= 0.5 { "RMS".into() } else { "Peak".into() }),
-            9 => Some(if value >= 0.5 { "On".into() } else { "Off".into() }),
+            8 => Some(if value >= 0.5 {
+                "RMS".into()
+            } else {
+                "Peak".into()
+            }),
+            9 => Some(if value >= 0.5 {
+                "On".into()
+            } else {
+                "Off".into()
+            }),
             _ => None,
         }
     }
@@ -697,10 +712,10 @@ mod tests {
             gate.process_effect(&input, &input, &mut out_l, &mut out_r);
         }
         // Compare RMS of output to RMS of input — should be close
-        let in_rms: f64 = input.iter().map(|s| (*s as f64) * (*s as f64)).sum::<f64>()
-            / input.len() as f64;
-        let out_rms: f64 = out_l.iter().map(|s| (*s as f64) * (*s as f64)).sum::<f64>()
-            / out_l.len() as f64;
+        let in_rms: f64 =
+            input.iter().map(|s| (*s as f64) * (*s as f64)).sum::<f64>() / input.len() as f64;
+        let out_rms: f64 =
+            out_l.iter().map(|s| (*s as f64) * (*s as f64)).sum::<f64>() / out_l.len() as f64;
         let ratio = out_rms.sqrt() / in_rms.sqrt();
         assert!(
             (ratio - 1.0).abs() < 0.15,
@@ -756,9 +771,9 @@ mod tests {
         let mut gate_internal = Gate::new(sr);
         gate_internal.set_param(0, -30.0); // threshold = -30 dB
         gate_internal.set_param(1, -80.0); // range = -80 dB
-        gate_internal.set_param(2, 0.5);   // attack = 0.5ms
-        gate_internal.set_param(3, 0.0);   // hold = 0ms
-        gate_internal.set_param(4, 5.0);   // release = 5ms
+        gate_internal.set_param(2, 0.5); // attack = 0.5ms
+        gate_internal.set_param(3, 0.0); // hold = 0ms
+        gate_internal.set_param(4, 5.0); // release = 5ms
 
         // Process several blocks to let gate close
         let mut out_l = vec![0.0f32; num_samples];
@@ -768,7 +783,10 @@ mod tests {
         }
         gate_internal.process_effect(&quiet, &quiet, &mut out_l, &mut out_r);
         let check_start = sr as usize / 2;
-        let rms_internal = out_l[check_start..].iter().map(|s| (*s as f64) * (*s as f64)).sum::<f64>()
+        let rms_internal = out_l[check_start..]
+            .iter()
+            .map(|s| (*s as f64) * (*s as f64))
+            .sum::<f64>()
             / (num_samples - check_start) as f64;
         let rms_internal = rms_internal.sqrt();
 
@@ -788,7 +806,10 @@ mod tests {
         }
         gate_external.set_sidechain(&loud, &loud);
         gate_external.process_effect(&quiet, &quiet, &mut out_ext_l, &mut out_ext_r);
-        let rms_external = out_ext_l[check_start..].iter().map(|s| (*s as f64) * (*s as f64)).sum::<f64>()
+        let rms_external = out_ext_l[check_start..]
+            .iter()
+            .map(|s| (*s as f64) * (*s as f64))
+            .sum::<f64>()
             / (num_samples - check_start) as f64;
         let rms_external = rms_external.sqrt();
 
@@ -797,7 +818,8 @@ mod tests {
         assert!(
             rms_external > rms_internal * 5.0,
             "External sidechain should open gate: internal RMS={:.6}, external RMS={:.6}",
-            rms_internal, rms_external
+            rms_internal,
+            rms_external
         );
     }
 }

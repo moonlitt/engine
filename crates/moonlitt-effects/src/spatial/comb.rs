@@ -77,7 +77,7 @@ mod tests {
         let mut comb = CombFilter::new(4);
         comb.set_feedback(0.0);
         comb.set_damp(0.0); // no damping
-        // Feed impulse at sample 0.
+                            // Feed impulse at sample 0.
         let _ = comb.process(1.0);
         for _ in 1..4 {
             let _ = comb.process(0.0);

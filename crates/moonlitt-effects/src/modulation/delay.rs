@@ -331,13 +331,7 @@ impl AudioBackend for StereoDelay {
     // -- Audio: generator render is a no-op (this is an effect) --
     fn render(&mut self, _left: &mut [f32], _right: &mut [f32]) {}
 
-    fn process_effect(
-        &mut self,
-        in_l: &[f32],
-        in_r: &[f32],
-        out_l: &mut [f32],
-        out_r: &mut [f32],
-    ) {
+    fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
         let len = in_l.len();
 
         // Bypass: bit-exact copy
@@ -644,16 +638,28 @@ impl AudioBackend for StereoDelay {
         match id {
             0 => Some(format!("{:.0} ms", value)),
             1 => Some(format!("{:.0} ms", value)),
-            2 => Some(if value >= 0.5 { "Sync".into() } else { "Free".into() }),
+            2 => Some(if value >= 0.5 {
+                "Sync".into()
+            } else {
+                "Free".into()
+            }),
             3 => Some(note_value_label(value.round() as u32).into()),
             4 => Some(note_value_label(value.round() as u32).into()),
             5 => Some(format!("{:.1} BPM", value)),
             6 => Some(format!("{:.0}%", value * 100.0)),
-            7 => Some(if value >= 0.5 { "On".into() } else { "Off".into() }),
+            7 => Some(if value >= 0.5 {
+                "On".into()
+            } else {
+                "Off".into()
+            }),
             8 => Some(format!("{:.0} Hz", value)),
             9 => Some(format!("{:.0} Hz", value)),
             10 => Some(format!("{:.0}%", value * 100.0)),
-            11 => Some(if value >= 0.5 { "On".into() } else { "Off".into() }),
+            11 => Some(if value >= 0.5 {
+                "On".into()
+            } else {
+                "Off".into()
+            }),
             _ => None,
         }
     }
@@ -914,16 +920,19 @@ mod tests {
         let second_repeat_center = delay_samples * 2;
 
         // Measure peaks around each repeat
-        let peak_l_1 = out_l[first_repeat_center.saturating_sub(2)..(first_repeat_center + 3).min(total)]
+        let peak_l_1 = out_l
+            [first_repeat_center.saturating_sub(2)..(first_repeat_center + 3).min(total)]
             .iter()
             .map(|s| s.abs())
             .fold(0.0f32, f32::max);
-        let peak_r_1 = out_r[first_repeat_center.saturating_sub(2)..(first_repeat_center + 3).min(total)]
+        let peak_r_1 = out_r
+            [first_repeat_center.saturating_sub(2)..(first_repeat_center + 3).min(total)]
             .iter()
             .map(|s| s.abs())
             .fold(0.0f32, f32::max);
 
-        let peak_r_2 = out_r[second_repeat_center.saturating_sub(2)..(second_repeat_center + 3).min(total)]
+        let peak_r_2 = out_r
+            [second_repeat_center.saturating_sub(2)..(second_repeat_center + 3).min(total)]
             .iter()
             .map(|s| s.abs())
             .fold(0.0f32, f32::max);
@@ -956,15 +965,19 @@ mod tests {
 
         for i in 0..12 {
             let info = delay.param_info(i);
-            assert!(
-                info.is_some(),
-                "param_info({}) should return Some",
-                i
-            );
+            assert!(info.is_some(), "param_info({}) should return Some", i);
             let info = info.unwrap();
             assert_eq!(info.id, i);
-            assert!(!info.name.is_empty(), "param {} name should not be empty", i);
-            assert!(!info.group.is_empty(), "param {} group should not be empty", i);
+            assert!(
+                !info.name.is_empty(),
+                "param {} name should not be empty",
+                i
+            );
+            assert!(
+                !info.group.is_empty(),
+                "param {} group should not be empty",
+                i
+            );
             assert!(info.min <= info.default, "param {} min <= default", i);
             assert!(info.default <= info.max, "param {} default <= max", i);
         }

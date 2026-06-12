@@ -16,7 +16,10 @@ fn test_create_unknown_extension() {
 fn test_supported_formats() {
     let formats = moonlitt_engine::supported_formats();
     // At least SF2 should be supported (default feature)
-    assert!(formats.contains(&"sf2"), "sf2 should be in supported formats");
+    assert!(
+        formats.contains(&"sf2"),
+        "sf2 should be in supported formats"
+    );
 }
 
 #[test]

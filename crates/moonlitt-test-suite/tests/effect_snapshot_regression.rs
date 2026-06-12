@@ -74,7 +74,9 @@ fn fixture_pseudo_noise(amp: f32, seconds: f32, seed: u64) -> (Vec<f32>, Vec<f32
     let mut state_l = seed;
     let mut state_r = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
     let step = |s: &mut u64| -> f32 {
-        *s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        *s = s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         // Take the high 32 bits and map to [0, 1) — full range, zero-mean after centring.
         let bits = (*s >> 32) as u32;
         let v = bits as f32 / (u32::MAX as f32);
@@ -168,16 +170,66 @@ fn compare(name: &str, current: &Report, baseline: &Report, tol: &Tolerance) {
         }
     };
 
-    check_db("peak L (dBFS)", current.peak.sample_peak_l_dbfs, baseline.peak.sample_peak_l_dbfs, tol.peak_db);
-    check_db("peak R (dBFS)", current.peak.sample_peak_r_dbfs, baseline.peak.sample_peak_r_dbfs, tol.peak_db);
-    check_db("true peak L (dBTP)", current.peak.true_peak_l_dbtp, baseline.peak.true_peak_l_dbtp, tol.peak_db);
-    check_db("true peak R (dBTP)", current.peak.true_peak_r_dbtp, baseline.peak.true_peak_r_dbtp, tol.peak_db);
-    check_db("rms L (dBFS)", current.rms.l_dbfs, baseline.rms.l_dbfs, tol.rms_db);
-    check_db("rms R (dBFS)", current.rms.r_dbfs, baseline.rms.r_dbfs, tol.rms_db);
-    check_db("integrated (LUFS)", current.loudness.integrated_lufs, baseline.loudness.integrated_lufs, tol.loudness_lu);
-    check_db("short-term max (LUFS)", current.loudness.short_term_max_lufs, baseline.loudness.short_term_max_lufs, tol.loudness_lu);
-    check_db("momentary max (LUFS)", current.loudness.momentary_max_lufs, baseline.loudness.momentary_max_lufs, tol.loudness_lu);
-    check_db("loudness range (LU)", current.loudness.lra_lu, baseline.loudness.lra_lu, tol.loudness_lu);
+    check_db(
+        "peak L (dBFS)",
+        current.peak.sample_peak_l_dbfs,
+        baseline.peak.sample_peak_l_dbfs,
+        tol.peak_db,
+    );
+    check_db(
+        "peak R (dBFS)",
+        current.peak.sample_peak_r_dbfs,
+        baseline.peak.sample_peak_r_dbfs,
+        tol.peak_db,
+    );
+    check_db(
+        "true peak L (dBTP)",
+        current.peak.true_peak_l_dbtp,
+        baseline.peak.true_peak_l_dbtp,
+        tol.peak_db,
+    );
+    check_db(
+        "true peak R (dBTP)",
+        current.peak.true_peak_r_dbtp,
+        baseline.peak.true_peak_r_dbtp,
+        tol.peak_db,
+    );
+    check_db(
+        "rms L (dBFS)",
+        current.rms.l_dbfs,
+        baseline.rms.l_dbfs,
+        tol.rms_db,
+    );
+    check_db(
+        "rms R (dBFS)",
+        current.rms.r_dbfs,
+        baseline.rms.r_dbfs,
+        tol.rms_db,
+    );
+    check_db(
+        "integrated (LUFS)",
+        current.loudness.integrated_lufs,
+        baseline.loudness.integrated_lufs,
+        tol.loudness_lu,
+    );
+    check_db(
+        "short-term max (LUFS)",
+        current.loudness.short_term_max_lufs,
+        baseline.loudness.short_term_max_lufs,
+        tol.loudness_lu,
+    );
+    check_db(
+        "momentary max (LUFS)",
+        current.loudness.momentary_max_lufs,
+        baseline.loudness.momentary_max_lufs,
+        tol.loudness_lu,
+    );
+    check_db(
+        "loudness range (LU)",
+        current.loudness.lra_lu,
+        baseline.loudness.lra_lu,
+        tol.loudness_lu,
+    );
 
     let mut check_abs = |label: &str, cur: f64, base: f64, allowed: f64| {
         if (cur - base).abs() > allowed {
@@ -187,8 +239,18 @@ fn compare(name: &str, current: &Report, baseline: &Report, tol: &Tolerance) {
             ));
         }
     };
-    check_abs("dc offset L", current.anomalies.dc_offset_l, baseline.anomalies.dc_offset_l, tol.dc_abs);
-    check_abs("dc offset R", current.anomalies.dc_offset_r, baseline.anomalies.dc_offset_r, tol.dc_abs);
+    check_abs(
+        "dc offset L",
+        current.anomalies.dc_offset_l,
+        baseline.anomalies.dc_offset_l,
+        tol.dc_abs,
+    );
+    check_abs(
+        "dc offset R",
+        current.anomalies.dc_offset_r,
+        baseline.anomalies.dc_offset_r,
+        tol.dc_abs,
+    );
 
     // Anomaly counts must match exactly.
     if current.anomalies.nan_count != baseline.anomalies.nan_count {
@@ -288,6 +350,9 @@ fn snapshot_silence_through_dattorro() {
     let (out_l, out_r) = render_through(&mut rev, &in_l, &in_r);
     let report = measure(&out_l, &out_r);
     // Stricter DC tolerance for silence — true zero state must be exact.
-    let tol = Tolerance { dc_abs: 1e-9, ..DEFAULT_TOL };
+    let tol = Tolerance {
+        dc_abs: 1e-9,
+        ..DEFAULT_TOL
+    };
     check_or_update("silence_through_dattorro", report, &tol);
 }

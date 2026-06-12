@@ -20,7 +20,7 @@ pub use moonlitt_session::persistence as session;
 pub use moonlitt_session::sequencer;
 pub use moonlitt_session::transport;
 
-pub use moonlitt_core::{AudioEvent, TimedEvent};
 pub use midi_input::MidiDeviceInfo;
+pub use moonlitt_core::{AudioEvent, TimedEvent};
 pub use moonlitt_session::Session;
 pub use runtime::Runtime;

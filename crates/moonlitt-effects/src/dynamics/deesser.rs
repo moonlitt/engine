@@ -77,7 +77,7 @@ pub struct DeEsser {
     frequency: f64,
     bandwidth_q: f64,
     ratio: f64,
-    mode: u32,        // 0 = wideband, 1 = split-band
+    mode: u32,         // 0 = wideband, 1 = split-band
     listen_mode: bool, // output bandpass signal only
     bypass: bool,
 
@@ -164,13 +164,7 @@ impl AudioBackend for DeEsser {
     // -- Audio: generator render is a no-op (this is an effect) --
     fn render(&mut self, _left: &mut [f32], _right: &mut [f32]) {}
 
-    fn process_effect(
-        &mut self,
-        in_l: &[f32],
-        in_r: &[f32],
-        out_l: &mut [f32],
-        out_r: &mut [f32],
-    ) {
+    fn process_effect(&mut self, in_l: &[f32], in_r: &[f32], out_l: &mut [f32], out_r: &mut [f32]) {
         let len = in_l.len();
 
         // Bypass: bit-exact copy
@@ -365,8 +359,16 @@ impl AudioBackend for DeEsser {
                 }
                 .into(),
             ),
-            5 => Some(if value >= 0.5 { "On".into() } else { "Off".into() }),
-            6 => Some(if value >= 0.5 { "On".into() } else { "Off".into() }),
+            5 => Some(if value >= 0.5 {
+                "On".into()
+            } else {
+                "Off".into()
+            }),
+            6 => Some(if value >= 0.5 {
+                "On".into()
+            } else {
+                "Off".into()
+            }),
             _ => None,
         }
     }
@@ -447,9 +449,7 @@ mod tests {
         // Feed loud 6kHz sine (in the sibilance band)
         let len = 4410;
         let input: Vec<f32> = (0..len)
-            .map(|i| {
-                0.5 * (2.0 * std::f32::consts::PI * 6000.0 * i as f32 / 44100.0).sin()
-            })
+            .map(|i| 0.5 * (2.0 * std::f32::consts::PI * 6000.0 * i as f32 / 44100.0).sin())
             .collect();
         let mut out_l = vec![0.0f32; len];
         let mut out_r = vec![0.0f32; len];
@@ -478,9 +478,7 @@ mod tests {
         // Feed 200Hz sine (far below sibilance band)
         let len = 4410;
         let input: Vec<f32> = (0..len)
-            .map(|i| {
-                0.3 * (2.0 * std::f32::consts::PI * 200.0 * i as f32 / 44100.0).sin()
-            })
+            .map(|i| 0.3 * (2.0 * std::f32::consts::PI * 200.0 * i as f32 / 44100.0).sin())
             .collect();
         let mut out_l = vec![0.0f32; len];
         let mut out_r = vec![0.0f32; len];

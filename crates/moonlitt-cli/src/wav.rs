@@ -2,12 +2,7 @@
 
 use std::io::{self, Write};
 
-pub fn write_wav(
-    path: &str,
-    sample_rate: u32,
-    left: &[f32],
-    right: &[f32],
-) -> io::Result<()> {
+pub fn write_wav(path: &str, sample_rate: u32, left: &[f32], right: &[f32]) -> io::Result<()> {
     let num_samples = left.len();
     let num_channels: u16 = 2;
     let bits_per_sample: u16 = 16;

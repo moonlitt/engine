@@ -3,19 +3,17 @@
 //! Handles audio processing: builds ProcessData with AudioBusBuffers and
 //! IEventList, then calls IAudioProcessor::process().
 
+use vst3::ComPtr;
+use vst3::Steinberg::kResultOk;
 use vst3::Steinberg::Vst::{
     AudioBusBuffers, AudioBusBuffers__type0, BusDirections_::*, Chord, FrameRate, IAudioProcessor,
     IAudioProcessorTrait, IComponent, IComponentTrait, IEventList, IParameterChanges,
     MediaTypes_::kAudio, ProcessContext, ProcessContext_::StatesAndFlags_, ProcessData,
     ProcessModes_::kRealtime, SymbolicSampleSizes_::kSample32,
 };
-use vst3::Steinberg::kResultOk;
-use vst3::ComPtr;
 
 use crate::component_handler::PendingParam;
-use crate::events::{
-    create_event_list, drain_output_events, new_output_event_list, MidiEvent,
-};
+use crate::events::{create_event_list, drain_output_events, new_output_event_list, MidiEvent};
 use crate::parameter_changes::{build_input_changes, drain_output, new_output_changes};
 use crate::TransportContext;
 use crate::{Error, Result};
@@ -202,14 +200,22 @@ fn log_per_bus_peaks(buses: &[OutputBus<'_>], num_frames: usize) {
     }
 
     let bucket = |x: f32| -> u8 {
-        if x < 1e-6 { 0 }
-        else if x < 1e-3 { 1 }
-        else if x < 0.1 { 2 }
-        else if x < 1.0 { 3 }
-        else { 4 }
+        if x < 1e-6 {
+            0
+        } else if x < 1e-3 {
+            1
+        } else if x < 0.1 {
+            2
+        } else if x < 1.0 {
+            3
+        } else {
+            4
+        }
     };
 
-    let Ok(mut last) = LAST_PEAKS.lock() else { return };
+    let Ok(mut last) = LAST_PEAKS.lock() else {
+        return;
+    };
     let last_buckets: Vec<u8> = last.iter().map(|&p| bucket(p)).collect();
     let curr_buckets: Vec<u8> = peaks.iter().map(|&p| bucket(p)).collect();
 
@@ -286,7 +292,11 @@ pub(crate) fn process_effect(
     out_left: &mut [f32],
     out_right: &mut [f32],
 ) -> Result<()> {
-    let num_frames = in_left.len().min(in_right.len()).min(out_left.len()).min(out_right.len());
+    let num_frames = in_left
+        .len()
+        .min(in_right.len())
+        .min(out_left.len())
+        .min(out_right.len());
     if num_frames == 0 {
         return Ok(());
     }

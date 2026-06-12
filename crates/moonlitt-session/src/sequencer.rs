@@ -1,5 +1,5 @@
-use moonlitt_core::AudioEvent;
 use midly::{MetaMessage, MidiMessage, Smf, TrackEventKind};
+use moonlitt_core::AudioEvent;
 
 /// A stored event: absolute tick position + AudioEvent.
 #[derive(Debug, Clone, Copy)]

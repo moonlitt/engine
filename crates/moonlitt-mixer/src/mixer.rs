@@ -52,8 +52,12 @@ impl LevelMeter {
         for i in 0..left.len() {
             let al = left[i].abs();
             let ar = right[i].abs();
-            if al > peak_l { peak_l = al; }
-            if ar > peak_r { peak_r = ar; }
+            if al > peak_l {
+                peak_l = al;
+            }
+            if ar > peak_r {
+                peak_r = ar;
+            }
             sum_sq_l += left[i] * left[i];
             sum_sq_r += right[i] * right[i];
         }
@@ -70,8 +74,12 @@ impl LevelMeter {
                     let interp_r = right[i] + t * (right[i + 1] - right[i]);
                     let al = interp_l.abs();
                     let ar = interp_r.abs();
-                    if al > tp_l { tp_l = al; }
-                    if ar > tp_r { tp_r = ar; }
+                    if al > tp_l {
+                        tp_l = al;
+                    }
+                    if ar > tp_r {
+                        tp_r = ar;
+                    }
                 }
             }
         }
@@ -85,7 +93,8 @@ impl LevelMeter {
         self.rms_left.store(rms_l.to_bits(), Ordering::Relaxed);
         self.rms_right.store(rms_r.to_bits(), Ordering::Relaxed);
         self.true_peak_left.store(tp_l.to_bits(), Ordering::Relaxed);
-        self.true_peak_right.store(tp_r.to_bits(), Ordering::Relaxed);
+        self.true_peak_right
+            .store(tp_r.to_bits(), Ordering::Relaxed);
     }
 
     /// Read sample peak level (L, R).
@@ -321,7 +330,12 @@ impl Mixer {
     }
 
     /// Add a track with a source path recorded for session persistence.
-    pub fn add_track_with_source(&mut self, backend: Box<dyn AudioBackend>, source_path: Option<String>, channel_mask: u16) -> u32 {
+    pub fn add_track_with_source(
+        &mut self,
+        backend: Box<dyn AudioBackend>,
+        source_path: Option<String>,
+        channel_mask: u16,
+    ) -> u32 {
         let id = self.next_track_id;
         self.next_track_id += 1;
         self.add_track_inner(id, backend, source_path, channel_mask, LevelMeter::new());
@@ -329,7 +343,13 @@ impl Mixer {
     }
 
     /// Add a track with a pre-assigned ID (for Runtime command channel).
-    pub fn add_track_with_id(&mut self, id: u32, backend: Box<dyn AudioBackend>, source_path: Option<String>, channel_mask: u16) {
+    pub fn add_track_with_id(
+        &mut self,
+        id: u32,
+        backend: Box<dyn AudioBackend>,
+        source_path: Option<String>,
+        channel_mask: u16,
+    ) {
         if id >= self.next_track_id {
             self.next_track_id = id + 1;
         }
@@ -337,14 +357,27 @@ impl Mixer {
     }
 
     /// Add a track with a pre-built meter (for sharing with the main thread via Arc).
-    pub fn add_track_with_meter(&mut self, id: u32, backend: Box<dyn AudioBackend>, channel_mask: u16, meter: LevelMeter) {
+    pub fn add_track_with_meter(
+        &mut self,
+        id: u32,
+        backend: Box<dyn AudioBackend>,
+        channel_mask: u16,
+        meter: LevelMeter,
+    ) {
         if id >= self.next_track_id {
             self.next_track_id = id + 1;
         }
         self.add_track_inner(id, backend, None, channel_mask, meter);
     }
 
-    fn add_track_inner(&mut self, id: u32, backend: Box<dyn AudioBackend>, source_path: Option<String>, channel_mask: u16, meter: LevelMeter) {
+    fn add_track_inner(
+        &mut self,
+        id: u32,
+        backend: Box<dyn AudioBackend>,
+        source_path: Option<String>,
+        channel_mask: u16,
+        meter: LevelMeter,
+    ) {
         self.tracks.push(Track {
             id,
             backend,
@@ -439,7 +472,9 @@ impl Mixer {
             // Check for cycles: follow the chain from group_id
             let mut current = group_id;
             for _ in 0..self.tracks.len() {
-                let next = self.tracks.iter()
+                let next = self
+                    .tracks
+                    .iter()
                     .find(|t| t.id == current)
                     .map(|t| t.output_target);
                 match next {
@@ -471,14 +506,24 @@ impl Mixer {
     }
 
     /// Add a send bus with a pre-assigned ID (for Runtime command channel).
-    pub fn add_send_bus_with_id(&mut self, id: u32, backend: Box<dyn AudioBackend>, source_path: Option<String>) {
+    pub fn add_send_bus_with_id(
+        &mut self,
+        id: u32,
+        backend: Box<dyn AudioBackend>,
+        source_path: Option<String>,
+    ) {
         if id >= self.next_bus_id {
             self.next_bus_id = id + 1;
         }
         self.add_send_bus_inner(id, backend, source_path);
     }
 
-    fn add_send_bus_inner(&mut self, id: u32, backend: Box<dyn AudioBackend>, source_path: Option<String>) {
+    fn add_send_bus_inner(
+        &mut self,
+        id: u32,
+        backend: Box<dyn AudioBackend>,
+        source_path: Option<String>,
+    ) {
         let bs = self.buffer_size;
         self.send_buses.push(SendBus {
             id,
@@ -553,7 +598,13 @@ impl Mixer {
     }
 
     /// Add an insert with a pre-assigned ID (for Runtime command channel).
-    pub fn add_insert_with_id(&mut self, track_id: u32, insert_id: u32, backend: Box<dyn AudioBackend>, source_path: Option<String>) {
+    pub fn add_insert_with_id(
+        &mut self,
+        track_id: u32,
+        insert_id: u32,
+        backend: Box<dyn AudioBackend>,
+        source_path: Option<String>,
+    ) {
         if insert_id >= self.next_insert_id {
             self.next_insert_id = insert_id + 1;
         }
@@ -570,7 +621,11 @@ impl Mixer {
     }
 
     /// Remove an insert effect from a track. Returns the backend if found.
-    pub fn remove_insert(&mut self, track_id: u32, insert_id: u32) -> Option<Box<dyn AudioBackend>> {
+    pub fn remove_insert(
+        &mut self,
+        track_id: u32,
+        insert_id: u32,
+    ) -> Option<Box<dyn AudioBackend>> {
         let track = self.tracks.iter_mut().find(|t| t.id == track_id)?;
         let pos = track.inserts.iter().position(|i| i.id == insert_id)?;
         let insert = track.inserts.remove(pos);
@@ -918,7 +973,10 @@ impl Mixer {
     /// 1. Source tracks render first, routing to master or group accumulators
     /// 2. Group tracks render after sources, consuming accumulated input
     pub fn render(&mut self, output_left: &mut [f32], output_right: &mut [f32]) {
-        let chunk = output_left.len().min(output_right.len()).min(self.buffer_size);
+        let chunk = output_left
+            .len()
+            .min(output_right.len())
+            .min(self.buffer_size);
 
         // Clear master
         self.master.left[..chunk].fill(0.0);
@@ -943,7 +1001,9 @@ impl Mixer {
         let order_len = self.render_order.len();
         for order_i in 0..order_len {
             let idx = self.render_order[order_i];
-            if idx >= self.tracks.len() { continue; }
+            if idx >= self.tracks.len() {
+                continue;
+            }
 
             let track = &mut self.tracks[idx];
             let audible = !track.mute && (!any_solo || track.solo);
@@ -951,7 +1011,9 @@ impl Mixer {
             // Render engine output
             track.left[..chunk].fill(0.0);
             track.right[..chunk].fill(0.0);
-            track.backend.render(&mut track.left[..chunk], &mut track.right[..chunk]);
+            track
+                .backend
+                .render(&mut track.left[..chunk], &mut track.right[..chunk]);
 
             // Add accumulated group input (for group tracks)
             for k in 0..chunk {
@@ -962,8 +1024,12 @@ impl Mixer {
             // Trim (pre-insert gain staging)
             if track.trim_db != 0.0 {
                 let trim_gain = 10f32.powf(track.trim_db / 20.0);
-                for s in &mut track.left[..chunk] { *s *= trim_gain; }
-                for s in &mut track.right[..chunk] { *s *= trim_gain; }
+                for s in &mut track.left[..chunk] {
+                    *s *= trim_gain;
+                }
+                for s in &mut track.right[..chunk] {
+                    *s *= trim_gain;
+                }
             }
 
             // Inject sidechain signals: for each insert with a sidechain source,
@@ -1003,20 +1069,34 @@ impl Mixer {
             }
 
             // PDC delay
-            track.delay_line.process(&mut track.left[..chunk], &mut track.right[..chunk]);
+            track
+                .delay_line
+                .process(&mut track.left[..chunk], &mut track.right[..chunk]);
 
-            if !audible { continue; }
+            if !audible {
+                continue;
+            }
 
             // Volume (fader)
             let vol = track.volume;
-            for s in &mut track.left[..chunk] { *s *= vol; }
-            for s in &mut track.right[..chunk] { *s *= vol; }
+            for s in &mut track.left[..chunk] {
+                *s *= vol;
+            }
+            for s in &mut track.right[..chunk] {
+                *s *= vol;
+            }
 
             // Pan (constant-power)
-            apply_pan(&mut track.left[..chunk], &mut track.right[..chunk], track.pan);
+            apply_pan(
+                &mut track.left[..chunk],
+                &mut track.right[..chunk],
+                track.pan,
+            );
 
             // Meter (post-fader)
-            track.meter.update(&track.left[..chunk], &track.right[..chunk]);
+            track
+                .meter
+                .update(&track.left[..chunk], &track.right[..chunk]);
 
             // Route output
             let output_target = track.output_target;
@@ -1082,11 +1162,14 @@ impl Mixer {
 
         // Apply TPDF dither (post-limiter, pre-DAC)
         if self.dither_enabled {
-            self.dither.process(&mut output_left[..chunk], &mut output_right[..chunk]);
+            self.dither
+                .process(&mut output_left[..chunk], &mut output_right[..chunk]);
         }
 
         // Update master meter (post-dither)
-        self.master.meter.update(&output_left[..chunk], &output_right[..chunk]);
+        self.master
+            .meter
+            .update(&output_left[..chunk], &output_right[..chunk]);
     }
 
     /// Get the master bus meter (for main thread level reading).
@@ -1096,7 +1179,10 @@ impl Mixer {
 
     /// Get a track's meter by ID.
     pub fn track_meter(&self, track_id: u32) -> Option<&LevelMeter> {
-        self.tracks.iter().find(|t| t.id == track_id).map(|t| &t.meter)
+        self.tracks
+            .iter()
+            .find(|t| t.id == track_id)
+            .map(|t| &t.meter)
     }
 
     /// Clone the master meter handle (Arc-backed, for cross-thread sharing).
@@ -1106,7 +1192,10 @@ impl Mixer {
 
     /// Clone all track meter handles as (track_id, meter) pairs.
     pub fn clone_track_meters(&self) -> Vec<(u32, LevelMeter)> {
-        self.tracks.iter().map(|t| (t.id, t.meter.clone())).collect()
+        self.tracks
+            .iter()
+            .map(|t| (t.id, t.meter.clone()))
+            .collect()
     }
 
     /// Number of tracks currently in the mixer.
@@ -1252,8 +1341,16 @@ mod tests {
         apply_pan(&mut l, &mut r, 0.0);
         // At center: gain = cos(π/4) ≈ 0.7071
         let expected = std::f32::consts::FRAC_1_SQRT_2;
-        assert!((l[0] - expected).abs() < 0.001, "Center L should be ~0.707, got {}", l[0]);
-        assert!((r[0] - expected).abs() < 0.001, "Center R should be ~0.707, got {}", r[0]);
+        assert!(
+            (l[0] - expected).abs() < 0.001,
+            "Center L should be ~0.707, got {}",
+            l[0]
+        );
+        assert!(
+            (r[0] - expected).abs() < 0.001,
+            "Center R should be ~0.707, got {}",
+            r[0]
+        );
     }
 
     #[test]
@@ -1453,7 +1550,14 @@ mod tests {
         let mut scratch_r = vec![0.0; 64];
         let mut inserts: Vec<InsertEffect> = vec![];
 
-        process_insert_chain(&mut inserts, &mut left, &mut right, &mut scratch_l, &mut scratch_r, 64);
+        process_insert_chain(
+            &mut inserts,
+            &mut left,
+            &mut right,
+            &mut scratch_l,
+            &mut scratch_r,
+            64,
+        );
 
         assert!(left.iter().all(|&s| (s - 0.5).abs() < f32::EPSILON));
         assert!(right.iter().all(|&s| (s - 0.3).abs() < f32::EPSILON));
@@ -1466,11 +1570,30 @@ mod tests {
         let mut scratch_l = vec![0.0; 64];
         let mut scratch_r = vec![0.0; 64];
         let mut inserts = vec![
-            InsertEffect { id: 0, backend: null(44100), bypass: true, source_path: None, sidechain_source: None },
-            InsertEffect { id: 1, backend: null(44100), bypass: true, source_path: None, sidechain_source: None },
+            InsertEffect {
+                id: 0,
+                backend: null(44100),
+                bypass: true,
+                source_path: None,
+                sidechain_source: None,
+            },
+            InsertEffect {
+                id: 1,
+                backend: null(44100),
+                bypass: true,
+                source_path: None,
+                sidechain_source: None,
+            },
         ];
 
-        process_insert_chain(&mut inserts, &mut left, &mut right, &mut scratch_l, &mut scratch_r, 64);
+        process_insert_chain(
+            &mut inserts,
+            &mut left,
+            &mut right,
+            &mut scratch_l,
+            &mut scratch_r,
+            64,
+        );
 
         // All bypassed = audio unchanged
         assert!(left.iter().all(|&s| (s - 0.5).abs() < f32::EPSILON));
@@ -1618,7 +1741,10 @@ mod tests {
         let t1 = mixer.add_track(null(44100), 0x0002); // group
 
         assert!(mixer.set_track_output(t0, OutputTarget::Group(t1)));
-        assert_eq!(mixer.track(t0).unwrap().output_target, OutputTarget::Group(t1));
+        assert_eq!(
+            mixer.track(t0).unwrap().output_target,
+            OutputTarget::Group(t1)
+        );
     }
 
     #[test]
@@ -1715,8 +1841,11 @@ mod tests {
         assert!((mixer.track(id).unwrap().trim_db - 6.0).abs() < f32::EPSILON);
 
         // Verify the gain factor
-        assert!((expected_gain - 1.9953).abs() < 0.001,
-            "6 dB gain should be ~1.9953, got {}", expected_gain);
+        assert!(
+            (expected_gain - 1.9953).abs() < 0.001,
+            "6 dB gain should be ~1.9953, got {}",
+            expected_gain
+        );
     }
 
     #[test]
@@ -1819,9 +1948,20 @@ mod tests {
         let t0_idx = mixer.tracks().iter().position(|t| t.id == t0).unwrap();
         let t1_idx = mixer.tracks().iter().position(|t| t.id == t1).unwrap();
 
-        let t0_order = mixer.render_order.iter().position(|&i| i == t0_idx).unwrap();
-        let t1_order = mixer.render_order.iter().position(|&i| i == t1_idx).unwrap();
-        assert!(t0_order < t1_order, "Source track must render before dependent track");
+        let t0_order = mixer
+            .render_order
+            .iter()
+            .position(|&i| i == t0_idx)
+            .unwrap();
+        let t1_order = mixer
+            .render_order
+            .iter()
+            .position(|&i| i == t1_idx)
+            .unwrap();
+        assert!(
+            t0_order < t1_order,
+            "Source track must render before dependent track"
+        );
     }
 
     #[test]

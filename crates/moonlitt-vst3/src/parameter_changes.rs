@@ -117,7 +117,10 @@ pub(crate) fn build_input_changes(
 
     let mut by_id: HashMap<ParamID, Vec<(int32, ParamValue)>> = HashMap::new();
     for p in pending {
-        by_id.entry(p.id).or_default().push((p.sample_offset, p.value));
+        by_id
+            .entry(p.id)
+            .or_default()
+            .push((p.sample_offset, p.value));
     }
 
     let queues = by_id
@@ -363,9 +366,7 @@ pub(crate) fn new_output_changes() -> ComWrapper<OutputParameterChangesImpl> {
 /// Multiple points per paramID are flattened and returned in queue order;
 /// the caller typically only needs the last value per paramID for state
 /// sync, but we return them all for completeness.
-pub(crate) fn drain_output(
-    out: &ComWrapper<OutputParameterChangesImpl>,
-) -> Vec<PendingParam> {
+pub(crate) fn drain_output(out: &ComWrapper<OutputParameterChangesImpl>) -> Vec<PendingParam> {
     let queues: Vec<_> = unsafe { std::mem::take(&mut *out.queues.get()) };
     let mut result = Vec::new();
     for q in queues {
