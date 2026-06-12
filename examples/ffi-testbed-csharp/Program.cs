@@ -278,6 +278,7 @@ void PhaseA_EngineAndRuntime(TestRunner t, string sf2Path)
         NativeEngine.moonlitt_engine_note_on(engine, 0, 60, 100) == Status.NotLoaded);
 
     t.Check("runtime_start_audio Ok", NativeEngine.moonlitt_runtime_start_audio(runtime) == Status.Ok);
+    t.Check("is_running == 1 after start_audio", NativeEngine.moonlitt_runtime_is_running(runtime) == 1);
 
     t.Check("runtime set_volume Ok", NativeEngine.moonlitt_runtime_set_volume(runtime, 0.5f) == Status.Ok);
     t.Check("runtime program_change Ok", NativeEngine.moonlitt_runtime_program_change(runtime, 0, 0) == Status.Ok);
@@ -286,6 +287,10 @@ void PhaseA_EngineAndRuntime(TestRunner t, string sf2Path)
 
     t.Check("runtime note_on Ok", NativeEngine.moonlitt_runtime_note_on(runtime, 0, 60, 100) == Status.Ok);
     Thread.Sleep(150);
+    t.Check("master_peak readable while audible",
+        NativeEngine.moonlitt_runtime_master_peak(runtime, out float pk, out float _) == Status.Ok && pk > 0.0f);
+    t.Check("master_rms readable",
+        NativeEngine.moonlitt_runtime_master_rms(runtime, out float _, out float _) == Status.Ok);
     t.Check("runtime note_off Ok", NativeEngine.moonlitt_runtime_note_off(runtime, 0, 60) == Status.Ok);
 
     // Sample-accurate scheduling — fire note 1024 samples in the future (~23ms @ 44.1k).
@@ -309,6 +314,7 @@ void PhaseA_EngineAndRuntime(TestRunner t, string sf2Path)
         NativeEngine.moonlitt_runtime_save_session(runtime, "/tmp/moonlitt-testbed.mlsession") == Status.Unsupported);
 
     t.Check("runtime_stop_audio Ok", NativeEngine.moonlitt_runtime_stop_audio(runtime) == Status.Ok);
+    t.Check("is_running == 0 after stop_audio", NativeEngine.moonlitt_runtime_is_running(runtime) == 0);
 
     NativeEngine.moonlitt_runtime_destroy(runtime);
     NativeEngine.moonlitt_engine_destroy(engine);

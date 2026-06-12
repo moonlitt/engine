@@ -37,6 +37,9 @@ pub struct Runtime {
     /// Lock-free metronome toggle — flipped from the control thread,
     /// read every audio chunk on the audio thread.
     metronome_enabled: Arc<AtomicBool>,
+    /// Whether the audio output stream is currently running
+    /// (set by `start`/`stop`).
+    audio_running: AtomicBool,
 }
 
 impl Runtime {
@@ -129,6 +132,7 @@ impl Runtime {
             master_meter,
             track_meters,
             metronome_enabled,
+            audio_running: AtomicBool::new(false),
         })
     }
 
@@ -142,7 +146,9 @@ impl Runtime {
 
     pub fn start(&self) -> Result<(), String> {
         if let Some(ref output) = self.audio_output {
-            output.start()
+            output.start()?;
+            self.audio_running.store(true, Ordering::Relaxed);
+            Ok(())
         } else {
             Err("no audio output".into())
         }
@@ -150,10 +156,29 @@ impl Runtime {
 
     pub fn stop(&self) -> Result<(), String> {
         if let Some(ref output) = self.audio_output {
-            output.pause()
+            output.pause()?;
+            self.audio_running.store(false, Ordering::Relaxed);
+            Ok(())
         } else {
             Err("no audio output".into())
         }
+    }
+
+    /// Whether the audio output stream is currently running.
+    pub fn is_audio_running(&self) -> bool {
+        self.audio_running.load(Ordering::Relaxed)
+    }
+
+    /// Master-bus sample peak (L, R) — atomic read of the audio thread's
+    /// most recent render block.
+    pub fn master_peak(&self) -> (f32, f32) {
+        self.master_meter.peak()
+    }
+
+    /// Master-bus RMS (L, R) — atomic read of the audio thread's most
+    /// recent render block.
+    pub fn master_rms(&self) -> (f32, f32) {
+        self.master_meter.rms()
     }
 
     // --- MIDI events (lock-free SPSC — single caller only) ---

@@ -77,10 +77,12 @@ pub extern "C" fn moonlitt_session_load_from_file(
 }
 
 /// Probe a session file without instantiating a Runtime. Returns
-/// `MOONLITT_OK` when the file parses cleanly and matches the schema
-/// version this build expects; `MOONLITT_ERR_STATE` (or
-/// `MOONLITT_ERR_INVALID_ARG` for a bad path) otherwise. Useful as a
-/// startup pre-flight check.
+/// `MOONLITT_OK` when the file parses cleanly, matches the schema
+/// version this build expects, **and every referenced file (plugin,
+/// soundfont, MIDI clip) exists on disk** — so a session that validates
+/// cannot later fail to load on a missing path. `MOONLITT_ERR_STATE`
+/// (or `MOONLITT_ERR_INVALID_ARG` for a bad path argument) otherwise.
+/// Useful as a startup pre-flight check.
 #[no_mangle]
 pub extern "C" fn moonlitt_session_validate_file(path: *const c_char) -> MoonlittStatus {
     ffi_guard!(MOONLITT_ERR_PANIC, {
@@ -91,13 +93,39 @@ pub extern "C" fn moonlitt_session_validate_file(path: *const c_char) -> Moonlit
                 return MOONLITT_ERR_INVALID_ARG;
             }
         };
-        match Session::load_from_file(path_str) {
-            Ok(_) => MOONLITT_OK,
+        let session = match Session::load_from_file(path_str) {
+            Ok(s) => s,
             Err(e) => {
                 set_last_error(format!("validate session: {e}"));
-                MOONLITT_ERR_STATE
+                return MOONLITT_ERR_STATE;
+            }
+        };
+
+        // Deep check: every file the session references must exist.
+        let missing = |p: &str| !std::path::Path::new(p).exists();
+        for track in &session.tracks {
+            if let Some(p) = &track.source.path {
+                if missing(p) {
+                    set_last_error(format!("track {}: source file missing: {p}", track.id));
+                    return MOONLITT_ERR_STATE;
+                }
             }
         }
+        for bus in &session.send_buses {
+            if let Some(p) = &bus.source.path {
+                if missing(p) {
+                    set_last_error(format!("send bus {}: source file missing: {p}", bus.id));
+                    return MOONLITT_ERR_STATE;
+                }
+            }
+        }
+        if let Some(p) = &session.sequencer_source {
+            if missing(p) {
+                set_last_error(format!("sequencer MIDI clip missing: {p}"));
+                return MOONLITT_ERR_STATE;
+            }
+        }
+        MOONLITT_OK
     })
 }
 

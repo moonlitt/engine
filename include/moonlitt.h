@@ -602,6 +602,28 @@ MoonlittStatus moonlitt_runtime_stop(struct RuntimeHandle *rt);
 MoonlittStatus moonlitt_runtime_save_session(struct RuntimeHandle *rt, const char *path);
 
 /**
+ * 1 while the audio output stream is running, 0 otherwise (including
+ * NULL handles).
+ */
+int moonlitt_runtime_is_running(struct RuntimeHandle *rt);
+
+/**
+ * Master-bus sample peak of the most recent audio block, written to
+ * `*out_left` / `*out_right` (linear, 0.0 = silence, 1.0 = full scale).
+ */
+MoonlittStatus moonlitt_runtime_master_peak(struct RuntimeHandle *rt,
+                                            float *out_left,
+                                            float *out_right);
+
+/**
+ * Master-bus RMS of the most recent audio block, written to
+ * `*out_left` / `*out_right` (linear).
+ */
+MoonlittStatus moonlitt_runtime_master_rms(struct RuntimeHandle *rt,
+                                           float *out_left,
+                                           float *out_right);
+
+/**
  * Create an 8-band parametric EQ engine.
  */
 struct EngineHandle *moonlitt_builtin_create_eq(int sample_rate, int buffer_size);
@@ -780,10 +802,12 @@ struct RuntimeHandle *moonlitt_session_load_from_file(const char *path, uint32_t
 
 /**
  * Probe a session file without instantiating a Runtime. Returns
- * `MOONLITT_OK` when the file parses cleanly and matches the schema
- * version this build expects; `MOONLITT_ERR_STATE` (or
- * `MOONLITT_ERR_INVALID_ARG` for a bad path) otherwise. Useful as a
- * startup pre-flight check.
+ * `MOONLITT_OK` when the file parses cleanly, matches the schema
+ * version this build expects, **and every referenced file (plugin,
+ * soundfont, MIDI clip) exists on disk** — so a session that validates
+ * cannot later fail to load on a missing path. `MOONLITT_ERR_STATE`
+ * (or `MOONLITT_ERR_INVALID_ARG` for a bad path argument) otherwise.
+ * Useful as a startup pre-flight check.
  */
 MoonlittStatus moonlitt_session_validate_file(const char *path);
 

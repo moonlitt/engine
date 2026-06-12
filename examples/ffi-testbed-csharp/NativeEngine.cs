@@ -128,6 +128,16 @@ internal static class NativeEngine
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     public static extern int moonlitt_runtime_stop_audio(IntPtr rt);
 
+    // --- Queries (atomic reads) ---
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int moonlitt_runtime_is_running(IntPtr rt);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int moonlitt_runtime_master_peak(IntPtr rt, out float left, out float right);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int moonlitt_runtime_master_rms(IntPtr rt, out float left, out float right);
+
     // --- Runtime MIDI (QueueFull when the SPSC ring is full) ---
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     public static extern int moonlitt_runtime_note_on(IntPtr rt, int ch, int note, int vel);

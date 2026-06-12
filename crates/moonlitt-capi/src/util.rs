@@ -57,7 +57,7 @@ pub extern "C" fn moonlitt_free_buffer(data: *mut u8, len: usize) {
     crate::error::ffi_guard!((), {
         if !data.is_null() {
             unsafe {
-                drop(Box::from_raw(std::slice::from_raw_parts_mut(data, len) as *mut [u8]));
+                drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(data, len)));
             }
         }
     })

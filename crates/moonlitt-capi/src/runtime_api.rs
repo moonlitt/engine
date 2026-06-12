@@ -835,3 +835,69 @@ pub extern "C" fn moonlitt_runtime_save_session(
         })())
     })
 }
+
+// ---------------------------------------------------------------------------
+// Queries (atomic reads — safe to poll from the control thread)
+// ---------------------------------------------------------------------------
+
+/// 1 while the audio output stream is running, 0 otherwise (including
+/// NULL handles).
+#[no_mangle]
+pub extern "C" fn moonlitt_runtime_is_running(rt: *mut RuntimeHandle) -> c_int {
+    ffi_guard!(0, {
+        match unsafe { rt.as_ref() } {
+            Some(h) => h.runtime.is_audio_running() as c_int,
+            None => 0,
+        }
+    })
+}
+
+/// Master-bus sample peak of the most recent audio block, written to
+/// `*out_left` / `*out_right` (linear, 0.0 = silence, 1.0 = full scale).
+#[no_mangle]
+pub extern "C" fn moonlitt_runtime_master_peak(
+    rt: *mut RuntimeHandle,
+    out_left: *mut c_float,
+    out_right: *mut c_float,
+) -> MoonlittStatus {
+    ffi_guard!(MOONLITT_ERR_PANIC, {
+        status((|| {
+            if out_left.is_null() || out_right.is_null() {
+                set_last_error_static(c"out_left / out_right must not be NULL");
+                return Err(MOONLITT_ERR_INVALID_ARG);
+            }
+            let h = rt_mut(rt)?;
+            let (l, r) = h.runtime.master_peak();
+            unsafe {
+                *out_left = l;
+                *out_right = r;
+            }
+            Ok(MOONLITT_OK)
+        })())
+    })
+}
+
+/// Master-bus RMS of the most recent audio block, written to
+/// `*out_left` / `*out_right` (linear).
+#[no_mangle]
+pub extern "C" fn moonlitt_runtime_master_rms(
+    rt: *mut RuntimeHandle,
+    out_left: *mut c_float,
+    out_right: *mut c_float,
+) -> MoonlittStatus {
+    ffi_guard!(MOONLITT_ERR_PANIC, {
+        status((|| {
+            if out_left.is_null() || out_right.is_null() {
+                set_last_error_static(c"out_left / out_right must not be NULL");
+                return Err(MOONLITT_ERR_INVALID_ARG);
+            }
+            let h = rt_mut(rt)?;
+            let (l, r) = h.runtime.master_rms();
+            unsafe {
+                *out_left = l;
+                *out_right = r;
+            }
+            Ok(MOONLITT_OK)
+        })())
+    })
+}

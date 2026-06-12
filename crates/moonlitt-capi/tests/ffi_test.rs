@@ -442,3 +442,83 @@ fn test_pianoteq_state_roundtrip_through_c_api() {
     moonlitt_free_buffer(data, len);
     moonlitt_engine_destroy(e);
 }
+
+// ---------------------------------------------------------------------------
+// Runtime queries (is_running, master meters)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_runtime_queries_null_safe() {
+    let null = std::ptr::null_mut();
+    assert_eq!(moonlitt_runtime_is_running(null), 0);
+    let mut l = 0.0f32;
+    let mut r = 0.0f32;
+    assert_eq!(
+        moonlitt_runtime_master_peak(null, &mut l, &mut r),
+        MOONLITT_ERR_INVALID_ARG
+    );
+    assert_eq!(
+        moonlitt_runtime_master_rms(null, &mut l, &mut r),
+        MOONLITT_ERR_INVALID_ARG
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Deep session validation: referenced files must exist, so a session that
+// validates cannot later fail to load on a missing path
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_session_validate_checks_referenced_paths() {
+    use moonlitt_session::persistence::{
+        MasterState, Session, SourceState, TrackState, TransportSnapshot,
+    };
+
+    let session = Session {
+        version: 2,
+        sample_rate: 44100,
+        master: MasterState {
+            volume: 1.0,
+            limiter_threshold: -0.1,
+        },
+        tracks: vec![TrackState {
+            id: 0,
+            channel_mask: 0xFFFF,
+            volume: 1.0,
+            trim_db: 0.0,
+            pan: 0.5,
+            mute: false,
+            solo: false,
+            send_levels: vec![],
+            source: SourceState {
+                path: Some("/no/such/plugin.vst3".into()),
+                state: None,
+                warm_up_blocks: 0,
+            },
+            inserts: vec![],
+            color: None,
+        }],
+        send_buses: vec![],
+        transport: TransportSnapshot::default(),
+        sequencer_source: None,
+    };
+
+    let dir = std::env::temp_dir().join("moonlitt-capi-validate-test");
+    std::fs::create_dir_all(&dir).unwrap();
+    let p = dir.join("missing-plugin.mlsession");
+    session.save_to_file(p.to_str().unwrap()).expect("write session");
+
+    let cpath = CString::new(p.to_str().unwrap()).unwrap();
+    assert_eq!(
+        moonlitt_session_validate_file(cpath.as_ptr()),
+        MOONLITT_ERR_STATE,
+        "session referencing a missing plugin must fail deep validation"
+    );
+    let msg = unsafe { CStr::from_ptr(moonlitt_last_error_message()) }
+        .to_string_lossy()
+        .to_string();
+    assert!(
+        msg.contains("/no/such/plugin.vst3"),
+        "message should name the missing file: {msg}"
+    );
+}
