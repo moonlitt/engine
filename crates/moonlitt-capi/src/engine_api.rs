@@ -810,7 +810,7 @@ pub extern "C" fn moonlitt_engine_save_state(
 /// `moonlitt_engine_save_state` (or captured in a GUI host).
 ///
 /// For sample streamers, follow up with `moonlitt_engine_warm_up`
-/// (`moonlitt_engine_recommended_warmup_blocks` tells you how much)
+/// (`moonlitt_engine_recommended_warm_up_blocks` tells you how much)
 /// before expecting audible output.
 #[no_mangle]
 pub extern "C" fn moonlitt_engine_load_state(
@@ -847,7 +847,7 @@ pub extern "C" fn moonlitt_engine_load_state(
 /// Sample streamers (Spectrasonics) report non-zero; synths report 0.
 /// Returns 0 for NULL/empty handles.
 #[no_mangle]
-pub extern "C" fn moonlitt_engine_recommended_warmup_blocks(e: *mut EngineHandle) -> c_int {
+pub extern "C" fn moonlitt_engine_recommended_warm_up_blocks(e: *mut EngineHandle) -> c_int {
     ffi_guard!(0, {
         match unsafe { e.as_ref() } {
             Some(h) => match h.backend.as_ref() {

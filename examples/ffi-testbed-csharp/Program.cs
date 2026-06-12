@@ -176,7 +176,7 @@ void PhaseZ_NoSf2Subset(TestRunner t)
     NativeEngine.moonlitt_engine_destroy(comp);
 
     // multitrack_create with bad path — NULL + message, not a crash.
-    IntPtr badRt = NativeEngine.moonlitt_multitrack_create("/no/such.sf2", SAMPLE_RATE, BUFFER_SIZE);
+    IntPtr badRt = NativeEngine.moonlitt_runtime_create_multitrack_sf2("/no/such.sf2", SAMPLE_RATE, BUFFER_SIZE);
     t.Check("multitrack_create(bad path) returns null", badRt == IntPtr.Zero);
     t.Check("…with a last-error message", !string.IsNullOrEmpty(NativeEngine.LastError()));
 
@@ -263,8 +263,8 @@ void PhaseA_EngineAndRuntime(TestRunner t, string sf2Path)
     t.Check("supports_state == 0 for SF2", NativeEngine.moonlitt_engine_supports_state(engine) == 0);
     t.Check("save_state on SF2 returns Status.Unsupported",
         NativeEngine.moonlitt_engine_save_state(engine, out _, out _) == Status.Unsupported);
-    t.Check("recommended_warmup_blocks == 0 for SF2",
-        NativeEngine.moonlitt_engine_recommended_warmup_blocks(engine) == 0);
+    t.Check("recommended_warm_up_blocks == 0 for SF2",
+        NativeEngine.moonlitt_engine_recommended_warm_up_blocks(engine) == 0);
     t.Check("warm_up is safe on non-streamers",
         NativeEngine.moonlitt_engine_warm_up(engine, 4) == Status.Ok);
 
@@ -332,7 +332,7 @@ void PhaseA_EngineAndRuntime(TestRunner t, string sf2Path)
 // ---------------------------------------------------------------------------
 void PhaseB_Multitrack(TestRunner t, string sf2Path)
 {
-    IntPtr rt = NativeEngine.moonlitt_multitrack_create(sf2Path, SAMPLE_RATE, BUFFER_SIZE);
+    IntPtr rt = NativeEngine.moonlitt_runtime_create_multitrack_sf2(sf2Path, SAMPLE_RATE, BUFFER_SIZE);
     t.Check("multitrack_create returns non-null", rt != IntPtr.Zero);
     if (rt == IntPtr.Zero) return;
 

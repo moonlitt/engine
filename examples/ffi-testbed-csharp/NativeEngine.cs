@@ -204,7 +204,7 @@ internal static class NativeEngine
     public static extern IntPtr moonlitt_runtime_create_from_mixer(IntPtr mixer, int bufferSize);
 
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
-    public static extern IntPtr moonlitt_multitrack_create(
+    public static extern IntPtr moonlitt_runtime_create_multitrack_sf2(
         [MarshalAs(UnmanagedType.LPUTF8Str)] string sf2Path, int sampleRate, int bufferSize);
 
     // --- Built-in effect factories ---
@@ -303,7 +303,7 @@ internal static class NativeEngine
     public static extern int moonlitt_engine_load_state(IntPtr e, IntPtr data, nuint len);
 
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
-    public static extern int moonlitt_engine_recommended_warmup_blocks(IntPtr e);
+    public static extern int moonlitt_engine_recommended_warm_up_blocks(IntPtr e);
 
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     public static extern int moonlitt_engine_warm_up(IntPtr e, int blocks);

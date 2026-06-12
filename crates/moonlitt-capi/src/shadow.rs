@@ -103,7 +103,7 @@ impl SessionShadow {
     }
 
     /// Build a shadow from a pre-runtime mixer (session restore, the
-    /// pre-built mixer path, multitrack_create) — the moment just
+    /// pre-built mixer path, create_multitrack_sf2) — the moment just
     /// before `Runtime` consumes it, while backends are still
     /// reachable for capture handles.
     pub fn from_mixer(sample_rate: u32, mixer: &Mixer) -> Self {

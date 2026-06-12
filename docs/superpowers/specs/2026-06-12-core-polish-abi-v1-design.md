@@ -159,3 +159,15 @@ Do conventions before adding functions, so Phase 2 additions land conformant onc
 - `mixer/runtime add_*` functions fold errors into the id space: **non-negative = id, negative = MoonlittStatus**.
 - Phase-1 scope extended into the Rust layer by necessity: `AudioEvent` param variants widened to f64 (compile-time size asserts still ≤16 bytes) and `Runtime` event methods now return `bool` (ring-buffer overflow detectable) — this also fixed silent f64→f32 truncation in the node and desktop callers.
 - Engine-level **arg validation precedes backend checks** (INVALID_ARG wins over NOT_LOADED), making range validation testable without audio assets.
+
+### Amendments from Phase 3 implementation (2026-06-12)
+
+- **Fuzzing delivered as a deterministic seeded-mutation test** (`sf2_parser_robustness.rs`, 200 truncation/bit-flip cases, runs in CI and replays by seed) instead of a cargo-fuzz target — no nightly toolchain dependency, and the panic-class coverage is what mattered. cargo-fuzz remains a possible post-v1 upgrade.
+- **The allocation soak found a real RT violation and quantified upstream debt**: `SampleInfo.name: String` was cloned per note-on (fixed → `Arc<str>`); the from-scratch path (sampler + mixer + Dattorro send) now measures **zero** steady-state allocations. OxiSynth allocates ~1.2×/note-on inside `deps/oxisynth` — bounded by a regression test and documented as known upstream debt; the pure sampler is the RT-strict backend.
+- **The vst3 flake was root-caused**, not just observed: parallel test threads collided on pid+nanosecond "unique" temp paths under load, racing `save()`'s shared `.json.tmp` rename. Fixed with an atomic counter; verified over 12 consecutive runs.
+- Insert effects that miss the plugin lock **pass audio through** (momentary bypass) rather than muting the track — a refinement of the spec's blanket "silence on contention".
+
+### Final-review renames (Phase 4 pass, 2026-06-12)
+
+- `moonlitt_multitrack_create` → **`moonlitt_runtime_create_multitrack_sf2`** (it returns a RuntimeHandle; family rule applies to factories too).
+- `moonlitt_engine_recommended_warmup_blocks` → **`moonlitt_engine_recommended_warm_up_blocks`** (one spelling: `warm_up`, matching `moonlitt_engine_warm_up`).

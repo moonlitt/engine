@@ -571,7 +571,7 @@ pub extern "C" fn moonlitt_runtime_create_from_mixer(
 /// Ownership: returns an owned RuntimeHandle* (free with
 /// `moonlitt_runtime_destroy`), or NULL + last-error.
 #[no_mangle]
-pub extern "C" fn moonlitt_multitrack_create(
+pub extern "C" fn moonlitt_runtime_create_multitrack_sf2(
     sf2_path: *const c_char,
     sample_rate: c_int,
     buffer_size: c_int,

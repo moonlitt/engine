@@ -131,6 +131,170 @@ uint32_t moonlitt_abi_version(void);
 MoonlittStatus moonlitt_debug_trigger_panic(void);
 
 /**
+ * Create an 8-band parametric EQ engine.
+ */
+struct EngineHandle *moonlitt_builtin_create_eq(int sample_rate, int buffer_size);
+
+/**
+ * Create a dynamics compressor engine.
+ */
+struct EngineHandle *moonlitt_builtin_create_compressor(int sample_rate, int buffer_size);
+
+/**
+ * Create a stereo reverb engine (Dattorro plate algorithm).
+ */
+struct EngineHandle *moonlitt_builtin_create_reverb(int sample_rate, int buffer_size);
+
+/**
+ * Create a brickwall limiter engine with lookahead.
+ */
+struct EngineHandle *moonlitt_builtin_create_limiter(int sample_rate, int buffer_size);
+
+/**
+ * Create a noise gate / expander engine.
+ */
+struct EngineHandle *moonlitt_builtin_create_gate(int sample_rate, int buffer_size);
+
+/**
+ * Create a de-esser engine (sibilance reduction).
+ */
+struct EngineHandle *moonlitt_builtin_create_deesser(int sample_rate, int buffer_size);
+
+/**
+ * Create a stereo delay engine with tempo sync and ping-pong.
+ */
+struct EngineHandle *moonlitt_builtin_create_stereo_delay(int sample_rate, int buffer_size);
+
+/**
+ * Create a 4-voice chorus engine.
+ */
+struct EngineHandle *moonlitt_builtin_create_chorus(int sample_rate, int buffer_size);
+
+/**
+ * Create a through-zero flanger engine.
+ */
+struct EngineHandle *moonlitt_builtin_create_flanger(int sample_rate, int buffer_size);
+
+/**
+ * Create an N-stage allpass phaser engine.
+ */
+struct EngineHandle *moonlitt_builtin_create_phaser(int sample_rate, int buffer_size);
+
+/**
+ * Create a tremolo engine with tempo sync and stereo auto-pan.
+ */
+struct EngineHandle *moonlitt_builtin_create_tremolo(int sample_rate, int buffer_size);
+
+/**
+ * Create a gain utility engine (gain, polarity invert, mono sum).
+ */
+struct EngineHandle *moonlitt_builtin_create_gain(int sample_rate, int buffer_size);
+
+/**
+ * Create a stereo width processor engine (mid/side encoding).
+ */
+struct EngineHandle *moonlitt_builtin_create_stereo_width(int sample_rate, int buffer_size);
+
+/**
+ * Create a saturator engine (5 distortion models with oversampling).
+ */
+struct EngineHandle *moonlitt_builtin_create_saturator(int sample_rate, int buffer_size);
+
+/**
+ * Create a bitcrusher engine (sample-rate and bit-depth reduction).
+ */
+struct EngineHandle *moonlitt_builtin_create_bitcrusher(int sample_rate, int buffer_size);
+
+/**
+ * Create a multiband compressor engine (4-band crossover + per-band dynamics).
+ */
+struct EngineHandle *moonlitt_builtin_create_multiband_compressor(int sample_rate, int buffer_size);
+
+/**
+ * Create an auto-filter engine (LFO-modulated cutoff).
+ */
+struct EngineHandle *moonlitt_builtin_create_auto_filter(int sample_rate, int buffer_size);
+
+/**
+ * Create a pitch shifter engine (FFT-based frequency-domain shifting).
+ */
+struct EngineHandle *moonlitt_builtin_create_pitch_shifter(int sample_rate, int buffer_size);
+
+/**
+ * Create a convolution reverb engine from a mono WAV impulse response.
+ *
+ * * `ir_path` — UTF-8 path to a WAV (PCM-16/24/32 or float-32; only the
+ *   first channel is used)
+ * * `sample_rate` / `buffer_size` — as for the other factories (the
+ *   buffer size determines FFT partition size and PDC latency)
+ */
+struct EngineHandle *moonlitt_builtin_create_convolver(const char *ir_path,
+                                                       int sample_rate,
+                                                       int buffer_size);
+
+/**
+ * Create a new Mixer for pre-building (tracks → sends → inserts →
+ * `moonlitt_runtime_create_from_mixer`).
+ *
+ * Ownership: free with `moonlitt_mixer_destroy` unless consumed by
+ * `moonlitt_runtime_create_from_mixer`.
+ */
+struct MixerHandle *moonlitt_mixer_create(int sample_rate, int buffer_size);
+
+/**
+ * Destroy a mixer handle. Safe to call with NULL. Only needed when the
+ * mixer was NOT consumed by `moonlitt_runtime_create_from_mixer`.
+ */
+void moonlitt_mixer_destroy(struct MixerHandle *m);
+
+/**
+ * Add a track to a pre-built mixer. **Consumes** the backend out of
+ * `engine_handle` (the empty handle must still be destroyed).
+ *
+ * * `channel_mask` — bitmask of MIDI channels this track responds to
+ *   (bit N = channel N; 0xFFFF = all)
+ *
+ * Returns the track id (>= 0), or a negative [`MoonlittStatus`].
+ */
+int moonlitt_mixer_add_track(struct MixerHandle *m,
+                             struct EngineHandle *engine_handle,
+                             int channel_mask);
+
+/**
+ * Add a send bus to a pre-built mixer. **Consumes** the backend.
+ * Returns the bus id (>= 0), or a negative [`MoonlittStatus`].
+ */
+int moonlitt_mixer_add_send_bus(struct MixerHandle *m, struct EngineHandle *engine_handle);
+
+/**
+ * Add an insert effect to a track of a pre-built mixer. **Consumes**
+ * the backend. Returns the insert id (>= 0), or a negative
+ * [`MoonlittStatus`] (`INVALID_ARG` when the track id is unknown).
+ */
+int moonlitt_mixer_add_insert(struct MixerHandle *m,
+                              int track_id,
+                              struct EngineHandle *engine_handle);
+
+/**
+ * Create a Runtime (live audio output) from a pre-built mixer.
+ * **Consumes** the mixer on success. Returns NULL + last-error on
+ * failure (e.g. no audio output device).
+ */
+struct RuntimeHandle *moonlitt_runtime_create_from_mixer(struct MixerHandle *m, int buffer_size);
+
+/**
+ * Create a 16-track mixer + live runtime from a single SF2 file: the
+ * SF2 is loaded ONCE and each MIDI channel's track clones the font
+ * (Arc-shared sample data, ~1× memory instead of 16×).
+ *
+ * Ownership: returns an owned RuntimeHandle* (free with
+ * `moonlitt_runtime_destroy`), or NULL + last-error.
+ */
+struct RuntimeHandle *moonlitt_runtime_create_multitrack_sf2(const char *sf2_path,
+                                                             int sample_rate,
+                                                             int buffer_size);
+
+/**
  * Create a new engine handle with no backend loaded.
  *
  * * `sample_rate` — Hz, must be > 0 (typical: 44100 or 48000)
@@ -331,7 +495,7 @@ MoonlittStatus moonlitt_engine_save_state(struct EngineHandle *e,
  * `moonlitt_engine_save_state` (or captured in a GUI host).
  *
  * For sample streamers, follow up with `moonlitt_engine_warm_up`
- * (`moonlitt_engine_recommended_warmup_blocks` tells you how much)
+ * (`moonlitt_engine_recommended_warm_up_blocks` tells you how much)
  * before expecting audible output.
  */
 MoonlittStatus moonlitt_engine_load_state(struct EngineHandle *e, const uint8_t *data, size_t len);
@@ -341,7 +505,7 @@ MoonlittStatus moonlitt_engine_load_state(struct EngineHandle *e, const uint8_t 
  * Sample streamers (Spectrasonics) report non-zero; synths report 0.
  * Returns 0 for NULL/empty handles.
  */
-int moonlitt_engine_recommended_warmup_blocks(struct EngineHandle *e);
+int moonlitt_engine_recommended_warm_up_blocks(struct EngineHandle *e);
 
 /**
  * Pump `blocks` silent render cycles so asynchronously-loading content
@@ -628,170 +792,6 @@ MoonlittStatus moonlitt_runtime_master_peak(struct RuntimeHandle *rt,
 MoonlittStatus moonlitt_runtime_master_rms(struct RuntimeHandle *rt,
                                            float *out_left,
                                            float *out_right);
-
-/**
- * Create an 8-band parametric EQ engine.
- */
-struct EngineHandle *moonlitt_builtin_create_eq(int sample_rate, int buffer_size);
-
-/**
- * Create a dynamics compressor engine.
- */
-struct EngineHandle *moonlitt_builtin_create_compressor(int sample_rate, int buffer_size);
-
-/**
- * Create a stereo reverb engine (Dattorro plate algorithm).
- */
-struct EngineHandle *moonlitt_builtin_create_reverb(int sample_rate, int buffer_size);
-
-/**
- * Create a brickwall limiter engine with lookahead.
- */
-struct EngineHandle *moonlitt_builtin_create_limiter(int sample_rate, int buffer_size);
-
-/**
- * Create a noise gate / expander engine.
- */
-struct EngineHandle *moonlitt_builtin_create_gate(int sample_rate, int buffer_size);
-
-/**
- * Create a de-esser engine (sibilance reduction).
- */
-struct EngineHandle *moonlitt_builtin_create_deesser(int sample_rate, int buffer_size);
-
-/**
- * Create a stereo delay engine with tempo sync and ping-pong.
- */
-struct EngineHandle *moonlitt_builtin_create_stereo_delay(int sample_rate, int buffer_size);
-
-/**
- * Create a 4-voice chorus engine.
- */
-struct EngineHandle *moonlitt_builtin_create_chorus(int sample_rate, int buffer_size);
-
-/**
- * Create a through-zero flanger engine.
- */
-struct EngineHandle *moonlitt_builtin_create_flanger(int sample_rate, int buffer_size);
-
-/**
- * Create an N-stage allpass phaser engine.
- */
-struct EngineHandle *moonlitt_builtin_create_phaser(int sample_rate, int buffer_size);
-
-/**
- * Create a tremolo engine with tempo sync and stereo auto-pan.
- */
-struct EngineHandle *moonlitt_builtin_create_tremolo(int sample_rate, int buffer_size);
-
-/**
- * Create a gain utility engine (gain, polarity invert, mono sum).
- */
-struct EngineHandle *moonlitt_builtin_create_gain(int sample_rate, int buffer_size);
-
-/**
- * Create a stereo width processor engine (mid/side encoding).
- */
-struct EngineHandle *moonlitt_builtin_create_stereo_width(int sample_rate, int buffer_size);
-
-/**
- * Create a saturator engine (5 distortion models with oversampling).
- */
-struct EngineHandle *moonlitt_builtin_create_saturator(int sample_rate, int buffer_size);
-
-/**
- * Create a bitcrusher engine (sample-rate and bit-depth reduction).
- */
-struct EngineHandle *moonlitt_builtin_create_bitcrusher(int sample_rate, int buffer_size);
-
-/**
- * Create a multiband compressor engine (4-band crossover + per-band dynamics).
- */
-struct EngineHandle *moonlitt_builtin_create_multiband_compressor(int sample_rate, int buffer_size);
-
-/**
- * Create an auto-filter engine (LFO-modulated cutoff).
- */
-struct EngineHandle *moonlitt_builtin_create_auto_filter(int sample_rate, int buffer_size);
-
-/**
- * Create a pitch shifter engine (FFT-based frequency-domain shifting).
- */
-struct EngineHandle *moonlitt_builtin_create_pitch_shifter(int sample_rate, int buffer_size);
-
-/**
- * Create a convolution reverb engine from a mono WAV impulse response.
- *
- * * `ir_path` — UTF-8 path to a WAV (PCM-16/24/32 or float-32; only the
- *   first channel is used)
- * * `sample_rate` / `buffer_size` — as for the other factories (the
- *   buffer size determines FFT partition size and PDC latency)
- */
-struct EngineHandle *moonlitt_builtin_create_convolver(const char *ir_path,
-                                                       int sample_rate,
-                                                       int buffer_size);
-
-/**
- * Create a new Mixer for pre-building (tracks → sends → inserts →
- * `moonlitt_runtime_create_from_mixer`).
- *
- * Ownership: free with `moonlitt_mixer_destroy` unless consumed by
- * `moonlitt_runtime_create_from_mixer`.
- */
-struct MixerHandle *moonlitt_mixer_create(int sample_rate, int buffer_size);
-
-/**
- * Destroy a mixer handle. Safe to call with NULL. Only needed when the
- * mixer was NOT consumed by `moonlitt_runtime_create_from_mixer`.
- */
-void moonlitt_mixer_destroy(struct MixerHandle *m);
-
-/**
- * Add a track to a pre-built mixer. **Consumes** the backend out of
- * `engine_handle` (the empty handle must still be destroyed).
- *
- * * `channel_mask` — bitmask of MIDI channels this track responds to
- *   (bit N = channel N; 0xFFFF = all)
- *
- * Returns the track id (>= 0), or a negative [`MoonlittStatus`].
- */
-int moonlitt_mixer_add_track(struct MixerHandle *m,
-                             struct EngineHandle *engine_handle,
-                             int channel_mask);
-
-/**
- * Add a send bus to a pre-built mixer. **Consumes** the backend.
- * Returns the bus id (>= 0), or a negative [`MoonlittStatus`].
- */
-int moonlitt_mixer_add_send_bus(struct MixerHandle *m, struct EngineHandle *engine_handle);
-
-/**
- * Add an insert effect to a track of a pre-built mixer. **Consumes**
- * the backend. Returns the insert id (>= 0), or a negative
- * [`MoonlittStatus`] (`INVALID_ARG` when the track id is unknown).
- */
-int moonlitt_mixer_add_insert(struct MixerHandle *m,
-                              int track_id,
-                              struct EngineHandle *engine_handle);
-
-/**
- * Create a Runtime (live audio output) from a pre-built mixer.
- * **Consumes** the mixer on success. Returns NULL + last-error on
- * failure (e.g. no audio output device).
- */
-struct RuntimeHandle *moonlitt_runtime_create_from_mixer(struct MixerHandle *m, int buffer_size);
-
-/**
- * Create a 16-track mixer + live runtime from a single SF2 file: the
- * SF2 is loaded ONCE and each MIDI channel's track clones the font
- * (Arc-shared sample data, ~1× memory instead of 16×).
- *
- * Ownership: returns an owned RuntimeHandle* (free with
- * `moonlitt_runtime_destroy`), or NULL + last-error.
- */
-struct RuntimeHandle *moonlitt_multitrack_create(const char *sf2_path,
-                                                 int sample_rate,
-                                                 int buffer_size);
 
 /**
  * Load a session JSON file and build a Runtime from it. The returned

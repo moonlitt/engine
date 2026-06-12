@@ -455,7 +455,7 @@ fn test_engine_state_api_validation() {
     // Capability/advisory queries are 0 on empty/null handles.
     assert_eq!(moonlitt_engine_supports_state(e), 0);
     assert_eq!(moonlitt_engine_supports_state(std::ptr::null_mut()), 0);
-    assert_eq!(moonlitt_engine_recommended_warmup_blocks(e), 0);
+    assert_eq!(moonlitt_engine_recommended_warm_up_blocks(e), 0);
 
     // free_buffer is NULL-safe.
     moonlitt_free_buffer(std::ptr::null_mut(), 0);
@@ -762,7 +762,7 @@ fn test_keyscape_headless_replay_through_c_api() {
     );
 
     // Sample streamer must advertise warm-up, and warming must succeed.
-    let warm = moonlitt_engine_recommended_warmup_blocks(e);
+    let warm = moonlitt_engine_recommended_warm_up_blocks(e);
     assert!(warm > 0, "Spectrasonics streamer must advertise warm-up");
     assert_eq!(moonlitt_engine_warm_up(e, warm), MOONLITT_OK);
 

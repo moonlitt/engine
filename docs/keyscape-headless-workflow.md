@@ -35,7 +35,7 @@ moonlitt_engine_load_state(e, blob, blob_len);
 
 /* 关键：采样流送器异步加载样本 —— 必须先泵 warm-up，
  * 否则接下来渲染的全是静音。 */
-int blocks = moonlitt_engine_recommended_warmup_blocks(e);  /* Spectrasonics → 非 0 */
+int blocks = moonlitt_engine_recommended_warm_up_blocks(e);  /* Spectrasonics → 非 0 */
 moonlitt_engine_warm_up(e, blocks);
 
 /* 现在可以出声了 */
