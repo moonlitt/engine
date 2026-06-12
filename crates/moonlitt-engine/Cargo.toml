@@ -11,7 +11,7 @@ default = ["sf2"]
 sf2 = ["dep:oxisynth"]
 sf2-sampler = ["dep:moonlitt-sampler"]
 sf2-legacy = ["dep:fluidlite"]
-vst3 = ["dep:moonlitt-vst3"]
+vst3 = ["dep:moonlitt-vst3", "dep:parking_lot"]
 clap = ["dep:moonlitt-clap"]
 
 [dependencies]
@@ -21,3 +21,4 @@ moonlitt-clap = { path = "../moonlitt-clap", optional = true }
 moonlitt-sampler = { path = "../moonlitt-sampler", optional = true }
 oxisynth = { path = "../../deps/oxisynth/oxisynth", optional = true }
 fluidlite = { version = "0.2", optional = true, features = ["bindgen"] }
+parking_lot = { version = "0.12", optional = true }
