@@ -7,12 +7,15 @@
 //!
 //! All functions are `extern "C"`, NULL-safe, and return 0 for success.
 
+pub(crate) mod error;
+
 mod engine_api;
 mod runtime_api;
 mod builtin_api;
 mod session_api;
 mod util;
 
+pub use error::*;
 pub use engine_api::*;
 pub use runtime_api::*;
 pub use builtin_api::*;

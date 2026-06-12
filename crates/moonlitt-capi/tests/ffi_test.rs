@@ -245,3 +245,38 @@ fn test_runtime_create_null_engine() {
     let rt = moonlitt_runtime_create(std::ptr::null_mut());
     assert!(rt.is_null());
 }
+
+// ---------------------------------------------------------------------------
+// Error model: ABI version, thread-local last error, panic guard
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_abi_version_packed() {
+    let v = moonlitt_abi_version();
+    let (major, minor, patch) = (v >> 16, (v >> 8) & 0xFF, v & 0xFF);
+    assert_eq!((major, minor, patch), (0, 9, 0), "ABI draft starts at 0.9.0");
+}
+
+#[test]
+fn test_last_error_null_on_fresh_thread() {
+    std::thread::spawn(|| {
+        assert!(moonlitt_last_error_message().is_null());
+    })
+    .join()
+    .unwrap();
+}
+
+#[test]
+fn test_panic_guard_returns_status_and_sets_message() {
+    // Silence the default panic hook while we trigger a deliberate panic.
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let status = moonlitt_debug_trigger_panic();
+    std::panic::set_hook(prev);
+
+    assert_eq!(status, MOONLITT_ERR_PANIC);
+    let msg = moonlitt_last_error_message();
+    assert!(!msg.is_null(), "panic must leave a last-error message");
+    let text = unsafe { CStr::from_ptr(msg) }.to_string_lossy().to_string();
+    assert!(text.contains("panic"), "message should mention panic: {text}");
+}
