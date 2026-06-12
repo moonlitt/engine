@@ -12,9 +12,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - run: cargo fmt --check
       - run: cargo build --workspace
       - run: cargo test --workspace -- --skip pianoteq --skip keyscape
       - run: cargo clippy --workspace -- -D warnings -A clippy::not_unsafe_ptr_arg_deref
+
+      # Docs must build warning-free (intra-doc links, HTML tags, …).
+      - name: Docs build
+        run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+
+      # Run the engine's feature-gated test targets too — without this,
+      # tests behind `#![cfg(feature = "vst3")]` are silently compiled
+      # out of the default workspace run (plugin-gated tests still skip
+      # gracefully on a runner with no plug-ins installed).
+      - name: Engine tests with vst3 feature
+        run: cargo test -p moonlitt-engine --features vst3 -- --skip keyscape --skip pianoteq
 
       # ABI header drift check — include/moonlitt.h must match the source.
       - name: Install cbindgen
@@ -41,3 +53,44 @@ jobs:
         env:
           DYLD_LIBRARY_PATH: ${{ github.workspace }}/target/release
         run: dotnet run --configuration Release -- --no-sf2
+
+  # Feature-gate hygiene: every backend feature must build in isolation.
+  # (sf2-legacy is excluded — it needs FluidLite + bindgen system deps.)
+  feature-matrix:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        features:
+          - "--no-default-features"
+          - "--no-default-features --features sf2"
+          - "--no-default-features --features sf2-sampler"
+          - "--no-default-features --features vst3"
+          - "--no-default-features --features clap"
+          - "--features sf2-sampler,vst3,clap"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo check -p moonlitt-engine ${{ matrix.features }}
+
+  # The SF2/CLAP path must stay portable. VST3 hosting and the desktop
+  # app are macOS-first, so this job tests the platform-neutral crates;
+  # audio-device tests skip gracefully on a headless runner.
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install ALSA headers (cpal)
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      - name: Test platform-neutral crates
+        run: >
+          cargo test
+          -p moonlitt-core
+          -p moonlitt-resampler
+          -p moonlitt-sampler
+          -p moonlitt-effects
+          -p moonlitt-mixer
+          -p moonlitt-session
+          -p moonlitt-audio-io
+          -p moonlitt-test-suite
+          -- --skip keyscape --skip pianoteq
