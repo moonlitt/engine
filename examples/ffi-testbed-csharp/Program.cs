@@ -146,6 +146,16 @@ void PhaseZ_NoSf2Subset(TestRunner t)
     t.Check("pitch_bend (8192) rejected, not clamped",
         NativeEngine.moonlitt_engine_pitch_bend(engine, 0, 8192) == Status.InvalidArg);
 
+    // Patch-state API validation (no backend loaded).
+    t.Check("supports_state (no backend) == 0",
+        NativeEngine.moonlitt_engine_supports_state(engine) == 0);
+    t.Check("save_state (no backend) returns Status.NotLoaded",
+        NativeEngine.moonlitt_engine_save_state(engine, out _, out _) == Status.NotLoaded);
+    t.Check("warm_up(-1) returns Status.InvalidArg",
+        NativeEngine.moonlitt_engine_warm_up(engine, -1) == Status.InvalidArg);
+    NativeEngine.moonlitt_free_buffer(IntPtr.Zero, 0);
+    t.Check("free_buffer(NULL) is safe", true);
+
     NativeEngine.moonlitt_engine_destroy(engine);
 
     // Mixer + builtin factories don't need SF2.
@@ -248,6 +258,15 @@ void PhaseA_EngineAndRuntime(TestRunner t, string sf2Path)
     t.Check("engine_get_presets returns non-null (backend loaded)", presetsPtr != IntPtr.Zero);
     string presets = NativeEngine.ConsumeOwnedString(presetsPtr);
     t.Check("get_presets returns a JSON array", presets.StartsWith("[") && presets.EndsWith("]"));
+
+    // SF2 has no state story — capability query + honest Unsupported.
+    t.Check("supports_state == 0 for SF2", NativeEngine.moonlitt_engine_supports_state(engine) == 0);
+    t.Check("save_state on SF2 returns Status.Unsupported",
+        NativeEngine.moonlitt_engine_save_state(engine, out _, out _) == Status.Unsupported);
+    t.Check("recommended_warmup_blocks == 0 for SF2",
+        NativeEngine.moonlitt_engine_recommended_warmup_blocks(engine) == 0);
+    t.Check("warm_up is safe on non-streamers",
+        NativeEngine.moonlitt_engine_warm_up(engine, 4) == Status.Ok);
 
     // Hand engine to runtime — backend is taken; engine handle persists as a shell.
     IntPtr runtime = NativeEngine.moonlitt_runtime_create(engine);

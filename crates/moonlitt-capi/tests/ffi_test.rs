@@ -335,3 +335,110 @@ fn test_engine_create_rejects_invalid_config() {
     let msg = moonlitt_last_error_message();
     assert!(!msg.is_null());
 }
+
+// ---------------------------------------------------------------------------
+// Engine state API (single-patch workflow: capture once, replay headless)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_engine_state_api_validation() {
+    let e = moonlitt_engine_create(44100, 256);
+    let mut data: *mut u8 = std::ptr::null_mut();
+    let mut len: usize = 0;
+
+    // Null out-params → INVALID_ARG; valid args but no backend → NOT_LOADED.
+    assert_eq!(
+        moonlitt_engine_save_state(e, std::ptr::null_mut(), &mut len),
+        MOONLITT_ERR_INVALID_ARG
+    );
+    assert_eq!(
+        moonlitt_engine_save_state(e, &mut data, std::ptr::null_mut()),
+        MOONLITT_ERR_INVALID_ARG
+    );
+    assert_eq!(
+        moonlitt_engine_save_state(e, &mut data, &mut len),
+        MOONLITT_ERR_NOT_LOADED
+    );
+    assert_eq!(
+        moonlitt_engine_load_state(e, std::ptr::null(), 4),
+        MOONLITT_ERR_INVALID_ARG
+    );
+    assert_eq!(moonlitt_engine_warm_up(e, -1), MOONLITT_ERR_INVALID_ARG);
+    assert_eq!(moonlitt_engine_warm_up(e, 16), MOONLITT_ERR_NOT_LOADED);
+
+    // Capability/advisory queries are 0 on empty/null handles.
+    assert_eq!(moonlitt_engine_supports_state(e), 0);
+    assert_eq!(moonlitt_engine_supports_state(std::ptr::null_mut()), 0);
+    assert_eq!(moonlitt_engine_recommended_warmup_blocks(e), 0);
+
+    // free_buffer is NULL-safe.
+    moonlitt_free_buffer(std::ptr::null_mut(), 0);
+
+    moonlitt_engine_destroy(e);
+}
+
+#[test]
+fn test_engine_state_unsupported_on_sf2() {
+    let sf2 = "/Users/wangyan/Desktop/stardew valley mods/soundfonts/GeneralUser_GS.sf2";
+    if !std::path::Path::new(sf2).exists() {
+        eprintln!("SF2 not present — skipping");
+        return;
+    }
+    let e = moonlitt_engine_create(44100, 256);
+    let path = CString::new(sf2).unwrap();
+    assert_eq!(moonlitt_engine_load(e, path.as_ptr()), MOONLITT_OK);
+
+    assert_eq!(moonlitt_engine_supports_state(e), 0, "SF2 backends expose no state");
+    let mut data: *mut u8 = std::ptr::null_mut();
+    let mut len: usize = 0;
+    assert_eq!(
+        moonlitt_engine_save_state(e, &mut data, &mut len),
+        MOONLITT_ERR_UNSUPPORTED
+    );
+    assert_eq!(
+        moonlitt_engine_load_state(e, [0u8; 4].as_ptr(), 4),
+        MOONLITT_ERR_UNSUPPORTED
+    );
+    // Warm-up is always safe to call (no-op for non-streamers).
+    assert_eq!(moonlitt_engine_warm_up(e, 4), MOONLITT_OK);
+    moonlitt_engine_destroy(e);
+}
+
+fn find_pianoteq() -> Option<std::path::PathBuf> {
+    std::fs::read_dir("/Library/Audio/Plug-Ins/VST3")
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| {
+            p.file_name()
+                .is_some_and(|n| n.to_string_lossy().to_lowercase().contains("pianoteq"))
+        })
+}
+
+#[test]
+fn test_pianoteq_state_roundtrip_through_c_api() {
+    let Some(plugin) = find_pianoteq() else {
+        eprintln!("Pianoteq not installed — skipping");
+        return;
+    };
+    println!("using {}", plugin.display());
+    let e = moonlitt_engine_create(44100, 256);
+    let path = CString::new(plugin.to_str().unwrap()).unwrap();
+    assert_eq!(moonlitt_engine_load(e, path.as_ptr()), MOONLITT_OK);
+    assert_eq!(moonlitt_engine_supports_state(e), 1);
+
+    let mut data: *mut u8 = std::ptr::null_mut();
+    let mut len: usize = 0;
+    assert_eq!(moonlitt_engine_save_state(e, &mut data, &mut len), MOONLITT_OK);
+    assert!(!data.is_null());
+    assert!(len > 0, "state blob should be non-empty");
+
+    let blob = unsafe { std::slice::from_raw_parts(data, len) }.to_vec();
+    assert_eq!(
+        moonlitt_engine_load_state(e, blob.as_ptr(), blob.len()),
+        MOONLITT_OK
+    );
+
+    moonlitt_free_buffer(data, len);
+    moonlitt_engine_destroy(e);
+}

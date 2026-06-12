@@ -728,3 +728,150 @@ pub extern "C" fn moonlitt_engine_measure_rms(
         (20.0 * rms.log10()) as c_float
     })
 }
+
+// ---------------------------------------------------------------------------
+// Patch state (single-patch workflow: capture once in a GUI host, replay
+// headless forever — the Keyscape/Omnisphere story)
+// ---------------------------------------------------------------------------
+
+/// Whether the loaded backend supports `save_state`/`load_state` (1/0).
+/// VST3 plugins do; SF2 soundfonts address sounds by preset/program
+/// instead. Returns 0 for NULL or empty handles.
+#[no_mangle]
+pub extern "C" fn moonlitt_engine_supports_state(e: *mut EngineHandle) -> c_int {
+    ffi_guard!(0, {
+        match unsafe { e.as_ref() } {
+            Some(h) => match h.backend.as_ref() {
+                Some(b) => b.supports_state() as c_int,
+                None => 0,
+            },
+            None => 0,
+        }
+    })
+}
+
+/// Serialise the loaded backend's full patch state into an owned binary
+/// buffer.
+///
+/// On success writes the buffer pointer to `*out_data` and its length to
+/// `*out_len`. Ownership: the buffer belongs to the caller — release it
+/// with `moonlitt_free_buffer(data, len)`.
+///
+/// Errors: `INVALID_ARG` (NULL handle/out-params), `NOT_LOADED`,
+/// `UNSUPPORTED` (backend has no state story — check
+/// `moonlitt_engine_supports_state` first), `STATE` (the plugin failed
+/// to serialise).
+#[no_mangle]
+pub extern "C" fn moonlitt_engine_save_state(
+    e: *mut EngineHandle,
+    out_data: *mut *mut u8,
+    out_len: *mut usize,
+) -> MoonlittStatus {
+    ffi_guard!(crate::error::MOONLITT_ERR_PANIC, {
+        status((|| {
+            if out_data.is_null() || out_len.is_null() {
+                set_last_error_static(c"out_data / out_len must not be NULL");
+                return Err(MOONLITT_ERR_INVALID_ARG);
+            }
+            let backend = backend_mut(handle_mut(e)?)?;
+            if !backend.supports_state() {
+                set_last_error_static(
+                    c"backend does not support state (SF2: address sounds by preset instead)",
+                );
+                return Err(crate::error::MOONLITT_ERR_UNSUPPORTED);
+            }
+            match backend.save_state() {
+                Ok(bytes) => {
+                    let boxed = bytes.into_boxed_slice();
+                    let len = boxed.len();
+                    let ptr = Box::into_raw(boxed) as *mut u8;
+                    unsafe {
+                        *out_data = ptr;
+                        *out_len = len;
+                    }
+                    Ok(MOONLITT_OK)
+                }
+                Err(err) => {
+                    set_last_error(format!("save_state: {err}"));
+                    Err(crate::error::MOONLITT_ERR_STATE)
+                }
+            }
+        })())
+    })
+}
+
+/// Restore a patch state previously produced by
+/// `moonlitt_engine_save_state` (or captured in a GUI host).
+///
+/// For sample streamers, follow up with `moonlitt_engine_warm_up`
+/// (`moonlitt_engine_recommended_warmup_blocks` tells you how much)
+/// before expecting audible output.
+#[no_mangle]
+pub extern "C" fn moonlitt_engine_load_state(
+    e: *mut EngineHandle,
+    data: *const u8,
+    len: usize,
+) -> MoonlittStatus {
+    ffi_guard!(crate::error::MOONLITT_ERR_PANIC, {
+        status((|| {
+            if data.is_null() {
+                set_last_error_static(c"data must not be NULL");
+                return Err(MOONLITT_ERR_INVALID_ARG);
+            }
+            let backend = backend_mut(handle_mut(e)?)?;
+            if !backend.supports_state() {
+                set_last_error_static(
+                    c"backend does not support state (SF2: address sounds by preset instead)",
+                );
+                return Err(crate::error::MOONLITT_ERR_UNSUPPORTED);
+            }
+            let slice = unsafe { std::slice::from_raw_parts(data, len) };
+            match backend.load_state(slice) {
+                Ok(()) => Ok(MOONLITT_OK),
+                Err(err) => {
+                    set_last_error(format!("load_state: {err}"));
+                    Err(crate::error::MOONLITT_ERR_STATE)
+                }
+            }
+        })())
+    })
+}
+
+/// Advisory warm-up block count after `load_state` for this backend.
+/// Sample streamers (Spectrasonics) report non-zero; synths report 0.
+/// Returns 0 for NULL/empty handles.
+#[no_mangle]
+pub extern "C" fn moonlitt_engine_recommended_warmup_blocks(e: *mut EngineHandle) -> c_int {
+    ffi_guard!(0, {
+        match unsafe { e.as_ref() } {
+            Some(h) => match h.backend.as_ref() {
+                Some(b) => b.recommended_warm_up_blocks() as c_int,
+                None => 0,
+            },
+            None => 0,
+        }
+    })
+}
+
+/// Pump `blocks` silent render cycles so asynchronously-loading content
+/// (sample streamers) comes online before the first note. Always safe —
+/// a no-op for backends that don't need it. `blocks` must be >= 0.
+#[no_mangle]
+pub extern "C" fn moonlitt_engine_warm_up(e: *mut EngineHandle, blocks: c_int) -> MoonlittStatus {
+    ffi_guard!(crate::error::MOONLITT_ERR_PANIC, {
+        status((|| {
+            if blocks < 0 {
+                set_last_error_static(c"blocks must be >= 0");
+                return Err(MOONLITT_ERR_INVALID_ARG);
+            }
+            let backend = backend_mut(handle_mut(e)?)?;
+            match backend.warm_up(blocks as usize) {
+                Ok(()) => Ok(MOONLITT_OK),
+                Err(err) => {
+                    set_last_error(format!("warm_up: {err}"));
+                    Err(crate::error::MOONLITT_ERR_PLUGIN)
+                }
+            }
+        })())
+    })
+}

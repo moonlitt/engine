@@ -303,6 +303,54 @@ float moonlitt_engine_measure_rms(struct EngineHandle *e,
                                   int duration_ms);
 
 /**
+ * Whether the loaded backend supports `save_state`/`load_state` (1/0).
+ * VST3 plugins do; SF2 soundfonts address sounds by preset/program
+ * instead. Returns 0 for NULL or empty handles.
+ */
+int moonlitt_engine_supports_state(struct EngineHandle *e);
+
+/**
+ * Serialise the loaded backend's full patch state into an owned binary
+ * buffer.
+ *
+ * On success writes the buffer pointer to `*out_data` and its length to
+ * `*out_len`. Ownership: the buffer belongs to the caller — release it
+ * with `moonlitt_free_buffer(data, len)`.
+ *
+ * Errors: `INVALID_ARG` (NULL handle/out-params), `NOT_LOADED`,
+ * `UNSUPPORTED` (backend has no state story — check
+ * `moonlitt_engine_supports_state` first), `STATE` (the plugin failed
+ * to serialise).
+ */
+MoonlittStatus moonlitt_engine_save_state(struct EngineHandle *e,
+                                          uint8_t **out_data,
+                                          size_t *out_len);
+
+/**
+ * Restore a patch state previously produced by
+ * `moonlitt_engine_save_state` (or captured in a GUI host).
+ *
+ * For sample streamers, follow up with `moonlitt_engine_warm_up`
+ * (`moonlitt_engine_recommended_warmup_blocks` tells you how much)
+ * before expecting audible output.
+ */
+MoonlittStatus moonlitt_engine_load_state(struct EngineHandle *e, const uint8_t *data, size_t len);
+
+/**
+ * Advisory warm-up block count after `load_state` for this backend.
+ * Sample streamers (Spectrasonics) report non-zero; synths report 0.
+ * Returns 0 for NULL/empty handles.
+ */
+int moonlitt_engine_recommended_warmup_blocks(struct EngineHandle *e);
+
+/**
+ * Pump `blocks` silent render cycles so asynchronously-loading content
+ * (sample streamers) comes online before the first note. Always safe —
+ * a no-op for backends that don't need it. `blocks` must be >= 0.
+ */
+MoonlittStatus moonlitt_engine_warm_up(struct EngineHandle *e, int blocks);
+
+/**
  * Create a live-audio runtime from an engine handle.
  *
  * **Ownership**: the backend is consumed out of `engine_handle` only on
@@ -753,6 +801,12 @@ char *moonlitt_session_read_json(const char *path);
  * documents "caller must free with `moonlitt_free_string`".
  */
 void moonlitt_free_string(char *s);
+
+/**
+ * Free a binary buffer previously returned by `moonlitt_engine_save_state`
+ * (pass the exact pointer AND length you received). Safe to call with NULL.
+ */
+void moonlitt_free_buffer(uint8_t *data, size_t len);
 
 #ifdef __cplusplus
 }  // extern "C"

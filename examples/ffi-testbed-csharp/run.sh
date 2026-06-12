@@ -6,22 +6,18 @@
 #   ./run.sh --play       # play the melody (audible)
 #   ./run.sh --interactive # D F J K → C D E F (audible)
 #
-# The dylib must already exist at target/release/libmoonlitt.dylib.
-# If missing, run:
-#   cargo build -p moonlitt-capi --release
-# from the workspace root first.
+# Always rebuilds the dylib first — testing a stale binary is worse than
+# the few seconds an incremental release build costs (we got burned by a
+# 2.5-month-old leftover dylib silently satisfying DllImport).
 
 set -euo pipefail
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WORKSPACE_ROOT="$( cd "$SCRIPT_DIR/../.." && pwd )"
 DYLIB_DIR="$WORKSPACE_ROOT/target/release"
-DYLIB="$DYLIB_DIR/libmoonlitt.dylib"
 
-if [[ ! -f "$DYLIB" ]]; then
-  echo "error: $DYLIB missing — run 'cargo build -p moonlitt-capi --release' first" >&2
-  exit 2
-fi
+echo "[run.sh] cargo build -p moonlitt-capi --release"
+(cd "$WORKSPACE_ROOT" && cargo build -p moonlitt-capi --release)
 
 cd "$SCRIPT_DIR"
 

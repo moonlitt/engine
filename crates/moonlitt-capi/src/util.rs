@@ -49,3 +49,16 @@ pub(crate) fn json_escape(s: &str) -> String {
     }
     out
 }
+
+/// Free a binary buffer previously returned by `moonlitt_engine_save_state`
+/// (pass the exact pointer AND length you received). Safe to call with NULL.
+#[no_mangle]
+pub extern "C" fn moonlitt_free_buffer(data: *mut u8, len: usize) {
+    crate::error::ffi_guard!((), {
+        if !data.is_null() {
+            unsafe {
+                drop(Box::from_raw(std::slice::from_raw_parts_mut(data, len) as *mut [u8]));
+            }
+        }
+    })
+}

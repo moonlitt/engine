@@ -57,6 +57,12 @@ pub trait AudioBackend: Send {
     fn load_preset(&mut self, _id: i32) -> Result<(), Box<dyn std::error::Error>> {
         Err("not supported".into())
     }
+    /// Whether this back-end can serialise its full patch state via
+    /// `save_state`/`load_state`. Lets hosts enable/disable state UI and
+    /// lets the C API distinguish "unsupported" from "failed".
+    fn supports_state(&self) -> bool {
+        false
+    }
     fn save_state(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         Err("not supported".into())
     }

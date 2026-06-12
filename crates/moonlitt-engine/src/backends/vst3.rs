@@ -206,6 +206,10 @@ impl AudioBackend for Vst3Backend {
         }
     }
 
+    fn supports_state(&self) -> bool {
+        true
+    }
+
     fn save_state(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         match self.plugin.as_ref() {
             Some(p) => p

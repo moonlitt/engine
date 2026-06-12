@@ -281,6 +281,26 @@ internal static class NativeEngine
     public static extern int moonlitt_runtime_save_session(
         IntPtr rt, [MarshalAs(UnmanagedType.LPUTF8Str)] string path);
 
+
+    // --- Patch state (capture once, replay headless) ---
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int moonlitt_engine_supports_state(IntPtr e);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int moonlitt_engine_save_state(IntPtr e, out IntPtr data, out nuint len);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int moonlitt_engine_load_state(IntPtr e, IntPtr data, nuint len);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int moonlitt_engine_recommended_warmup_blocks(IntPtr e);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int moonlitt_engine_warm_up(IntPtr e, int blocks);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void moonlitt_free_buffer(IntPtr data, nuint len);
+
     // --- Helpers (managed wrappers) ---
 
     /// Thread-local detail of the most recent failure (borrowed — not freed).
