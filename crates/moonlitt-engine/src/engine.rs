@@ -133,10 +133,20 @@ pub fn scan_plugins(sample_rate: u32, buffer_size: u32) -> Vec<PluginInfo> {
         if let Ok(host) = moonlitt_vst3::Vst3Host::new(sample_rate, buffer_size) {
             if let Ok(vst3_plugins) = host.scan() {
                 for p in vst3_plugins {
+                    // PClassInfo2 subcategories distinguish "Instrument|…"
+                    // from effect-only "Fx|…" (FX-Omnisphere,
+                    // SurgeEffectsBank). Legacy factories without
+                    // subcategories stay visible.
+                    let is_instrument = p
+                        .subcategories
+                        .as_deref()
+                        .map(|s| s.contains("Instrument"))
+                        .unwrap_or(true);
                     plugins.push(PluginInfo {
                         name: p.name,
                         path: p.path.to_string_lossy().into_owned(),
                         format: PluginFormat::Vst3,
+                        is_instrument,
                     });
                 }
             }
@@ -152,6 +162,7 @@ pub fn scan_plugins(sample_rate: u32, buffer_size: u32) -> Vec<PluginInfo> {
                         name: p.name,
                         path: p.path.to_string_lossy().into_owned(),
                         format: PluginFormat::Clap,
+                        is_instrument: true,
                     });
                 }
             }
@@ -282,6 +293,7 @@ fn walk_sf2(
                 name,
                 path: canonical.to_string_lossy().into_owned(),
                 format: PluginFormat::Sf2,
+                is_instrument: true,
             });
         }
     }

@@ -143,6 +143,9 @@ export interface PluginInfo {
   path: string;
   /// "Sf2" | "Vst3" | "Clap" (from Rust enum debug)
   format: string;
+  /** False for effect-only plug-ins (e.g. FX-Omnisphere) — instrument
+   *  pickers hide these. Optional for older backends. */
+  isInstrument?: boolean;
 }
 
 export interface InsertState {

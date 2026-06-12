@@ -19,7 +19,30 @@
 /// is "least false-positive risk first" — generic byte sniffing comes
 /// last.
 pub fn extract_patch_name(state: &[u8]) -> Option<String> {
-    extract_spectrasonics(state)
+    extract_spectrasonics(state).or_else(|| extract_pianoteq(state))
+}
+
+/// Pull the current preset name out of a Pianoteq VST3 state.
+///
+/// Pianoteq wraps a VST2-era fxChunk (`VstW`/`CcnK`) whose payload
+/// carries a `tdtM` metadata chunk: a few length fields, then the
+/// preset name as a NUL-terminated string, then the vendor string
+/// `Modartt` and a description. We require both `tdtM` and `Modartt`
+/// so random binaries can't fake a match.
+fn extract_pianoteq(state: &[u8]) -> Option<String> {
+    find_subslice(state, b"Modartt")?;
+    let tag = find_subslice(state, b"tdtM")?;
+    let scan = &state[tag + 4..];
+    let scan = &scan[..scan.len().min(96)];
+    // First printable ASCII run of a plausible name length.
+    let start = scan.iter().position(|&b| (0x20..0x7f).contains(&b))?;
+    let end = scan[start..]
+        .iter()
+        .position(|&b| !(0x20..0x7f).contains(&b))
+        .map(|e| start + e)
+        .unwrap_or(scan.len());
+    let name = std::str::from_utf8(&scan[start..end]).ok()?.trim();
+    (name.len() >= 3).then(|| name.to_string())
 }
 
 /// Pull `origPatchName="..."` (with a fallback to the first
@@ -119,6 +142,54 @@ mod tests {
         let bytes = std::fs::read(&path).unwrap();
         let name = extract_patch_name(&bytes).expect("should extract patch name");
         assert_eq!(name, "LA Custom C7 - Natural");
+    }
+
+    #[test]
+    fn extracts_pianoteq_preset_name() {
+        // Shape of a Pianoteq VST3 state: VstW/fxChunk framing, then a
+        // `tdtM` metadata chunk holding the preset name, vendor
+        // "Modartt" and a description.
+        let mut state = b"MLST....VstW....CcnK....FBCh....Pt9q....".to_vec();
+        state.extend_from_slice(b"tdtM");
+        state.extend_from_slice(&[0u8; 8]);
+        state.extend_from_slice(b"NY Steinway D Classical\0\0\0");
+        state.extend_from_slice(b"Modartt\0This preset offers...");
+        assert_eq!(
+            extract_patch_name(&state).as_deref(),
+            Some("NY Steinway D Classical")
+        );
+    }
+
+    #[test]
+    fn pianoteq_parser_needs_both_markers() {
+        // "tdtM" alone (random binary collision) must not produce junk.
+        let state = b"....tdtM\0\0\0\0Garbage Name\0....";
+        assert!(extract_patch_name(state).is_none());
+    }
+
+    /// Real-plugin check: the heuristic parser must survive an actual
+    /// Pianoteq state, not just the synthetic fixture. Skips when
+    /// Pianoteq isn't installed.
+    #[test]
+    fn extracts_name_from_real_pianoteq_state() {
+        let Some(path) = moonlitt_vst3::Vst3Host::new(48_000, 512)
+            .ok()
+            .and_then(|h| h.scan().ok())
+            .and_then(|ps| ps.into_iter().find(|p| p.name.starts_with("Pianoteq")))
+            .map(|p| p.path)
+        else {
+            eprintln!("Pianoteq not installed — skipping");
+            return;
+        };
+        let host = moonlitt_vst3::Vst3Host::new(48_000, 512).unwrap();
+        let plugin = host.load_from_path(&path).expect("load Pianoteq");
+        let state = plugin.get_state().expect("get_state");
+        let name = extract_patch_name(&state);
+        assert!(
+            name.as_deref().is_some_and(|n| n.len() >= 3),
+            "no preset name parsed from real Pianoteq state: {name:?}"
+        );
+        eprintln!("Pianoteq preset name: {name:?}");
     }
 
     #[test]

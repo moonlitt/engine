@@ -140,6 +140,8 @@ pub struct PluginInfoView {
     pub path: String,
     /// "Sf2" | "Vst3" | "Clap" | "Sfz" — matches the legacy debug format.
     pub format: String,
+    /// `false` for effect-only plug-ins — instrument pickers hide these.
+    pub is_instrument: bool,
 }
 
 /// Live peak levels for the master bus and every override track. Emitted
@@ -1296,6 +1298,7 @@ fn plugin_info_to_view(p: PluginInfo) -> PluginInfoView {
         name: p.name,
         path: p.path,
         format: format_format(p.format).to_string(),
+        is_instrument: p.is_instrument,
     }
 }
 

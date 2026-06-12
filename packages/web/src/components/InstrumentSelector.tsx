@@ -65,17 +65,20 @@ export function InstrumentSelector({ open, onLoad, onClose }: InstrumentSelector
     [onClose],
   );
 
-  // Filter + group
+  // Filter + group. Effect-only plug-ins (FX-Omnisphere,
+  // SurgeEffectsBank) can't act as a sound source — hide them here;
+  // they stay available as channel/bus inserts.
   const grouped = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const instruments = plugins.filter((p) => p.isInstrument !== false);
     const filtered = q
-      ? plugins.filter(
+      ? instruments.filter(
           (p) =>
             p.name.toLowerCase().includes(q) ||
             p.path.toLowerCase().includes(q) ||
             p.format.toLowerCase().includes(q),
         )
-      : plugins;
+      : instruments;
     const map = new Map<string, PluginInfo[]>();
     for (const p of filtered) {
       const arr = map.get(p.format) ?? [];
