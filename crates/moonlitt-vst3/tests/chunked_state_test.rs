@@ -10,8 +10,20 @@
 
 use moonlitt_vst3::{ChunkedState, Vst3Host};
 
+/// Both tests in this binary load real plug-ins; cargo runs them in
+/// parallel threads. Spectrasonics' STEAM library SIGSEGVs when two
+/// instances load simultaneously in one process (same hazard
+/// keyscape_probe serialises against), so serialise here too.
+fn plugin_load_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| std::sync::Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+}
+
 #[test]
 fn get_state_emits_chunked_format_for_every_installed_plugin() {
+    let _serial = plugin_load_lock();
     let host = Vst3Host::new(44100, 256).unwrap();
     let plugins = host.scan().unwrap();
     if plugins.is_empty() {
@@ -56,6 +68,7 @@ fn get_state_emits_chunked_format_for_every_installed_plugin() {
 
 #[test]
 fn set_state_accepts_legacy_single_blob_for_back_compat() {
+    let _serial = plugin_load_lock();
     let host = Vst3Host::new(44100, 256).unwrap();
     let plugins = host.scan().unwrap();
     let Some(info) = plugins.iter().find(|p| p.name == "Surge") else {
