@@ -99,6 +99,11 @@ pub struct MidiState {
     pub tempo_bpm: Option<f64>,
     pub time_signature: Option<[u8; 2]>,
     pub length_bars: f64,
+    /// Clip length in MIDI ticks (the sequencer's truth — drives the
+    /// progress bar denominator).
+    pub total_ticks: u64,
+    /// MIDI resolution in ticks per quarter note.
+    pub ticks_per_beat: u16,
     pub channels: Vec<midi_analyze::MidiChannelInfo>,
 }
 
@@ -148,6 +153,10 @@ pub struct MeterSnapshot {
     /// the master signal clipped within the measurement window.
     pub master: [f32; 2],
     pub tracks: Vec<TrackMeter>,
+    /// Sequencer playhead in fractional MIDI ticks (published by the
+    /// audio thread; pairs with `MidiState::total_ticks` for progress).
+    pub playhead_ticks: f64,
+    pub playing: bool,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -381,6 +390,8 @@ impl Engine {
             return MeterSnapshot {
                 master: [0.0, 0.0],
                 tracks: Vec::new(),
+                playhead_ticks: 0.0,
+                playing: false,
             };
         };
         let (ml, mr) = rt.master_levels();
@@ -399,6 +410,8 @@ impl Engine {
         MeterSnapshot {
             master: [ml, mr],
             tracks,
+            playhead_ticks: rt.position_ticks(),
+            playing: rt.is_playing(),
         }
     }
 
@@ -422,20 +435,20 @@ impl Engine {
 
     // --- Default instrument ---
 
-    pub fn set_default_instrument(&self, path: &str) -> Result<(), String> {
-        self.set_default_instrument_with_state(path, None)
-    }
-
     /// Same as `set_default_instrument`, but also seeds the new back-end
     /// with a state blob and runs the back-end's recommended warm-up
     /// before the audio thread takes ownership. Used by session restore
     /// so Keyscape-class samplers come up audible without the caller
     /// needing to know about warm-up.
+    /// Returns `true` when the instrument is a sample streamer that was
+    /// assigned WITHOUT a state blob — it will stay silent until the
+    /// user picks a patch in its GUI ("needs patch"). The UI uses this
+    /// to auto-open the plug-in window instead of leaving dead air.
     pub fn set_default_instrument_with_state(
         &self,
         path: &str,
         state: Option<&[u8]>,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
         self.ensure_runtime()?;
         let (sr, buf) = {
             let s = self.inner.lock();
@@ -443,6 +456,7 @@ impl Engine {
         };
         let (mut backend, handle) = create_backend_with_vst3_handle(path, sr, buf)?;
         let warm_up_blocks = backend.recommended_warm_up_blocks() as u32;
+        let needs_patch = state.is_none() && warm_up_blocks > 0;
         if let Some(state_bytes) = state {
             backend
                 .load_state(state_bytes)
@@ -465,7 +479,7 @@ impl Engine {
         s.default_instrument_path = Some(path.to_string());
         s.default_warm_up_blocks = warm_up_blocks;
         s.default_plugin_handle = handle;
-        Ok(())
+        Ok(needs_patch)
     }
 
     // --- MIDI loading ---
@@ -475,16 +489,23 @@ impl Engine {
         self.ensure_runtime()?;
         let mut s = self.inner.lock();
 
-        // Auto-apply tempo from the file (user can override afterwards).
+        // Follow the file's embedded tempo MAP (a constant override would
+        // flatten tempo changes — the cause of "ignores the MIDI's tempo").
+        // The file's initial BPM is kept for display; an explicit user BPM
+        // edit re-engages the override.
         if let Some(bpm) = info.tempo_bpm.filter(|b| b.is_finite()) {
             s.bpm = bpm;
-            if let Some(rt) = s.runtime.as_ref() {
-                rt.set_tempo(bpm);
-            }
+        }
+        if let Some(rt) = s.runtime.as_ref() {
+            rt.clear_tempo_override();
         }
 
+        let mut clip_total_ticks = 0u64;
+        let mut clip_ticks_per_beat = 480u16;
         if let Some(rt) = s.runtime.as_mut() {
-            rt.load_midi(path).map_err(|e| format!("loadMidi: {e}"))?;
+            let clip = rt.load_midi(path).map_err(|e| format!("loadMidi: {e}"))?;
+            clip_total_ticks = clip.total_ticks;
+            clip_ticks_per_beat = clip.ticks_per_beat;
         }
 
         let midi = MidiState {
@@ -493,28 +514,35 @@ impl Engine {
             tempo_bpm: info.tempo_bpm,
             time_signature: info.time_signature,
             length_bars: info.length_bars,
+            total_ticks: clip_total_ticks,
+            ticks_per_beat: clip_ticks_per_beat,
             channels: info.channels,
         };
         s.midi = Some(midi.clone());
         Ok(midi)
     }
 
-    // --- Per-channel overrides ---
-
-    pub fn set_channel_override(
-        &self,
-        channel: u8,
-        path: &str,
-    ) -> Result<ChannelOverrideState, String> {
-        self.set_channel_override_with_state(channel, path, None)
+    /// Jump the playhead to an absolute tick position.
+    pub fn seek(&self, ticks: f64) -> Result<(), String> {
+        let mut s = self.inner.lock();
+        let rt = s
+            .runtime
+            .as_mut()
+            .ok_or_else(|| "no session yet".to_string())?;
+        rt.seek_ticks(ticks.max(0.0));
+        Ok(())
     }
 
+    // --- Per-channel overrides ---
+
+    /// The `bool` is "needs patch" — see
+    /// [`Engine::set_default_instrument_with_state`].
     pub fn set_channel_override_with_state(
         &self,
         channel: u8,
         path: &str,
         state: Option<&[u8]>,
-    ) -> Result<ChannelOverrideState, String> {
+    ) -> Result<(ChannelOverrideState, bool), String> {
         if channel > 15 {
             return Err(format!("invalid channel {channel}"));
         }
@@ -525,6 +553,7 @@ impl Engine {
         };
         let (mut backend, handle) = create_backend_with_vst3_handle(path, sr, buf)?;
         let warm_up_blocks = backend.recommended_warm_up_blocks() as u32;
+        let needs_patch = state.is_none() && warm_up_blocks > 0;
         if let Some(state_bytes) = state {
             backend
                 .load_state(state_bytes)
@@ -558,7 +587,7 @@ impl Engine {
             existing.instrument_name = instrument_name;
             existing.warm_up_blocks = warm_up_blocks;
             existing.plugin_handle = handle;
-            return Ok(state_of(existing));
+            return Ok((state_of(existing), needs_patch));
         }
 
         let mask: u16 = 1 << channel;
@@ -585,7 +614,7 @@ impl Engine {
         let st = state_of(&ov);
         s.overrides.push(ov);
         sync_master_mask(&mut s);
-        Ok(st)
+        Ok((st, needs_patch))
     }
 
     pub fn remove_channel_override(&self, channel: u8) -> Result<(), String> {
@@ -907,7 +936,7 @@ impl Engine {
     }
 
     pub fn stop(&self) {
-        if let Some(rt) = self.inner.lock().runtime.as_ref() {
+        if let Some(rt) = self.inner.lock().runtime.as_mut() {
             rt.stop_playback();
         }
         self.inner.lock().playing = false;
@@ -1069,7 +1098,10 @@ impl Engine {
             tracks,
             send_buses: vec![],
             transport: TransportSnapshot {
-                tempo_override_bpm: Some(s.bpm),
+                // Only persist an override if one is actually engaged —
+                // otherwise restored sessions (and offline bounces)
+                // follow the MIDI file's own tempo map.
+                tempo_override_bpm: s.runtime.as_ref().and_then(|rt| rt.tempo_override()),
                 looping: s.looping,
                 metronome_enabled: s.metronome_enabled,
             },

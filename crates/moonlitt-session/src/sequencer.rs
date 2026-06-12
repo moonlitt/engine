@@ -176,6 +176,33 @@ impl Sequencer {
         self.current_tick >= self.total_ticks as f64
     }
 
+    /// Jump the playhead to an absolute tick position (clamped to the
+    /// clip length). The event cursor is re-aligned so events before
+    /// the target never re-fire and the next event after it does.
+    /// Playback state (playing/paused) is unchanged. Callers should
+    /// silence sounding notes themselves — the sequencer doesn't know
+    /// which notes are held.
+    pub fn seek(&mut self, tick: f64) {
+        let tick = tick.clamp(0.0, self.total_ticks as f64);
+        self.current_tick = tick;
+        self.cursor = self.events.partition_point(|e| (e.tick as f64) < tick);
+    }
+
+    /// Current playhead position in fractional ticks.
+    pub fn position_ticks(&self) -> f64 {
+        self.current_tick
+    }
+
+    /// Clip length in ticks (the last event's position).
+    pub fn total_ticks(&self) -> u64 {
+        self.total_ticks
+    }
+
+    /// MIDI resolution: ticks per quarter note.
+    pub fn ticks_per_beat(&self) -> u16 {
+        self.ticks_per_beat
+    }
+
     /// Get current tempo in microseconds per beat at the given tick.
     fn us_per_beat_at(&self, tick: f64) -> u32 {
         let tick_u64 = tick as u64;
@@ -238,5 +265,86 @@ impl Sequencer {
             self.current_tick = 0.0;
             self.cursor = 0;
         }
+    }
+}
+
+#[cfg(test)]
+mod seek_tests {
+    use super::*;
+
+    fn test_midi() -> Vec<u8> {
+        // Two notes: tick 0 (note 60) and tick 480 (note 64), 120 BPM.
+        let mut track: Vec<u8> = Vec::new();
+        track.extend_from_slice(&[0x00, 0xFF, 0x51, 0x03, 0x07, 0xA1, 0x20]);
+        track.extend_from_slice(&[0x00, 0x90, 60, 100]);
+        track.extend_from_slice(&[0x81, 0x70, 0x80, 60, 0]); // delta 240
+        track.extend_from_slice(&[0x81, 0x70, 0x90, 64, 100]); // tick 480
+        track.extend_from_slice(&[0x81, 0x70, 0x80, 64, 0]);
+        track.extend_from_slice(&[0x00, 0xFF, 0x2F, 0x00]);
+        let mut data: Vec<u8> = Vec::new();
+        data.extend_from_slice(b"MThd");
+        data.extend_from_slice(&6u32.to_be_bytes());
+        data.extend_from_slice(&0u16.to_be_bytes());
+        data.extend_from_slice(&1u16.to_be_bytes());
+        data.extend_from_slice(&480u16.to_be_bytes());
+        data.extend_from_slice(b"MTrk");
+        data.extend_from_slice(&(track.len() as u32).to_be_bytes());
+        data.extend_from_slice(&track);
+        data
+    }
+
+    #[test]
+    fn seek_repositions_playhead_and_cursor() {
+        let mut seq = Sequencer::from_bytes(&test_midi()).unwrap();
+        seq.play();
+
+        // Play past the first note.
+        let mut events = Vec::new();
+        seq.advance(22050, 44100, &mut events, None, false); // 0.5 s = 1 beat
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, moonlitt_core::AudioEvent::NoteOn { note: 60, .. })),
+            "first note plays before the seek"
+        );
+
+        // Seek back to the very start: the first note must play AGAIN.
+        seq.seek(0.0);
+        assert_eq!(seq.position_ticks(), 0.0);
+        events.clear();
+        seq.advance(11025, 44100, &mut events, None, false); // 0.25 s
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, moonlitt_core::AudioEvent::NoteOn { note: 60, .. })),
+            "replay after seek(0) must re-emit the first note"
+        );
+
+        // Seek into the middle: only later events fire (no double-fire of
+        // earlier ones, no skipping of the next one).
+        seq.seek(400.0);
+        events.clear();
+        seq.advance(11025, 44100, &mut events, None, false); // 0.25 s = 240 ticks
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, moonlitt_core::AudioEvent::NoteOn { note: 60, .. })),
+            "events before the seek target must not re-fire"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, moonlitt_core::AudioEvent::NoteOn { note: 64, .. })),
+            "the next event after the seek target must fire"
+        );
+
+        // Seek past the end clamps and reports finished.
+        seq.seek(1e12);
+        assert!(seq.is_finished());
+
+        // Introspection for progress UIs. Last event: note-off at tick
+        // 0 + 240 + 240 + 240 = 720.
+        assert_eq!(seq.total_ticks(), 720);
+        assert_eq!(seq.ticks_per_beat(), 480);
     }
 }

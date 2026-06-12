@@ -129,6 +129,9 @@ impl AudioThread {
                         dispatch_to_mixer(&mut self.mixer, event);
                     }
                 }
+                // Publish the playhead even when stopped/paused so a
+                // seek done while not playing still reaches the UI.
+                self.transport.set_position_ticks(seq.position_ticks());
             }
 
             // 4. Render with sample-accurate event insertion

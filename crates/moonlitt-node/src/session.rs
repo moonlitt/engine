@@ -70,8 +70,8 @@ impl Session {
 
     /// Stop transport (resets to beginning).
     #[napi]
-    pub fn stop_playback(&self) -> Result<()> {
-        self.rt()?.stop_playback();
+    pub fn stop_playback(&mut self) -> Result<()> {
+        self.rt_mut()?.stop_playback();
         Ok(())
     }
 
@@ -101,6 +101,7 @@ impl Session {
     pub fn load_midi(&mut self, path: String) -> Result<()> {
         self.rt_mut()?
             .load_midi(&path)
+            .map(|_clip_info| ())
             .map_err(napi::Error::from_reason)
     }
 

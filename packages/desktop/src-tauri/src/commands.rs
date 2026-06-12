@@ -53,12 +53,18 @@ struct MasterUpdated {
 struct DefaultInstrumentChanged {
     #[serde(rename = "instrumentPath")]
     instrument_path: Option<String>,
+    /// Sample streamer with no patch yet — the UI should open the
+    /// plug-in GUI and explain why there's no sound.
+    #[serde(rename = "needsPatch")]
+    needs_patch: bool,
 }
 
 #[derive(Serialize, Clone)]
 struct ChannelOverrideAdded {
     #[serde(rename = "override")]
     o: ChannelOverrideState,
+    #[serde(rename = "needsPatch")]
+    needs_patch: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -245,15 +251,22 @@ pub fn cmd_default_set_instrument(
     state: State<AppState>,
     app: AppHandle,
     path: String,
-) -> Result<(), String> {
-    state.engine.set_default_instrument(&path)?;
+) -> Result<bool, String> {
+    // Sample streamers are silent without a patch — seed the new
+    // instance with the last patch this plug-in was seen using, so
+    // picking Keyscape sounds immediately instead of confusing silence.
+    let cached = crate::plugin_state_cache::load(&app, &path);
+    let needs_patch = state
+        .engine
+        .set_default_instrument_with_state(&path, cached.as_deref())?;
     let _ = app.emit(
         "default:instrument_changed",
         DefaultInstrumentChanged {
             instrument_path: Some(path),
+            needs_patch,
         },
     );
-    Ok(())
+    Ok(needs_patch)
 }
 
 // --- Per-channel overrides -----------------------------------------------
@@ -264,10 +277,17 @@ pub fn cmd_channel_set_override(
     app: AppHandle,
     channel: u8,
     path: String,
-) -> Result<(), String> {
-    let ov = state.engine.set_channel_override(channel, &path)?;
-    let _ = app.emit("channel:override_added", ChannelOverrideAdded { o: ov });
-    Ok(())
+) -> Result<bool, String> {
+    let cached = crate::plugin_state_cache::load(&app, &path);
+    let (ov, needs_patch) =
+        state
+            .engine
+            .set_channel_override_with_state(channel, &path, cached.as_deref())?;
+    let _ = app.emit(
+        "channel:override_added",
+        ChannelOverrideAdded { o: ov, needs_patch },
+    );
+    Ok(needs_patch)
 }
 
 #[tauri::command]
@@ -657,6 +677,10 @@ pub fn cmd_project_save_as(
     path: String,
 ) -> Result<(), String> {
     let plugin_states = collect_plugin_states();
+    // Project save doubles as a "remember this patch" point per plug-in.
+    for (plugin_path, bytes) in &plugin_states {
+        crate::plugin_state_cache::store(&app, plugin_path, bytes);
+    }
     let session = state.engine.capture_session(&plugin_states);
     session
         .save_to_file(&path)
@@ -769,4 +793,11 @@ pub fn cmd_render_to_wav(state: State<AppState>, path: String) -> Result<RenderR
         duration_secs: stats.duration_secs,
         peak: stats.peak,
     })
+}
+
+/// Jump the playhead to an absolute tick position. Held notes are
+/// released; playback state is unchanged (seek-while-paused works).
+#[tauri::command]
+pub fn cmd_transport_seek(state: State<AppState>, ticks: f64) -> Result<(), String> {
+    state.engine.seek(ticks)
 }

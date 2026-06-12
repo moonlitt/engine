@@ -198,7 +198,7 @@ pub fn open_window_count() -> usize {
 /// whose patch name changed since the last poll. The caller compares
 /// against its own "last seen" map; we don't keep state inside this
 /// module so the loop can decide when to emit.
-pub fn poll_patch_name_updates() -> Vec<(String, Option<String>)> {
+pub fn poll_patch_name_updates() -> Vec<(String, Option<String>, Vec<u8>)> {
     let probes: Vec<(String, Vec<u8>)> = {
         let reg = registry().lock();
         reg.iter()
@@ -220,8 +220,8 @@ pub fn poll_patch_name_updates() -> Vec<(String, Option<String>)> {
             // Refresh stash so subsequent ⌘S and on-demand
             // `patch_name_for` lookups see the freshest value, not
             // just the one captured at GUI open.
-            put_in_stash(path.clone(), bytes);
-            (path, parsed)
+            put_in_stash(path.clone(), bytes.clone());
+            (path, parsed, bytes)
         })
         .collect()
 }

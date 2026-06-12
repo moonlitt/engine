@@ -9,6 +9,14 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 
+/// Length/resolution facts about a staged MIDI clip, captured at load
+/// time for progress displays.
+#[derive(Debug, Clone, Copy)]
+pub struct MidiClipInfo {
+    pub total_ticks: u64,
+    pub ticks_per_beat: u16,
+}
+
 pub struct Runtime {
     producer: rtrb::Producer<TimedEvent>,
     /// Channel for structural commands (add/remove tracks, inserts, buses).
@@ -499,8 +507,16 @@ impl Runtime {
         self.transport.pause();
     }
 
-    pub fn stop_playback(&self) {
+    /// Stop sequencer playback, silence held notes, and rewind to the
+    /// start (DAW "stop" semantics — a following play replays from 0).
+    pub fn stop_playback(&mut self) {
         self.transport.stop();
+        let _ = self.all_notes_off();
+        let _ = self.sequencer_tx.send(Box::new(|slot| {
+            if let Some(seq) = slot.as_mut() {
+                seq.seek(0.0);
+            }
+        }));
     }
 
     pub fn is_playing(&self) -> bool {
@@ -511,8 +527,36 @@ impl Runtime {
         self.transport.set_tempo(bpm);
     }
 
+    /// Revert to the MIDI file's embedded tempo map.
+    pub fn clear_tempo_override(&self) {
+        self.transport.clear_tempo();
+    }
+
+    /// The current tempo override, or `None` when following the file.
+    pub fn tempo_override(&self) -> Option<f64> {
+        self.transport.tempo()
+    }
+
     pub fn set_loop(&self, enabled: bool) {
         self.transport.set_loop(enabled);
+    }
+
+    /// Jump the sequencer playhead to an absolute tick (clamped to the
+    /// clip). Held notes are released first so nothing hangs across the
+    /// jump; playback state is unchanged.
+    pub fn seek_ticks(&mut self, tick: f64) {
+        let _ = self.all_notes_off();
+        let _ = self.sequencer_tx.send(Box::new(move |slot| {
+            if let Some(seq) = slot.as_mut() {
+                seq.seek(tick);
+            }
+        }));
+    }
+
+    /// Latest sequencer playhead position in fractional ticks, as
+    /// published by the audio thread (atomic read — poll freely).
+    pub fn position_ticks(&self) -> f64 {
+        self.transport.position_ticks()
     }
 
     // --- MIDI file loading ---
@@ -520,8 +564,12 @@ impl Runtime {
     /// Parse a MIDI file and stage it on the audio thread for playback.
     /// The new sequencer takes effect on the next audio callback. Transport
     /// state (play/pause/stop) is unchanged — the caller decides when to start.
-    pub fn load_midi(&mut self, path: &str) -> Result<(), String> {
+    pub fn load_midi(&mut self, path: &str) -> Result<MidiClipInfo, String> {
         let mut seq = Sequencer::from_file(path)?;
+        let info = MidiClipInfo {
+            total_ticks: seq.total_ticks(),
+            ticks_per_beat: seq.ticks_per_beat(),
+        };
         // The sequencer's own state gates `advance()`; AudioThread additionally
         // gates on Transport. We open the inner gate here so transport alone
         // controls playback once the sequencer is staged.
@@ -530,7 +578,8 @@ impl Runtime {
             .send(Box::new(move |slot| {
                 *slot = Some(seq);
             }))
-            .map_err(|e| format!("audio thread closed: {e}"))
+            .map_err(|e| format!("audio thread closed: {e}"))?;
+        Ok(info)
     }
 
     /// Remove any loaded MIDI sequence from the audio thread.

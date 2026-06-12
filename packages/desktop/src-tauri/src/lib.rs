@@ -6,6 +6,7 @@
 mod commands;
 mod engine;
 mod midi_analyze;
+mod plugin_state_cache;
 #[cfg(target_os = "macos")]
 mod plugin_window;
 mod recent_files;
@@ -81,6 +82,7 @@ pub fn run() {
             commands::cmd_project_forget_recent,
             commands::cmd_render_to_wav,
             commands::cmd_send_bus_set_param,
+            commands::cmd_transport_seek,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -126,7 +128,7 @@ fn patch_poll_loop(app: tauri::AppHandle) {
         if plugin_window::open_window_count() == 0 {
             continue;
         }
-        for (path, patch_name) in plugin_window::poll_patch_name_updates() {
+        for (path, patch_name, state_bytes) in plugin_window::poll_patch_name_updates() {
             let changed = match last_seen.get(&path) {
                 Some(prev) => prev != &patch_name,
                 None => true,
@@ -135,6 +137,9 @@ fn patch_poll_loop(app: tauri::AppHandle) {
                 continue;
             }
             last_seen.insert(path.clone(), patch_name.clone());
+            // Remember this patch as the plug-in's default, so the next
+            // time it's picked as an instrument it sounds immediately.
+            plugin_state_cache::store(&app, &path, &state_bytes);
             let _ = app.emit(
                 "plugin_state_captured",
                 PluginStateCaptured { path, patch_name },

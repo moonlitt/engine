@@ -13,6 +13,9 @@ pub struct Transport {
     /// Tempo override: 0 = use MIDI file's embedded tempo map, else f64 BPM bits.
     tempo_override: AtomicU64,
     looping: AtomicBool,
+    /// Sequencer playhead in fractional ticks (f64 bits), published by
+    /// the audio thread every chunk so UIs can draw a live progress bar.
+    position_ticks: AtomicU64,
 }
 
 impl Default for Transport {
@@ -27,7 +30,19 @@ impl Transport {
             state: AtomicU8::new(TransportState::Stopped as u8),
             tempo_override: AtomicU64::new(0), // 0 = no override
             looping: AtomicBool::new(false),
+            position_ticks: AtomicU64::new(0.0f64.to_bits()),
         }
+    }
+
+    /// Publish the sequencer playhead (audio thread, once per chunk).
+    pub fn set_position_ticks(&self, ticks: f64) {
+        self.position_ticks
+            .store(ticks.to_bits(), Ordering::Relaxed);
+    }
+
+    /// Latest published playhead position in fractional ticks.
+    pub fn position_ticks(&self) -> f64 {
+        f64::from_bits(self.position_ticks.load(Ordering::Relaxed))
     }
 
     pub fn state(&self) -> TransportState {
