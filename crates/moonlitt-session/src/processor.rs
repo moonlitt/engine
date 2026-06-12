@@ -1,5 +1,6 @@
 use moonlitt_core::{AudioEvent, TimedEvent};
 use moonlitt_mixer::Mixer;
+use crate::metronome::Metronome;
 use crate::sequencer::Sequencer;
 use crate::transport::Transport;
 use rtrb::Consumer;
@@ -42,6 +43,9 @@ pub struct AudioThread {
     /// Pre-allocated render buffers (for split rendering)
     render_left: Vec<f32>,
     render_right: Vec<f32>,
+    /// Metronome — mixed in *after* the main mixer so per-track meters
+    /// never see clicks, only the master output does.
+    metronome: Metronome,
 }
 
 impl AudioThread {
@@ -54,6 +58,7 @@ impl AudioThread {
         transport: Arc<Transport>,
         buffer_size: usize,
     ) -> Self {
+        let sample_rate = mixer.sample_rate();
         Self {
             mixer,
             consumer,
@@ -65,7 +70,14 @@ impl AudioThread {
             pending: Vec::with_capacity(1024),
             render_left: vec![0.0; buffer_size],
             render_right: vec![0.0; buffer_size],
+            metronome: Metronome::new(sample_rate),
         }
+    }
+
+    /// Hand out a clone of the metronome's enabled flag so the control
+    /// thread can toggle it lock-free.
+    pub fn metronome_enabled_handle(&self) -> Arc<std::sync::atomic::AtomicBool> {
+        self.metronome.enabled_handle()
     }
 
     pub fn process(&mut self, output: &mut [f32]) {
@@ -128,7 +140,17 @@ impl AudioThread {
                 self.render_with_splits(chunk);
             }
 
-            // 4. Interleave into output
+            // 4b. Metronome — sums into master output, after the main mix.
+            // Uses transport tempo if set, else falls back to 120 BPM so
+            // toggling the click before any tempo has been pushed still ticks.
+            let bpm = self.transport.tempo().unwrap_or(120.0);
+            self.metronome.process(
+                &mut self.render_left[..chunk],
+                &mut self.render_right[..chunk],
+                bpm,
+            );
+
+            // 5. Interleave into output
             for i in 0..chunk {
                 output[(offset + i) * 2] = self.render_left[i];
                 output[(offset + i) * 2 + 1] = self.render_right[i];

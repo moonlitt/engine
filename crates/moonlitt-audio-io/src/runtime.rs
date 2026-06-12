@@ -5,7 +5,7 @@ use moonlitt_mixer::{LevelMeter, Mixer};
 use moonlitt_session::{AudioThread, MixerCommand, Sequencer, SequencerCommand, Transport};
 use rtrb::RingBuffer;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 
@@ -34,6 +34,9 @@ pub struct Runtime {
     /// the main thread reads via these clones.
     master_meter: LevelMeter,
     track_meters: HashMap<u32, LevelMeter>,
+    /// Lock-free metronome toggle — flipped from the control thread,
+    /// read every audio chunk on the audio thread.
+    metronome_enabled: Arc<AtomicBool>,
 }
 
 impl Runtime {
@@ -104,6 +107,10 @@ impl Runtime {
             buffer_size as usize,
         );
 
+        // Pull the metronome's enabled flag out before audio_thread moves
+        // into the cpal callback — after that it's unreachable.
+        let metronome_enabled = audio_thread.metronome_enabled_handle();
+
         let audio_output = AudioOutput::new(audio_thread)?;
 
         Ok(Self {
@@ -121,7 +128,16 @@ impl Runtime {
             next_insert_id,
             master_meter,
             track_meters,
+            metronome_enabled,
         })
+    }
+
+    pub fn set_metronome_enabled(&self, enabled: bool) {
+        self.metronome_enabled.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn is_metronome_enabled(&self) -> bool {
+        self.metronome_enabled.load(Ordering::Relaxed)
     }
 
     pub fn start(&self) -> Result<(), String> {

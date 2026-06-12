@@ -11,8 +11,8 @@
 //!     and intentionally not captured)
 //!   * Sequencer source — path to the MIDI file currently loaded, if any
 //!
-//! Schema is versioned. v1 was mixer-only; v2 adds transport + sequencer
-//! + per-back-end warm-up. The user explicitly chose no v1→v2 migration
+//! Schema is versioned. v1 was mixer-only; v2 adds transport, sequencer,
+//! and per-back-end warm-up. The user explicitly chose no v1→v2 migration
 //! path (`first principles, can start over`), so loading a v1 session
 //! fails loudly with `SessionError::UnsupportedVersion`.
 
@@ -99,6 +99,10 @@ pub struct TransportSnapshot {
     pub tempo_override_bpm: Option<f64>,
     #[serde(default)]
     pub looping: bool,
+    /// Whether the audio-side metronome ticks. Older session files
+    /// without this field deserialise as `false`.
+    #[serde(default)]
+    pub metronome_enabled: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -120,6 +124,10 @@ pub struct TrackState {
     pub send_levels: Vec<f32>,
     pub source: SourceState,
     pub inserts: Vec<InsertState>,
+    /// Optional user-assigned color (hex like "#4a90d9"). Older session
+    /// files without this field deserialise as `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -198,6 +206,9 @@ impl Session {
                         source: source_from_insert(i),
                     })
                     .collect(),
+                // Mixer doesn't track color — engine layer sets this
+                // afterwards if it wants to persist a user-picked color.
+                color: None,
             })
             .collect();
 
@@ -321,6 +332,10 @@ impl From<&Transport> for TransportSnapshot {
         Self {
             tempo_override_bpm: t.tempo(),
             looping: t.looping(),
+            // Transport doesn't own the metronome — that flag lives on
+            // the audio thread. Callers that want to persist it must set
+            // it explicitly after this conversion.
+            metronome_enabled: false,
         }
     }
 }

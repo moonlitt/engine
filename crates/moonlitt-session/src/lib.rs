@@ -5,11 +5,13 @@
 //! No cpal, no midir — pure scheduling and rendering logic.
 //! The runtime crate provides platform I/O and re-exports these modules.
 
+pub mod metronome;
 pub mod persistence;
 pub mod processor;
 pub mod sequencer;
 pub mod transport;
 
+pub use metronome::Metronome;
 pub use persistence::Session;
 pub use processor::{AudioThread, MixerCommand, SequencerCommand};
 pub use sequencer::Sequencer;
