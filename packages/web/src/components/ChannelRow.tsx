@@ -28,8 +28,8 @@ const TRACK_COLORS: readonly string[] = [
   '#c9b340', // yellow
   '#5c9a5c', // green
   '#4a9090', // teal
-  '#4a90d9', // blue (same as accent)
-  '#8866b3', // purple
+  '#5a9ad4', // blue (same as accent)
+  '#9aa0a6', // silver (Bitwig-style neutral tint — no violet in this app)
   '#b8688f', // pink
 ];
 
@@ -78,7 +78,7 @@ export function ChannelRow({ info, override, defaultInstrumentPath }: ChannelRow
   const channelColor = override?.color ?? null;
 
   return (
-    <section className="bg-daw-panel border border-daw-border rounded-lg overflow-hidden flex">
+    <section className="strip overflow-hidden flex">
       {/* Vertical colour stripe — Logic Pro-style track tint. Click to
           cycle through the palette; null means no tint. */}
       {!inherited && (
@@ -428,8 +428,9 @@ function OverrideControls({ override }: { override: ChannelOverrideState }) {
         type="button"
         onClick={() => openPicker({ kind: 'override', channel: override.channel })}
         className="text-[11px] px-2.5 py-1 rounded bg-daw-control hover:bg-daw-border text-[#ccc] transition-colors"
+        title="更换这个通道的音色"
       >
-        🎹 {override.instrumentName}
+        {override.instrumentName}
       </button>
       {isVst3 && guiSupported && (
         <button
@@ -440,7 +441,7 @@ function OverrideControls({ override }: { override: ChannelOverrideState }) {
           }}
           className="text-[11px] px-2 py-1 rounded bg-daw-control hover:bg-daw-border text-[#aaa] transition-colors"
           title="打开插件原生界面"
-        >🎛 GUI</button>
+        >插件界面</button>
       )}
       <button
         type="button"

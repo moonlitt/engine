@@ -1,3 +1,229 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ---------------------------------------------------------------------
+   moonlitt — studio-hardware chrome.
+   Warm near-black panels, one steel-blue accent, phosphor LCD readout.
+   Numbers are always tabular; nothing bounces — this is an instrument.
+--------------------------------------------------------------------- */
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-daw-bg text-[#e6e2dc] font-ui antialiased;
+  /* Faint vertical falloff + grain so large panels never read as flat
+     digital gray. */
+  background-image: radial-gradient(
+      1200px 500px at 50% -10%,
+      rgba(255, 255, 255, 0.025),
+      transparent 70%
+    ),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='linear' slope='0.018'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  user-select: none;
+  -webkit-user-select: none;
+  overflow: hidden;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #34322f;
+  border-radius: 5px;
+  border: 2px solid #191817;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #46443f;
+}
+
+/* --- The LCD ---------------------------------------------------------- */
+
+.lcd {
+  @apply bg-lcd-bg rounded-md shadow-lcd border border-black/60;
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.04),
+    transparent 30%,
+    rgba(0, 0, 0, 0.15)
+  );
+}
+
+.lcd-digits {
+  @apply font-lcd text-lcd-text;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 6px rgba(221, 230, 194, 0.28);
+  letter-spacing: 0.04em;
+}
+
+.lcd-label {
+  @apply font-ui text-lcd-dim;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* --- Transport buttons ------------------------------------------------ */
+
+.t-btn {
+  @apply h-9 min-w-[2.5rem] px-2.5 rounded-[5px] grid place-items-center
+    bg-daw-control border border-daw-border text-[#b9b4aa]
+    shadow-raised transition-colors duration-75;
+}
+.t-btn:hover {
+  @apply text-[#e6e2dc] border-[#4a4744];
+}
+.t-btn:active {
+  transform: translateY(0.5px);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+.t-btn[data-active='true'] {
+  @apply text-daw-accent-hi border-daw-accent/60;
+  background: linear-gradient(180deg, #2e3742, #28303a);
+  box-shadow:
+    inset 0 1px 4px rgba(0, 0, 0, 0.5),
+    0 0 10px rgba(90, 154, 212, 0.18);
+}
+.t-btn[data-active='true'][data-flavor='play'] {
+  @apply text-meter-green border-meter-green/50;
+  background: linear-gradient(180deg, #2a3a2d, #243227);
+  box-shadow:
+    inset 0 1px 4px rgba(0, 0, 0, 0.5),
+    0 0 12px rgba(70, 192, 103, 0.2);
+}
+
+/* --- Faders & knobs (custom range skins) ------------------------------ */
+
+input[type='range'].fader {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 22px;
+  background: transparent;
+  cursor: pointer;
+}
+input[type='range'].fader::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #131211, #1c1b19);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.7),
+    0 1px 0 rgba(255, 255, 255, 0.04);
+}
+input[type='range'].fader::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 22px;
+  margin-top: -9px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #57544e 0%, #3d3b37 45%, #34322e 55%, #2a2926 100%);
+  border: 1px solid #1a1918;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  position: relative;
+}
+input[type='range'].fader:hover::-webkit-slider-thumb {
+  background: linear-gradient(180deg, #63605a 0%, #45433e 45%, #3a3833 55%, #2e2d29 100%);
+}
+
+/* --- Meters ------------------------------------------------------------ */
+
+.meter-track {
+  @apply bg-black/50 rounded-[2px] overflow-hidden;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+.meter-fill {
+  background: linear-gradient(
+    to top,
+    #2f9e57 0%,
+    #46c067 55%,
+    #b3d34a 72%,
+    #e3b341 84%,
+    #e5534b 96%
+  );
+  transition: height 70ms linear;
+}
+.meter-fill-h {
+  background: linear-gradient(
+    to right,
+    #2f9e57 0%,
+    #46c067 55%,
+    #b3d34a 72%,
+    #e3b341 84%,
+    #e5534b 96%
+  );
+  transition: width 70ms linear;
+}
+
+/* --- Ruler / playhead --------------------------------------------------- */
+
+.ruler {
+  cursor: ew-resize;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 50%),
+    theme('colors.daw-surface');
+}
+.playhead {
+  width: 1px;
+  background: theme('colors.daw-accent-hi');
+  box-shadow: 0 0 6px rgba(121, 179, 230, 0.7);
+}
+.playhead::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -4.5px;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid theme('colors.daw-accent-hi');
+}
+
+/* --- Strip rows --------------------------------------------------------- */
+
+.strip {
+  @apply bg-daw-panel border border-daw-line rounded-md shadow-strip;
+}
+.strip:hover {
+  border-color: #45423e;
+}
+
+/* Entrance: one quiet staggered settle when the rack mounts. */
+@keyframes strip-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.strip-in {
+  animation: strip-in 220ms ease-out backwards;
+}
+
+/* Tiny pulsing dot for "needs patch" guidance. */
+@keyframes soft-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.pulse-dot {
+  animation: soft-pulse 1.4s ease-in-out infinite;
+}

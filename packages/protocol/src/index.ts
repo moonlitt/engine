@@ -34,6 +34,7 @@ export type Command =
   | { type: 'insert.remove'; channel: number; insertId: number }
   | { type: 'insert.set_bypass'; channel: number; insertId: number; bypassed: boolean }
   | { type: 'insert.set_param'; channel: number; insertId: number; paramId: number; value: number }
+  | { type: 'transport.seek'; ticks: number }
   | { type: 'send_bus.add'; effectType: string }
   | { type: 'send_bus.set_param'; busId: number; paramId: number; value: number }
   | { type: 'channel.set_send_level'; channel: number; busId: number; level: number };
@@ -47,8 +48,8 @@ export type ServerEvent =
   | { type: 'transport.metronome_changed'; enabled: boolean }
   | { type: 'master.updated'; volumeDb: number }
   | { type: 'midi.loaded'; midi: MidiState }
-  | { type: 'default.instrument_changed'; instrumentPath: string | null }
-  | { type: 'channel.override_added'; override: ChannelOverrideState }
+  | { type: 'default.instrument_changed'; instrumentPath: string | null; needsPatch?: boolean }
+  | { type: 'channel.override_added'; override: ChannelOverrideState; needsPatch?: boolean }
   | { type: 'channel.override_removed'; channel: number }
   | { type: 'channel.updated'; channel: number; volume?: number; pan?: number; muted?: boolean; solo?: boolean; color?: string | null; userProgram?: number | null }
   | { type: 'insert.added'; channel: number; insert: InsertState }
@@ -101,6 +102,10 @@ export interface MidiState {
   tempoBpm: number | null;
   timeSignature: [number, number] | null;
   lengthBars: number;
+  /** Clip length in MIDI ticks — the progress-bar denominator. */
+  totalTicks: number;
+  /** MIDI resolution in ticks per quarter note. */
+  ticksPerBeat: number;
   channels: MidiChannelInfo[];
 }
 

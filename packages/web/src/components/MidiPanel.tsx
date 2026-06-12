@@ -81,7 +81,7 @@ export function MidiPanel({ midi }: MidiPanelProps) {
               : 'border-daw-border hover:border-daw-accent/60 hover:bg-daw-control/30'
           }`}
         >
-          <div className="text-4xl mb-3">📁</div>
+          <MidiDinIcon className={`mx-auto mb-4 transition-colors ${dragOver ? 'text-daw-accent' : 'text-[#5a564e]'}`} />
           <div className="text-base text-[#e0e0e0] mb-1">
             {busy
               ? '加载中…'
@@ -89,11 +89,11 @@ export function MidiPanel({ midi }: MidiPanelProps) {
                 ? '拖一个 .mid 文件到这里开始'
                 : '点击此区域选择 MIDI 文件'}
           </div>
-          <div className="text-xs text-[#888]">
+          <div className="text-xs text-[#8a857b]">
             {busy ? '' : supportsDrop ? '或者点击此区域选择文件' : ''}
           </div>
-          <div className="text-[10px] text-[#555] mt-3">
-            通道会从文件解析出来，每个通道一行
+          <div className="lcd-label !text-[9px] text-[#5a564e] mt-4">
+            通道会从文件解析出来 · 每个通道一行
           </div>
         </div>
         {supportsDrop && (
@@ -123,10 +123,12 @@ export function MidiPanel({ midi }: MidiPanelProps) {
             : 'border-daw-border hover:border-daw-accent/60 hover:bg-daw-control/30'
         }`}
       >
-        <span>📁</span>
+        <span className="lcd-label !text-[9px] text-[#7c776c] border border-daw-line rounded px-1.5 py-0.5">
+          MIDI
+        </span>
         <div className="flex-1 min-w-0">
           <span className="text-[#e0e0e0] font-medium">{midi.name}</span>
-          <span className="text-[#666] ml-3">
+          <span className="text-[#6b675f] ml-3 font-lcd text-[10px] tabular-nums">
             {midi.channels.length} 通道 · {bpm} BPM · {ts} · {Math.round(midi.lengthBars)} 小节
           </span>
         </div>
@@ -145,5 +147,33 @@ export function MidiPanel({ midi }: MidiPanelProps) {
       )}
       {error !== null && <div className="mt-1 text-[11px] text-red-400">{error}</div>}
     </div>
+  );
+}
+
+/** MIDI DIN-5 connector glyph — pins fanned in the classic 180° arc. */
+function MidiDinIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      width="44"
+      height="44"
+      viewBox="0 0 44 44"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      className={className}
+      aria-hidden
+    >
+      <circle cx="22" cy="22" r="18" />
+      <rect x="19.5" y="4.5" width="5" height="3.5" rx="1" fill="currentColor" stroke="none" />
+      {[
+        [22, 31],
+        [14.5, 28],
+        [29.5, 28],
+        [11, 20.5],
+        [33, 20.5],
+      ].map(([x, y]) => (
+        <circle key={`${x}-${y}`} cx={x} cy={y} r="1.9" fill="currentColor" stroke="none" />
+      ))}
+    </svg>
   );
 }

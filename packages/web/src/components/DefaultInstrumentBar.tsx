@@ -28,10 +28,8 @@ export function DefaultInstrumentBar({ instrumentPath, patchName }: DefaultInstr
   })();
 
   return (
-    <section className="bg-daw-panel border border-daw-border rounded-lg p-4">
-      <div className="text-[11px] uppercase tracking-widest text-[#888] font-semibold mb-2">
-        默认音色
-      </div>
+    <section className="strip p-4">
+      <div className="lcd-label text-[#7c776c] mb-2.5">默认音色</div>
       <div className="flex items-center gap-3 flex-wrap">
         <button
           type="button"
@@ -43,16 +41,22 @@ export function DefaultInstrumentBar({ instrumentPath, patchName }: DefaultInstr
           }`}
         >
           {name ? (
-            <span className="flex flex-col leading-tight">
-              <span>🎹 {name}</span>
-              {patchName && (
-                <span className="text-[10px] text-[#888] font-normal mt-0.5">
-                  {patchName}
-                </span>
-              )}
+            <span className="flex items-center gap-2.5">
+              <KeysIcon className="shrink-0 text-[#9a948a]" />
+              <span className="flex flex-col leading-tight">
+                <span>{name}</span>
+                {patchName && (
+                  <span className="text-[10px] text-[#8a857b] font-normal mt-0.5">
+                    {patchName}
+                  </span>
+                )}
+              </span>
             </span>
           ) : (
-            <>🎹 选择默认音色…</>
+            <span className="flex items-center gap-2.5">
+              <KeysIcon className="shrink-0" />
+              选择默认音色…
+            </span>
           )}
         </button>
         <div className="flex-1 min-w-[200px] text-[11px] text-[#888]">
@@ -77,7 +81,7 @@ export function DefaultInstrumentBar({ instrumentPath, patchName }: DefaultInstr
             className="text-[11px] px-2.5 py-1 rounded bg-daw-control hover:bg-daw-border text-[#aaa] transition-colors"
             title="打开插件原生界面"
           >
-            🎛 GUI
+            插件界面
           </button>
         )}
         {isVst3 && guiSupported && guiLabel !== null && (
@@ -96,7 +100,7 @@ export function DefaultInstrumentBar({ instrumentPath, patchName }: DefaultInstr
             className="text-[11px] px-2.5 py-1 rounded bg-daw-control hover:bg-daw-border text-[#aaa] transition-colors"
             title="导出单个 plug-in 状态到独立文件（一般用 ⌘S 保存整个项目即可）"
           >
-            💾 导出状态
+            导出状态
           </button>
         )}
         {name && (
@@ -116,5 +120,25 @@ export function DefaultInstrumentBar({ instrumentPath, patchName }: DefaultInstr
         <div className="mt-2 text-[11px] text-emerald-400">{saveStatus}</div>
       )}
     </section>
+  );
+}
+
+/** Three-key piano glyph. */
+function KeysIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      width="15"
+      height="14"
+      viewBox="0 0 15 14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.2"
+      className={className}
+      aria-hidden
+    >
+      <rect x="0.6" y="0.6" width="13.8" height="12.8" rx="1.5" />
+      <path d="M5.2 0.6 V8.5 M9.8 0.6 V8.5" />
+      <path d="M3.5 0.6 V5.5 M7.5 0.6 V5.5 M11.5 0.6 V5.5" strokeWidth="2" />
+    </svg>
   );
 }

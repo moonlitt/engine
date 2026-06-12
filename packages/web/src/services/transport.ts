@@ -93,9 +93,22 @@ export function dispatchEvent(event: ServerEvent): void {
       break;
     case 'default.instrument_changed':
       project.setDefaultInstrument(event.instrumentPath);
+      if (event.needsPatch && event.instrumentPath) {
+        project.setPatchPending({ target: 'default', path: event.instrumentPath });
+        void import('./pluginGui').then((g) => g.openPluginGui({ kind: 'default' }));
+      }
       break;
     case 'channel.override_added':
       project.upsertOverride(event.override);
+      if (event.needsPatch) {
+        project.setPatchPending({
+          target: event.override.channel,
+          path: event.override.instrumentPath,
+        });
+        void import('./pluginGui').then((g) =>
+          g.openPluginGui({ kind: 'override', channel: event.override.channel }),
+        );
+      }
       break;
     case 'channel.override_removed':
       project.removeOverride(event.channel);
@@ -288,6 +301,9 @@ function createTauriTransport(): Transport {
       case 'transport.pause':
         await invoke('cmd_transport_pause');
         return;
+      case 'transport.seek':
+        await invoke('cmd_transport_seek', { ticks: cmd.ticks });
+        return;
       case 'transport.stop':
         await invoke('cmd_transport_stop');
         return;
@@ -430,11 +446,19 @@ function createTauriTransport(): Transport {
       const onMidi = await e.listen('midi:loaded', (m: Wrap<{ midi: import('@moonlitt/protocol').MidiState }>) => {
         dispatchEvent({ type: 'midi.loaded', midi: m.payload.midi });
       });
-      const onDefault = await e.listen('default:instrument_changed', (m: Wrap<{ instrumentPath: string | null }>) => {
-        dispatchEvent({ type: 'default.instrument_changed', instrumentPath: m.payload.instrumentPath });
+      const onDefault = await e.listen('default:instrument_changed', (m: Wrap<{ instrumentPath: string | null; needsPatch?: boolean }>) => {
+        dispatchEvent({
+          type: 'default.instrument_changed',
+          instrumentPath: m.payload.instrumentPath,
+          needsPatch: m.payload.needsPatch,
+        });
       });
-      const onAdd = await e.listen('channel:override_added', (m: Wrap<{ override: import('@moonlitt/protocol').ChannelOverrideState }>) => {
-        dispatchEvent({ type: 'channel.override_added', override: m.payload.override });
+      const onAdd = await e.listen('channel:override_added', (m: Wrap<{ override: import('@moonlitt/protocol').ChannelOverrideState; needsPatch?: boolean }>) => {
+        dispatchEvent({
+          type: 'channel.override_added',
+          override: m.payload.override,
+          needsPatch: m.payload.needsPatch,
+        });
       });
       const onRm = await e.listen('channel:override_removed', (m: Wrap<{ channel: number }>) => {
         dispatchEvent({ type: 'channel.override_removed', channel: m.payload.channel });
@@ -484,6 +508,8 @@ function createTauriTransport(): Transport {
       // doesn't kick the React tree at 60 Hz.
       const onMeter = await e.listen<MeterSnapshot>('meter', (m) => {
         useMetersStore.getState().apply(m.payload);
+        const t = useTransportStore.getState();
+        if (t.playing !== m.payload.playing) t.setPlaying(m.payload.playing);
       });
       // When a plug-in GUI window closes, the backend captures its
       // state into the stash and emits this event. Re-pull the snapshot
@@ -491,7 +517,10 @@ function createTauriTransport(): Transport {
       // shows up in the UI without polling.
       const onPluginStateCaptured = await e.listen<{ path: string; patchName: string | null }>(
         'plugin_state_captured',
-        async () => {
+        async (m) => {
+          // First capture for a pending streamer = the user picked a
+          // patch — the "no sound yet" guidance is done.
+          useProjectStore.getState().clearPatchPendingFor(m.payload.path);
           try {
             const snap = await invoke<import('@moonlitt/protocol').ProjectState>('cmd_snapshot');
             dispatchEvent({ type: 'state.init', project: snap });

@@ -94,7 +94,7 @@ export function ProjectMenu({ currentPath, dirty }: { currentPath: string | null
         className="px-3 py-1.5 rounded bg-daw-control hover:bg-daw-border text-[#e0e0e0] text-xs flex items-center gap-1.5"
         title="项目菜单"
       >
-        <span>📁</span>
+        <MoonIcon className="text-daw-accent shrink-0" />
         <span className="font-medium truncate max-w-[160px]">
           {label}
           {dirty && <span className="text-daw-accent ml-1">●</span>}
@@ -212,4 +212,13 @@ function parentDir(p: string): string {
   const parts = p.split('/');
   parts.pop();
   return parts.slice(-2).join('/');
+}
+
+/** moonlitt crescent — the app mark, lives on the project chip. */
+function MoonIcon({ className }: { className?: string }) {
+  return (
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor" className={className} aria-hidden>
+      <path d="M10.8 8.6 A5.1 5.1 0 1 1 4.4 2.2 A4.1 4.1 0 0 0 10.8 8.6 Z" />
+    </svg>
+  );
 }

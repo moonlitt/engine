@@ -38,9 +38,23 @@ interface ProjectStore {
   addSendBus(bus: SendBusView): void;
   setChannelSendLevel(channel: number, busId: number, level: number): void;
   setSendBusParam(busId: number, paramId: number, value: number): void;
+
+  /** A sample streamer was assigned with no patch yet — UI shows the
+   *  "pick a sound in the plug-in window" guidance until the first
+   *  state capture arrives for that path. */
+  patchPending: { target: 'default' | number; path: string } | null;
+  setPatchPending(p: { target: 'default' | number; path: string } | null): void;
+  clearPatchPendingFor(path: string): void;
 }
 
 export const useProjectStore = create<ProjectStore>((set) => ({
+  patchPending: null,
+  setPatchPending(p) {
+    set({ patchPending: p });
+  },
+  clearPatchPendingFor(path) {
+    set((s) => (s.patchPending?.path === path ? { patchPending: null } : {}));
+  },
   defaultInstrumentPath: null,
   defaultPatchName: null,
   masterVolumeDb: 0,

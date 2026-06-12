@@ -17,12 +17,18 @@ export interface StereoMeter {
 export interface MeterSnapshot {
   master: [number, number];
   tracks: Array<{ channel: number; l: number; r: number }>;
+  /** Sequencer playhead in fractional MIDI ticks (audio-thread truth). */
+  playheadTicks: number;
+  playing: boolean;
 }
 
 interface MetersStore {
   master: StereoMeter;
   /** MIDI channel (0..15) → stereo peak for the corresponding override track. */
   tracks: Record<number, StereoMeter>;
+  /** Live playhead, updated at meter rate. Subscribe imperatively for
+   *  smooth drawing (same rule as the meters themselves). */
+  playheadTicks: number;
   apply(snapshot: MeterSnapshot): void;
 }
 
@@ -31,6 +37,7 @@ const EMPTY: StereoMeter = { l: 0, r: 0 };
 export const useMetersStore = create<MetersStore>((set) => ({
   master: EMPTY,
   tracks: {},
+  playheadTicks: 0,
   apply(snap) {
     const tracks: Record<number, StereoMeter> = {};
     for (const t of snap.tracks) {
@@ -39,6 +46,7 @@ export const useMetersStore = create<MetersStore>((set) => ({
     set({
       master: { l: snap.master[0], r: snap.master[1] },
       tracks,
+      playheadTicks: snap.playheadTicks,
     });
   },
 }));

@@ -26,8 +26,8 @@ export function SendBusRack() {
 
   if (buses.length === 0 && !adding) {
     return (
-      <div className="flex items-center gap-3 px-4 py-2 rounded border border-dashed border-daw-border bg-daw-surface/40 text-[11px] text-[#888]">
-        <span className="uppercase tracking-widest text-[#666]">送出母线</span>
+      <div className="flex items-center gap-3 px-4 py-2 rounded border border-dashed border-daw-border bg-daw-surface/40 text-[11px] text-[#8a857b]">
+        <span className="lcd-label text-[#7c776c]">送出母线</span>
         <span className="flex-1">尚未添加母线 — 添加一条混响或延迟，所有通道都可以送音过去</span>
         <button
           type="button"
@@ -41,10 +41,10 @@ export function SendBusRack() {
   }
 
   return (
-    <section className="bg-daw-panel border border-daw-border rounded-lg p-3">
+    <section className="strip p-3">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-[11px] uppercase tracking-widest text-[#888] font-semibold">
-          送出母线（{buses.length}）
+        <span className="lcd-label text-[#7c776c]">
+          送出母线 · {buses.length}
         </span>
         {!adding && (
           <button
