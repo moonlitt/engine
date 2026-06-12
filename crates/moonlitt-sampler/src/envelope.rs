@@ -68,8 +68,6 @@ pub struct Envelope {
     rate: f32,
     /// Sustain level.
     sustain: f32,
-    /// Release rate (pre-computed).
-    release_rate: f32,
     /// Sample rate.
     sample_rate: u32,
     /// Stored params for release calculation.
@@ -84,7 +82,6 @@ impl Envelope {
             samples_remaining: 0,
             rate: 0.0,
             sustain: params.sustain.clamp(0.0, 1.0),
-            release_rate: 0.0,
             sample_rate,
             params,
         }

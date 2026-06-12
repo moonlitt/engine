@@ -279,7 +279,7 @@ pub(crate) fn drain_output_events(out: &ComWrapper<OutputEventListImpl>) -> Vec<
 fn vst3_event_to_midi(e: &Event) -> Option<MidiEvent> {
     let sample_offset = e.sampleOffset;
     match e.r#type as u32 {
-        t if t == Event_::EventTypes_::kNoteOnEvent as u32 => {
+        t if t == Event_::EventTypes_::kNoteOnEvent => {
             let n = unsafe { e.__field0.noteOn };
             Some(MidiEvent {
                 kind: MidiEventKind::NoteOn {
@@ -290,7 +290,7 @@ fn vst3_event_to_midi(e: &Event) -> Option<MidiEvent> {
                 sample_offset,
             })
         }
-        t if t == Event_::EventTypes_::kNoteOffEvent as u32 => {
+        t if t == Event_::EventTypes_::kNoteOffEvent => {
             let n = unsafe { e.__field0.noteOff };
             Some(MidiEvent {
                 kind: MidiEventKind::NoteOff {
@@ -300,7 +300,7 @@ fn vst3_event_to_midi(e: &Event) -> Option<MidiEvent> {
                 sample_offset,
             })
         }
-        t if t == Event_::EventTypes_::kLegacyMIDICCOutEvent as u32 => {
+        t if t == Event_::EventTypes_::kLegacyMIDICCOutEvent => {
             let m = unsafe { e.__field0.midiCCOut };
             match m.controlNumber {
                 129 => Some(MidiEvent {
@@ -310,7 +310,7 @@ fn vst3_event_to_midi(e: &Event) -> Option<MidiEvent> {
                         value: {
                             let lsb = (m.value as u8 & 0x7F) as i32;
                             let msb = (m.value2 as u8 & 0x7F) as i32;
-                            ((msb << 7) | lsb) as i32 - 8192
+                            ((msb << 7) | lsb) - 8192
                         } as i16,
                     },
                     sample_offset,

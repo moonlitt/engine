@@ -68,7 +68,7 @@ impl PluginScanCache {
     /// rename) so a crashed write doesn't corrupt the file.
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
         let bytes = serde_json::to_vec_pretty(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
         let tmp = path.with_extension("json.tmp");
         if let Some(parent) = path.parent() {
             let _ = fs::create_dir_all(parent);

@@ -5,7 +5,6 @@
 
 use crate::sample::SamplePool;
 use crate::voice::Voice;
-use moonlitt_resampler::Quality;
 
 /// A slot in the voice pool.
 struct VoiceSlot {
@@ -25,7 +24,6 @@ pub struct VoicePool {
     slots: Vec<VoiceSlot>,
     /// Global age counter — incremented on each note-on.
     age_counter: u64,
-    sample_rate: u32,
 }
 
 impl VoicePool {
@@ -44,7 +42,6 @@ impl VoicePool {
         Self {
             slots,
             age_counter: 0,
-            sample_rate,
         }
     }
 

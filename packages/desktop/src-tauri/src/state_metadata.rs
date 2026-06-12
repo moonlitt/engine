@@ -33,9 +33,7 @@ pub fn extract_patch_name(state: &[u8]) -> Option<String> {
 fn extract_spectrasonics(state: &[u8]) -> Option<String> {
     // Cheap pre-check: bail if the blob doesn't look like Spectrasonics
     // XML at all. Avoids scanning megabytes for nothing on every load.
-    if !find_subslice(state, b"SynthMaster").is_some() {
-        return None;
-    }
+    find_subslice(state, b"SynthMaster")?;
 
     // Prefer ENTRYDESCR name (current/user-chosen) over origPatchName
     // (the patch's original library name). They usually match; when

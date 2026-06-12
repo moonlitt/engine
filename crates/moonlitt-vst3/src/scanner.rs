@@ -99,7 +99,7 @@ pub fn scan_default_paths_cached(cache: &mut PluginScanCache) -> Result<Vec<Plug
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if !path.extension().is_some_and(|e| e == "vst3") {
+            if path.extension().is_none_or(|e| e != "vst3") {
                 continue;
             }
             live_paths.insert(path.clone());

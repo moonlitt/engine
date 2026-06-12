@@ -46,8 +46,6 @@ impl LevelMeter {
     fn update(&self, left: &[f32], right: &[f32]) {
         let mut peak_l: f32 = 0.0;
         let mut peak_r: f32 = 0.0;
-        let mut tp_l: f32 = 0.0;
-        let mut tp_r: f32 = 0.0;
         let mut sum_sq_l: f32 = 0.0;
         let mut sum_sq_r: f32 = 0.0;
 
@@ -61,8 +59,8 @@ impl LevelMeter {
         }
 
         // True peak: 4x oversampled via linear interpolation between adjacent samples
-        tp_l = peak_l;
-        tp_r = peak_r;
+        let mut tp_l = peak_l;
+        let mut tp_r = peak_r;
         if left.len() >= 2 {
             for i in 0..left.len() - 1 {
                 // 3 interpolated points between sample[i] and sample[i+1]

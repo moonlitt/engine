@@ -1,6 +1,6 @@
 //! SF2 sample pool — loads and indexes all samples from an SF2 file.
 
-use soundfont::raw::{GeneratorAmount, GeneratorType, SampleHeader};
+use soundfont::raw::GeneratorType;
 use soundfont::SoundFont2;
 use std::sync::Arc;
 
@@ -163,7 +163,7 @@ impl SamplePool {
                     let mut result = sample.clone();
                     // Check for overriding root key
                     if let Some(key) = find_gen_i16(&izone.gen_list, GeneratorType::OverridingRootKey) {
-                        if key >= 0 && key <= 127 {
+                        if (0..=127).contains(&key) {
                             result.root_key = key as u8;
                         }
                     }

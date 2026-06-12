@@ -42,6 +42,10 @@ pub(crate) struct OutputBus<'a> {
 /// extra entries beyond what the plugin exposes are ignored, missing
 /// entries are not surfaced (the plugin will write only as many buses
 /// as we declare in `numOutputs`).
+// The argument list mirrors the VST3 `ProcessData` layout one field at a
+// time; collapsing it into a wrapper struct would just duplicate that
+// FFI shape under a second name.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn process_audio(
     processor: &ComPtr<IAudioProcessor>,
     component: &ComPtr<IComponent>,
@@ -95,8 +99,8 @@ pub(crate) fn process_audio(
     }
 
     let mut output_buses: Vec<AudioBusBuffers> = Vec::with_capacity(actual_out);
-    for i in 0..actual_out {
-        let ptrs = &mut bus_ptrs[i] as *mut [*mut f32; 2] as *mut *mut f32;
+    for bus_ptr in &mut bus_ptrs {
+        let ptrs = bus_ptr as *mut [*mut f32; 2] as *mut *mut f32;
         output_buses.push(AudioBusBuffers {
             numChannels: 2,
             silenceFlags: 0,
@@ -229,11 +233,11 @@ fn peak_pair(l: &[f32], r: &[f32]) -> f32 {
 /// Build a VST3 ProcessContext from our minimal TransportContext, with the
 /// state flags advertising which fields the plugin can trust.
 fn build_process_context(transport: &TransportContext, sample_rate: f64) -> ProcessContext {
-    let mut state: u32 = StatesAndFlags_::kTempoValid as u32
-        | StatesAndFlags_::kTimeSigValid as u32
-        | StatesAndFlags_::kProjectTimeMusicValid as u32;
+    let mut state: u32 = StatesAndFlags_::kTempoValid
+        | StatesAndFlags_::kTimeSigValid
+        | StatesAndFlags_::kProjectTimeMusicValid;
     if transport.playing {
-        state |= StatesAndFlags_::kPlaying as u32;
+        state |= StatesAndFlags_::kPlaying;
     }
 
     // Convert sample-position → quarter-note position. 60s × bpm / 60 quarters

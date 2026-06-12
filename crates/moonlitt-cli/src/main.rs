@@ -379,10 +379,12 @@ struct MidiNote {
     note: u8,
     velocity: u8,
     duration_sec: f64,
-    program: u8,
 }
 
-fn parse_midi_file(path: &str) -> Result<(Vec<MidiNote>, Vec<(f64, u8, u8)>), String> {
+/// `(time_sec, channel, program)` for each program-change event.
+type ProgramChange = (f64, u8, u8);
+
+fn parse_midi_file(path: &str) -> Result<(Vec<MidiNote>, Vec<ProgramChange>), String> {
     let data = std::fs::read(path).map_err(|e| e.to_string())?;
     let smf = midly::Smf::parse(&data).map_err(|e| e.to_string())?;
 
@@ -419,8 +421,7 @@ fn parse_midi_file(path: &str) -> Result<(Vec<MidiNote>, Vec<(f64, u8, u8)>), St
     };
 
     let mut notes = Vec::new();
-    let mut program_changes: Vec<(f64, u8, u8)> = Vec::new(); // (time, ch, program)
-    let mut programs = std::collections::HashMap::new();
+    let mut program_changes: Vec<ProgramChange> = Vec::new();
 
     for track in &smf.tracks {
         let mut abs = 0u64;
@@ -428,46 +429,39 @@ fn parse_midi_file(path: &str) -> Result<(Vec<MidiNote>, Vec<(f64, u8, u8)>), St
 
         for ev in track {
             abs += ev.delta.as_int() as u64;
-            match ev.kind {
-                midly::TrackEventKind::Midi { channel, message } => {
-                    let ch = channel.as_int();
-                    match message {
-                        midly::MidiMessage::ProgramChange { program } => {
-                            let p = program.as_int();
-                            programs.insert(ch, p);
-                            program_changes.push((tick_to_sec(abs), ch, p));
-                        }
-                        midly::MidiMessage::NoteOn { key, vel } => {
-                            let v = vel.as_int();
-                            if v == 0 {
-                                if let Some((start, vel)) = active.remove(&(ch, key.as_int())) {
-                                    let s = tick_to_sec(start);
-                                    let e = tick_to_sec(abs);
-                                    notes.push(MidiNote {
-                                        time_sec: s, channel: ch, note: key.as_int(),
-                                        velocity: vel, duration_sec: e - s,
-                                        program: *programs.get(&ch).unwrap_or(&0),
-                                    });
-                                }
-                            } else {
-                                active.insert((ch, key.as_int()), (abs, v));
-                            }
-                        }
-                        midly::MidiMessage::NoteOff { key, .. } => {
+            if let midly::TrackEventKind::Midi { channel, message } = ev.kind {
+                let ch = channel.as_int();
+                match message {
+                    midly::MidiMessage::ProgramChange { program } => {
+                        program_changes.push((tick_to_sec(abs), ch, program.as_int()));
+                    }
+                    midly::MidiMessage::NoteOn { key, vel } => {
+                        let v = vel.as_int();
+                        if v == 0 {
                             if let Some((start, vel)) = active.remove(&(ch, key.as_int())) {
                                 let s = tick_to_sec(start);
                                 let e = tick_to_sec(abs);
                                 notes.push(MidiNote {
                                     time_sec: s, channel: ch, note: key.as_int(),
                                     velocity: vel, duration_sec: e - s,
-                                    program: *programs.get(&ch).unwrap_or(&0),
                                 });
                             }
+                        } else {
+                            active.insert((ch, key.as_int()), (abs, v));
                         }
-                        _ => {}
                     }
+                    midly::MidiMessage::NoteOff { key, .. } => {
+                        if let Some((start, vel)) = active.remove(&(ch, key.as_int())) {
+                            let s = tick_to_sec(start);
+                            let e = tick_to_sec(abs);
+                            notes.push(MidiNote {
+                                time_sec: s, channel: ch, note: key.as_int(),
+                                velocity: vel, duration_sec: e - s,
+                            });
+                        }
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
         }
     }
