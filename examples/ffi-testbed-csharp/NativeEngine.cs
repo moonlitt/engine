@@ -207,7 +207,7 @@ internal static class NativeEngine
     public static extern IntPtr moonlitt_runtime_create_multitrack_sf2(
         [MarshalAs(UnmanagedType.LPUTF8Str)] string sf2Path, int sampleRate, int bufferSize);
 
-    // --- Built-in effect factories ---
+    // --- Built-in effect factories (all 19) ---
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr moonlitt_builtin_create_eq(int sampleRate, int bufferSize);
 
@@ -216,6 +216,69 @@ internal static class NativeEngine
 
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr moonlitt_builtin_create_reverb(int sampleRate, int bufferSize);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr moonlitt_builtin_create_limiter(int sampleRate, int bufferSize);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr moonlitt_builtin_create_gate(int sampleRate, int bufferSize);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr moonlitt_builtin_create_deesser(int sampleRate, int bufferSize);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr moonlitt_builtin_create_stereo_delay(int sampleRate, int bufferSize);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr moonlitt_builtin_create_chorus(int sampleRate, int bufferSize);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr moonlitt_builtin_create_flanger(int sampleRate, int bufferSize);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr moonlitt_builtin_create_phaser(int sampleRate, int bufferSize);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr moonlitt_builtin_create_tremolo(int sampleRate, int bufferSize);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr moonlitt_builtin_create_gain(int sampleRate, int bufferSize);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr moonlitt_builtin_create_stereo_width(int sampleRate, int bufferSize);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr moonlitt_builtin_create_saturator(int sampleRate, int bufferSize);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr moonlitt_builtin_create_bitcrusher(int sampleRate, int bufferSize);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr moonlitt_builtin_create_multiband_compressor(int sampleRate, int bufferSize);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr moonlitt_builtin_create_auto_filter(int sampleRate, int bufferSize);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr moonlitt_builtin_create_pitch_shifter(int sampleRate, int bufferSize);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr moonlitt_builtin_create_convolver(
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string irPath, int sampleRate, int bufferSize);
+
+    // --- Engine offline surface ---
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int moonlitt_engine_render(IntPtr e, [In, Out] float[] left, [In, Out] float[] right, int frames);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int moonlitt_engine_load_preset(IntPtr e, int id);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern float moonlitt_engine_measure_rms(IntPtr e, int program, int note, int velocity, int durationMs);
+
+    // Owned string — free via helper.
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr moonlitt_engine_scan_plugins(IntPtr e);
 
     // --- Runtime mixer controls (renamed family: prefix == handle type) ---
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]

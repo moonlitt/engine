@@ -82,6 +82,9 @@ int RunSmokeTests(string? sf2Path)
 
         Console.WriteLine("\n=== Phase D: dynamic runtime mixer ops ===");
         PhaseD_DynamicMixer(t, sf2Path);
+
+        Console.WriteLine("\n=== Phase F: full-surface sweep (every remaining ABI symbol) ===");
+        PhaseF_FullSurfaceSweep(t, sf2Path);
     }
     else
     {
@@ -481,6 +484,63 @@ void PhaseD_DynamicMixer(TestRunner t, string sf2Path)
     NativeEngine.moonlitt_engine_destroy(reverbEngine);
     NativeEngine.moonlitt_engine_destroy(eqEngine);
     t.Check("Phase D teardown clean", true);
+}
+
+// ---------------------------------------------------------------------------
+// Phase F — full-surface sweep: every ABI symbol gets at least one check
+// (the DoD rule). Covers the 16 builtin factories the earlier phases
+// didn't touch plus the engine offline surface.
+// ---------------------------------------------------------------------------
+void PhaseF_FullSurfaceSweep(TestRunner t, string sf2Path)
+{
+    var factories = new (string name, Func<IntPtr> create)[]
+    {
+        ("limiter", () => NativeEngine.moonlitt_builtin_create_limiter(SAMPLE_RATE, BUFFER_SIZE)),
+        ("gate", () => NativeEngine.moonlitt_builtin_create_gate(SAMPLE_RATE, BUFFER_SIZE)),
+        ("deesser", () => NativeEngine.moonlitt_builtin_create_deesser(SAMPLE_RATE, BUFFER_SIZE)),
+        ("stereo_delay", () => NativeEngine.moonlitt_builtin_create_stereo_delay(SAMPLE_RATE, BUFFER_SIZE)),
+        ("chorus", () => NativeEngine.moonlitt_builtin_create_chorus(SAMPLE_RATE, BUFFER_SIZE)),
+        ("flanger", () => NativeEngine.moonlitt_builtin_create_flanger(SAMPLE_RATE, BUFFER_SIZE)),
+        ("phaser", () => NativeEngine.moonlitt_builtin_create_phaser(SAMPLE_RATE, BUFFER_SIZE)),
+        ("tremolo", () => NativeEngine.moonlitt_builtin_create_tremolo(SAMPLE_RATE, BUFFER_SIZE)),
+        ("gain", () => NativeEngine.moonlitt_builtin_create_gain(SAMPLE_RATE, BUFFER_SIZE)),
+        ("stereo_width", () => NativeEngine.moonlitt_builtin_create_stereo_width(SAMPLE_RATE, BUFFER_SIZE)),
+        ("saturator", () => NativeEngine.moonlitt_builtin_create_saturator(SAMPLE_RATE, BUFFER_SIZE)),
+        ("bitcrusher", () => NativeEngine.moonlitt_builtin_create_bitcrusher(SAMPLE_RATE, BUFFER_SIZE)),
+        ("multiband_compressor", () => NativeEngine.moonlitt_builtin_create_multiband_compressor(SAMPLE_RATE, BUFFER_SIZE)),
+        ("auto_filter", () => NativeEngine.moonlitt_builtin_create_auto_filter(SAMPLE_RATE, BUFFER_SIZE)),
+        ("pitch_shifter", () => NativeEngine.moonlitt_builtin_create_pitch_shifter(SAMPLE_RATE, BUFFER_SIZE)),
+    };
+    foreach (var (name, create) in factories)
+    {
+        IntPtr h = create();
+        t.Check($"builtin_create_{name} returns non-null", h != IntPtr.Zero);
+        NativeEngine.moonlitt_engine_destroy(h);
+    }
+    t.Check("builtin_create_convolver(bad IR path) returns NULL + message",
+        NativeEngine.moonlitt_builtin_create_convolver("/no/such/ir.wav", SAMPLE_RATE, BUFFER_SIZE) == IntPtr.Zero
+        && !string.IsNullOrEmpty(NativeEngine.LastError()));
+
+    // Engine offline surface: preset / render / RMS / plugin scan.
+    IntPtr engine = NativeEngine.moonlitt_engine_create(SAMPLE_RATE, BUFFER_SIZE);
+    NativeEngine.moonlitt_engine_load(engine, sf2Path);
+
+    t.Check("engine_load_preset(0) Ok",
+        NativeEngine.moonlitt_engine_load_preset(engine, 0) == Status.Ok);
+
+    var left = new float[BUFFER_SIZE];
+    var right = new float[BUFFER_SIZE];
+    NativeEngine.moonlitt_engine_note_on(engine, 0, 60, 100);
+    t.Check("engine_render Ok (offline, float[] marshaling)",
+        NativeEngine.moonlitt_engine_render(engine, left, right, BUFFER_SIZE) == Status.Ok);
+
+    float rms = NativeEngine.moonlitt_engine_measure_rms(engine, 0, 60, 100, 200);
+    t.Check($"engine_measure_rms reports a level (got {rms:F1} dBFS)", rms > -100.0f);
+
+    string plugins = NativeEngine.ConsumeOwnedString(NativeEngine.moonlitt_engine_scan_plugins(engine));
+    t.Check("engine_scan_plugins returns a JSON array", plugins.StartsWith("[") && plugins.EndsWith("]"));
+
+    NativeEngine.moonlitt_engine_destroy(engine);
 }
 
 // ---------------------------------------------------------------------------
