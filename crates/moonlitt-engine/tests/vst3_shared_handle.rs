@@ -107,6 +107,15 @@ fn gui_side_set_state_audible_through_audio_backend() {
          proves they are the same Vst3Plugin instance"
     );
 
+    // Sample streamers fill their caches asynchronously after set_state;
+    // pump the backend's recommended warm-up first so the render below is
+    // deterministic even when the machine is busy (mirrors what
+    // session-restore does in production).
+    let warm_up_blocks = backend.recommended_warm_up_blocks();
+    if warm_up_blocks > 0 {
+        backend.warm_up(warm_up_blocks).expect("warm_up");
+    }
+
     // End-to-end: drive notes through the AudioBackend trait (this is
     // exactly what the audio thread would do) and verify the patch the
     // GUI side just installed is audible.
