@@ -448,6 +448,17 @@ pub fn cmd_send_bus_add(
     Ok(bus)
 }
 
+/// Set one parameter on a send bus's effect (e.g. reverb decay).
+#[tauri::command]
+pub fn cmd_send_bus_set_param(
+    state: State<AppState>,
+    bus_id: u32,
+    param_id: u32,
+    value: f64,
+) -> Result<(), String> {
+    state.engine.set_send_bus_param(bus_id, param_id, value)
+}
+
 #[tauri::command]
 pub fn cmd_channel_set_send_level(
     state: State<AppState>,
@@ -724,4 +735,38 @@ pub fn cmd_project_clear_recent(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn cmd_project_forget_recent(app: AppHandle, path: String) {
     crate::recent_files::forget(&app, std::path::Path::new(&path));
+}
+
+// ---------------------------------------------------------------------------
+// Offline bounce
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RenderResultView {
+    pub path: String,
+    pub duration_secs: f64,
+    pub peak: f32,
+}
+
+/// Bounce the current project (the same snapshot ⌘S would save, plus
+/// the loaded MIDI clip) to a stereo float-32 WAV at `path`. Renders on
+/// a **fresh engine instance** — live playback is never interrupted —
+/// at full CPU speed rather than wall-clock speed. Sample streamers are
+/// re-warmed automatically, so a Keyscape bounce takes a few extra
+/// seconds before audio starts flowing.
+#[tauri::command]
+pub fn cmd_render_to_wav(state: State<AppState>, path: String) -> Result<RenderResultView, String> {
+    let midi_path = state
+        .engine
+        .midi_path()
+        .ok_or("没有已载入的 MIDI —— 先载入一个再导出")?;
+    let plugin_states = collect_plugin_states();
+    let session = state.engine.capture_session(&plugin_states);
+    let stats = moonlitt_session::offline::render_to_wav(&session, &midi_path, &path, 256)?;
+    Ok(RenderResultView {
+        path,
+        duration_secs: stats.duration_secs,
+        peak: stats.peak,
+    })
 }

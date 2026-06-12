@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import type { SendBusView } from '@moonlitt/protocol';
 import { useProjectStore } from '../stores/project';
 import { useSessionStore } from '../stores/session';
+import { ParamSlider } from './ParamSlider';
 
 const BUS_EFFECT_TYPES: readonly { label: string; value: string }[] = [
   { label: 'Dattorro 混响', value: 'dattorro-reverb' },
@@ -74,20 +76,54 @@ export function SendBusRack() {
       {buses.length > 0 && (
         <div className="grid grid-cols-2 gap-2">
           {buses.map((bus) => (
-            <div
-              key={bus.id}
-              className="flex items-center gap-2 px-2.5 py-1.5 rounded bg-daw-control/40 border border-daw-border text-[11px]"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-daw-accent shrink-0" />
-              <span className="text-[10px] font-mono text-[#666]">#{bus.id}</span>
-              <span className="text-[#e0e0e0] flex-1 truncate">{bus.name}</span>
-              <span className="text-[9px] text-[#666] font-mono uppercase tracking-wider">
-                {bus.effectType}
-              </span>
-            </div>
+            <BusCard key={bus.id} bus={bus} />
           ))}
         </div>
       )}
     </section>
+  );
+}
+
+function BusCard({ bus }: { bus: SendBusView }) {
+  const send = useSessionStore((s) => s.send);
+  const setSendBusParamLocal = useProjectStore((s) => s.setSendBusParam);
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="rounded bg-daw-control/40 border border-daw-border text-[11px]">
+      <div className="flex items-center gap-2 px-2.5 py-1.5">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="w-3 text-[10px] text-[#888] hover:text-[#ccc]"
+          title={open ? '收起参数' : '展开参数'}
+        >{open ? '▾' : '▸'}</button>
+        <span className="w-1.5 h-1.5 rounded-full bg-daw-accent shrink-0" />
+        <span className="text-[10px] font-mono text-[#666]">#{bus.id}</span>
+        <span className="text-[#e0e0e0] flex-1 truncate">{bus.name}</span>
+        <span className="text-[9px] text-[#666] font-mono uppercase tracking-wider">
+          {bus.effectType}
+        </span>
+      </div>
+      {open && bus.params.length > 0 && (
+        <div className="px-2.5 pb-2.5 pt-0.5 flex flex-col gap-1.5 border-t border-daw-border">
+          {bus.params.map((p) => (
+            <ParamSlider
+              key={p.id}
+              param={p}
+              onChange={(value) => {
+                setSendBusParamLocal(bus.id, p.id, value);
+                send({ type: 'send_bus.set_param', busId: bus.id, paramId: p.id, value });
+              }}
+            />
+          ))}
+        </div>
+      )}
+      {open && bus.params.length === 0 && (
+        <div className="px-2.5 pb-2 pt-0.5 text-[10px] text-[#666] border-t border-daw-border">
+          此效果未暴露可调参数
+        </div>
+      )}
+    </div>
   );
 }

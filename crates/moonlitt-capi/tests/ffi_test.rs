@@ -298,11 +298,7 @@ fn test_runtime_create_null_engine() {
 fn test_abi_version_packed() {
     let v = moonlitt_abi_version();
     let (major, minor, patch) = (v >> 16, (v >> 8) & 0xFF, v & 0xFF);
-    assert_eq!(
-        (major, minor, patch),
-        (1, 0, 0),
-        "frozen v1 ABI is 1.0.0"
-    );
+    assert_eq!((major, minor, patch), (1, 0, 0), "frozen v1 ABI is 1.0.0");
 }
 
 #[test]

@@ -170,6 +170,12 @@ impl Sequencer {
         self.cursor = 0;
     }
 
+    /// Whether the playhead has passed the last event of the clip.
+    /// (Only meaningful when not looping — looping wraps instead.)
+    pub fn is_finished(&self) -> bool {
+        self.current_tick >= self.total_ticks as f64
+    }
+
     /// Get current tempo in microseconds per beat at the given tick.
     fn us_per_beat_at(&self, tick: f64) -> u32 {
         let tick_u64 = tick as u64;

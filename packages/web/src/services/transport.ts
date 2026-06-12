@@ -349,6 +349,13 @@ function createTauriTransport(): Transport {
       case 'send_bus.add':
         await invoke('cmd_send_bus_add', { effectType: cmd.effectType });
         return;
+      case 'send_bus.set_param':
+        await invoke('cmd_send_bus_set_param', {
+          busId: cmd.busId,
+          paramId: cmd.paramId,
+          value: cmd.value,
+        });
+        return;
       case 'channel.set_send_level':
         await invoke('cmd_channel_set_send_level', {
           channel: cmd.channel,

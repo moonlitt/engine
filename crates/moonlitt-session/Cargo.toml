@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+hound = "3"
 moonlitt-core = { path = "../moonlitt-core" }
 moonlitt-mixer = { path = "../moonlitt-mixer" }
 moonlitt-engine = { path = "../moonlitt-engine", features = ["sf2", "vst3", "clap"] }

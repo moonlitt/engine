@@ -35,6 +35,7 @@ export type Command =
   | { type: 'insert.set_bypass'; channel: number; insertId: number; bypassed: boolean }
   | { type: 'insert.set_param'; channel: number; insertId: number; paramId: number; value: number }
   | { type: 'send_bus.add'; effectType: string }
+  | { type: 'send_bus.set_param'; busId: number; paramId: number; value: number }
   | { type: 'channel.set_send_level'; channel: number; busId: number; level: number };
 
 // Server -> Client events

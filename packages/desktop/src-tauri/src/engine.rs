@@ -370,6 +370,11 @@ impl Engine {
         }
     }
 
+    /// Path of the currently loaded MIDI clip, if any.
+    pub fn midi_path(&self) -> Option<String> {
+        self.inner.lock().midi.as_ref().map(|m| m.path.clone())
+    }
+
     pub fn meter_snapshot(&self) -> MeterSnapshot {
         let s = self.inner.lock();
         let Some(rt) = s.runtime.as_ref() else {
@@ -866,6 +871,23 @@ impl Engine {
                 if let Some(p) = ins.params.iter_mut().find(|p| p.id == param_id) {
                     p.value = value;
                 }
+            }
+        }
+        Ok(())
+    }
+
+    /// Set one parameter on a send bus's effect (e.g. reverb decay).
+    pub fn set_send_bus_param(&self, bus_id: u32, param_id: u32, value: f64) -> Result<(), String> {
+        let mut s = self.inner.lock();
+        if !s.send_buses.iter().any(|b| b.id == bus_id) {
+            return Err(format!("unknown send bus {bus_id}"));
+        }
+        if let Some(rt) = s.runtime.as_mut() {
+            rt.set_send_bus_param(bus_id as u8, param_id as u16, value);
+        }
+        if let Some(b) = s.send_buses.iter_mut().find(|b| b.id == bus_id) {
+            if let Some(p) = b.params.iter_mut().find(|p| p.id == param_id) {
+                p.value = value;
             }
         }
         Ok(())

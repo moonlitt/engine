@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as projectFile from '../services/projectFile';
 import type { RecentList } from '../services/projectFile';
+import { exportWav } from '../services/exportAudio';
+
+type ExportState =
+  | { kind: 'idle' }
+  | { kind: 'rendering' }
+  | { kind: 'done'; path: string; durationSecs: number; peak: number }
+  | { kind: 'error'; message: string };
 
 /**
  * Project dropdown in the top bar. Renders as a single button labelled
@@ -16,7 +23,32 @@ import type { RecentList } from '../services/projectFile';
 export function ProjectMenu({ currentPath, dirty }: { currentPath: string | null; dirty: boolean }) {
   const [open, setOpen] = useState(false);
   const [recent, setRecent] = useState<RecentList>({ recent: [], lastOpened: null });
+  const [exporting, setExporting] = useState<ExportState>({ kind: 'idle' });
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Auto-clear the export toast a few seconds after completion.
+  useEffect(() => {
+    if (exporting.kind !== 'done' && exporting.kind !== 'error') return;
+    const t = window.setTimeout(() => setExporting({ kind: 'idle' }), 8000);
+    return () => window.clearTimeout(t);
+  }, [exporting]);
+
+  const onExportWav = async () => {
+    setOpen(false);
+    if (exporting.kind === 'rendering') return;
+    const base = currentPath ? fileName(currentPath) : 'bounce';
+    try {
+      setExporting({ kind: 'rendering' });
+      const result = await exportWav(`${base}.wav`);
+      if (!result) {
+        setExporting({ kind: 'idle' }); // dialog cancelled
+        return;
+      }
+      setExporting({ kind: 'done', ...result });
+    } catch (e) {
+      setExporting({ kind: 'error', message: String(e) });
+    }
+  };
 
   const refreshRecent = useCallback(async () => {
     try {
@@ -76,6 +108,12 @@ export function ProjectMenu({ currentPath, dirty }: { currentPath: string | null
           <MenuItem label="打开…" shortcut="⌘O" onClick={wrappedAction(projectFile.openPicker)} />
           <MenuItem label="保存" shortcut="⌘S" onClick={wrappedAction(projectFile.save)} />
           <MenuItem label="另存为…" shortcut="⌘⇧S" onClick={wrappedAction(projectFile.saveAs)} />
+          <Separator />
+          <MenuItem
+            label={exporting.kind === 'rendering' ? '正在渲染…' : '导出 WAV…'}
+            shortcut="⌘E"
+            onClick={onExportWav}
+          />
 
           {recent.recent.length > 0 && (
             <>
@@ -98,6 +136,32 @@ export function ProjectMenu({ currentPath, dirty }: { currentPath: string | null
                 })}
               />
             </>
+          )}
+        </div>
+      )}
+
+      {exporting.kind !== 'idle' && (
+        <div className="fixed bottom-4 right-4 z-50 max-w-sm px-4 py-3 rounded border border-daw-border bg-daw-panel shadow-lg text-xs text-[#e0e0e0]">
+          {exporting.kind === 'rendering' && (
+            <span className="flex items-center gap-2">
+              <span className="inline-block w-2 h-2 rounded-full bg-daw-accent animate-pulse" />
+              正在离线渲染（不影响播放）…
+            </span>
+          )}
+          {exporting.kind === 'done' && (
+            <div className="flex flex-col gap-0.5">
+              <span className="text-green-400">✓ 已导出 WAV</span>
+              <span className="text-[#aaa] truncate">{exporting.path}</span>
+              <span className="text-[10px] text-[#888]">
+                {exporting.durationSecs.toFixed(1)}s · peak {exporting.peak.toFixed(3)}
+              </span>
+            </div>
+          )}
+          {exporting.kind === 'error' && (
+            <div className="flex flex-col gap-0.5">
+              <span className="text-red-400">导出失败</span>
+              <span className="text-[#aaa] break-all">{exporting.message}</span>
+            </div>
           )}
         </div>
       )}

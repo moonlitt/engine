@@ -220,7 +220,7 @@ impl AudioThread {
     }
 }
 
-fn dispatch_to_mixer(mixer: &mut Mixer, event: AudioEvent) {
+pub(crate) fn dispatch_to_mixer(mixer: &mut Mixer, event: AudioEvent) {
     match event {
         AudioEvent::NoteOn {
             channel,

@@ -37,6 +37,7 @@ interface ProjectStore {
 
   addSendBus(bus: SendBusView): void;
   setChannelSendLevel(channel: number, busId: number, level: number): void;
+  setSendBusParam(busId: number, paramId: number, value: number): void;
 }
 
 export const useProjectStore = create<ProjectStore>((set) => ({
@@ -152,6 +153,16 @@ export const useProjectStore = create<ProjectStore>((set) => ({
         next[busId] = level;
         return { ...o, sendLevels: next };
       }),
+    }));
+  },
+
+  setSendBusParam(busId, paramId, value) {
+    set((s) => ({
+      sendBuses: s.sendBuses.map((b) =>
+        b.id !== busId
+          ? b
+          : { ...b, params: b.params.map((p) => (p.id === paramId ? { ...p, value } : p)) },
+      ),
     }));
   },
 

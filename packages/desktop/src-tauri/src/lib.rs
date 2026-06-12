@@ -79,6 +79,8 @@ pub fn run() {
             commands::cmd_project_recent_list,
             commands::cmd_project_clear_recent,
             commands::cmd_project_forget_recent,
+            commands::cmd_render_to_wav,
+            commands::cmd_send_bus_set_param,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

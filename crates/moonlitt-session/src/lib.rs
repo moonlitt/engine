@@ -6,6 +6,7 @@
 //! The runtime crate provides platform I/O and re-exports these modules.
 
 pub mod metronome;
+pub mod offline;
 pub mod persistence;
 pub mod processor;
 pub mod sequencer;
