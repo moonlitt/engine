@@ -315,6 +315,18 @@ pub fn stash_state(path: String, state: Vec<u8>) {
     put_in_stash(path, state);
 }
 
+/// The stash as-is — NO plug-in calls, safe at any moment from any
+/// thread. This is what autosave journals; the stash itself is kept
+/// fresh event-driven (notification quiet periods, window close,
+/// library loads, session restore).
+pub fn stash_snapshot() -> HashMap<String, Vec<u8>> {
+    state_stash()
+        .lock()
+        .iter()
+        .map(|(k, v)| (k.clone(), v.bytes.clone()))
+        .collect()
+}
+
 /// Look up the parsed patch name for a plug-in path. Returns `None` if
 /// no state has been captured yet for this path, or if the plug-in's
 /// state blob doesn't embed a recognisable patch name (most non-

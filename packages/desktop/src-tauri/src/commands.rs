@@ -798,6 +798,9 @@ pub fn cmd_project_save_as(
         .save_to_file(&path)
         .map_err(|e| format!("save session: {e}"))?;
     crate::recent_files::record(&app, std::path::Path::new(&path));
+    // The journal now derives from this saved file, clean.
+    crate::autosave::remember_meta(Some(path.clone()), false);
+    crate::autosave::write(&app, &state.engine);
     let _ = app.emit("project_saved", ProjectSavedEvent { path });
     Ok(())
 }
@@ -835,6 +838,8 @@ pub fn cmd_project_open(
     }
 
     crate::recent_files::record(&app, std::path::Path::new(&path));
+    crate::autosave::remember_meta(Some(path.clone()), false);
+    crate::autosave::write(&app, &state.engine);
 
     let project = state.engine.snapshot();
     let _ = app.emit(
@@ -845,6 +850,58 @@ pub fn cmd_project_open(
         },
     );
     Ok(project)
+}
+
+/// Journal the current state (crash safety). Called periodically by
+/// the frontend; the app-exit hook writes one final journal itself.
+#[tauri::command]
+pub fn cmd_autosave(
+    state: State<AppState>,
+    app: AppHandle,
+    source_path: Option<String>,
+    dirty: bool,
+) -> Result<(), String> {
+    crate::autosave::remember_meta(source_path, dirty);
+    crate::autosave::write(&app, &state.engine);
+    Ok(())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutosaveRestoreView {
+    pub source_path: Option<String>,
+    pub dirty: bool,
+    pub project: ProjectState,
+}
+
+/// Restore the autosave journal, if one exists. Returns `None` when
+/// there's nothing to restore (first run / corrupted journal).
+#[tauri::command]
+pub fn cmd_autosave_restore(
+    state: State<AppState>,
+    app: AppHandle,
+) -> Result<Option<AutosaveRestoreView>, String> {
+    let Some(envelope) = crate::autosave::read(&app) else {
+        return Ok(None);
+    };
+    let restored_states = state
+        .engine
+        .restore_session(&envelope.session)
+        .map_err(|e| format!("restore autosave: {e}"))?;
+    #[cfg(target_os = "macos")]
+    for (p, b) in &restored_states {
+        crate::plugin_window::stash_state(p.clone(), b.clone());
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = &restored_states;
+    }
+    crate::autosave::remember_meta(envelope.source_path.clone(), envelope.dirty);
+    Ok(Some(AutosaveRestoreView {
+        source_path: envelope.source_path,
+        dirty: envelope.dirty,
+        project: state.engine.snapshot(),
+    }))
 }
 
 /// Read the recent-projects list (most-recent first, capped at 10).

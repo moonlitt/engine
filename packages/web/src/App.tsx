@@ -7,7 +7,6 @@ import { useSessionStore } from './stores/session';
 import { useProjectFileStore } from './stores/projectFile';
 import { PlayerView } from './components/PlayerView';
 import { InstrumentSelector } from './components/InstrumentSelector';
-import * as projectFile from './services/projectFile';
 
 export function App() {
   useWebSocket();
@@ -20,21 +19,10 @@ export function App() {
   const projectPath = useProjectFileStore((s) => s.path);
   const dirty = useProjectFileStore((s) => s.dirty);
 
-  // Auto-load the last project on startup. Best-effort — if the file
-  // has been deleted, recent_files.forget() takes care of cleanup
-  // inside cmd_project_open and we end up untitled.
-  useEffect(() => {
-    projectFile
-      .recentList()
-      .then((list) => {
-        if (list.lastOpened) {
-          return projectFile.openPath(list.lastOpened).catch(() => {
-            // Silently fall back to untitled.
-          });
-        }
-      })
-      .catch(() => {});
-  }, []);
+  // Startup state restoration lives in the transport boot sequence
+  // now: the autosave journal carries the full last session (including
+  // which project was open), superseding the old "reopen last file"
+  // behaviour — and unlike it, survives crashes with unsaved work.
 
   // Reflect the open project + dirty marker in the window title — the
   // standard "filename.mlsession — moonlitt" pattern with an asterisk

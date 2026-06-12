@@ -3,6 +3,7 @@
 //! Boots the audio engine, registers Tauri commands, spawns the 60 Hz
 //! metering broadcaster.
 
+mod autosave;
 mod commands;
 mod engine;
 mod midi_analyze;
@@ -123,6 +124,8 @@ pub fn run() {
             commands::cmd_patch_library_load,
             commands::cmd_project_save_as,
             commands::cmd_project_open,
+            commands::cmd_autosave,
+            commands::cmd_autosave_restore,
             commands::cmd_project_recent_list,
             commands::cmd_project_clear_recent,
             commands::cmd_project_forget_recent,
@@ -130,8 +133,17 @@ pub fn run() {
             commands::cmd_send_bus_set_param,
             commands::cmd_transport_seek,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // Final journal on the way out — covers quit paths the
+            // frontend's periodic autosave can't (⌘Q mid-interval).
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                if let Some(state) = app_handle.try_state::<AppState>() {
+                    autosave::write(app_handle, &state.engine);
+                }
+            }
+        });
 }
 
 fn meter_loop(app: tauri::AppHandle) {

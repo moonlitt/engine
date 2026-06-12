@@ -584,14 +584,49 @@ function createTauriTransport(): Transport {
         }
       }
 
-      // Pull the initial snapshot.
+      // Boot sequence: crash-journal restore beats everything (it IS
+      // the last true state, including which project was open); then
+      // the explicitly-last-opened project; then a bare snapshot.
       try {
-        const snapshot = await invoke<import('@moonlitt/protocol').ProjectState>('cmd_snapshot');
+        const { useProjectFileStore } = await import('../stores/projectFile');
+        let snapshot: import('@moonlitt/protocol').ProjectState | null = null;
+
+        try {
+          const restored = await invoke<{
+            sourcePath: string | null;
+            dirty: boolean;
+            project: import('@moonlitt/protocol').ProjectState;
+          } | null>('cmd_autosave_restore');
+          if (restored) {
+            snapshot = restored.project;
+            const pf = useProjectFileStore.getState();
+            pf.setPath(restored.sourcePath);
+            if (restored.dirty) pf.markDirty();
+            if (restored.dirty || !restored.sourcePath) {
+              const { toastInfo } = await import('../stores/toasts');
+              toastInfo('已恢复上次会话（自动存档）');
+            }
+          }
+        } catch (err) {
+          console.error('[tauri] autosave restore:', err);
+        }
+
+        if (!snapshot) {
+          snapshot = await invoke<import('@moonlitt/protocol').ProjectState>('cmd_snapshot');
+        }
         dispatchEvent({ type: 'state.init', project: snapshot });
         setConnected(true);
         if (!snapshot.defaultInstrumentPath) {
           void autopickDefaultInstrument();
         }
+
+        // Crash journal: mirror the session every 15 s. Cheap — the
+        // backend reads its event-driven state stash, never plug-ins.
+        const autosaveTimer = setInterval(() => {
+          const pf = useProjectFileStore.getState();
+          void invoke('cmd_autosave', { sourcePath: pf.path, dirty: pf.dirty }).catch(() => {});
+        }, 15_000);
+        unsubs.push(() => clearInterval(autosaveTimer));
       } catch (err) {
         console.error('[tauri] cmd_snapshot:', err);
         setConnected(false);
