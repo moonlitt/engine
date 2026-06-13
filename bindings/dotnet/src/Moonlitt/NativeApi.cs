@@ -166,6 +166,30 @@ internal static class NativeApi
     internal static extern int moonlitt_runtime_stop(IntPtr rt);
 
     // -----------------------------------------------------------------------
+    // Sessions (v1.0 ABI) — load a .mlsession designed in the desktop app
+    // -----------------------------------------------------------------------
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr moonlitt_session_load_from_file(
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string path, uint bufferSize);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int moonlitt_session_validate_file(
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string path);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr moonlitt_runtime_create_multitrack_sf2(
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string sf2Path, int sampleRate, int bufferSize);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int moonlitt_runtime_note_on_delayed(
+        IntPtr rt, int ch, int note, int vel, int delaySamples);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int moonlitt_runtime_note_off_delayed(
+        IntPtr rt, int ch, int note, int delaySamples);
+
+    // -----------------------------------------------------------------------
     // Shared
     // -----------------------------------------------------------------------
 

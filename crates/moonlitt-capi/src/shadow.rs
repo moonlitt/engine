@@ -318,6 +318,7 @@ impl SessionShadow {
                 tempo_override_bpm: None,
                 looping: false,
                 metronome_enabled,
+                loop_region: None,
             },
             sequencer_source: None,
         })

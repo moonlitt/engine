@@ -33,6 +33,55 @@ public sealed class Runtime : IDisposable
         engine.Detach(); // Engine is now owned by Runtime
     }
 
+    private Runtime(IntPtr handle)
+    {
+        _handle = handle;
+    }
+
+    /// <summary>
+    /// Build a Runtime from a .mlsession file designed in the moonlitt
+    /// desktop app — instruments, captured plug-in states (Keyscape
+    /// patches included), mixer and send buses come up exactly as
+    /// saved. Pre-started: call <see cref="Start"/> for sound.
+    /// </summary>
+    /// <exception cref="MoonlittException">Session missing/invalid or a referenced file is gone.</exception>
+    public static Runtime LoadSession(string path, uint bufferSize = 256)
+    {
+        NativeLibLoader.EnsureLoaded();
+        var handle = NativeApi.moonlitt_session_load_from_file(path, bufferSize);
+        if (handle == IntPtr.Zero)
+            throw new MoonlittException(Engine.GetError() ?? $"Failed to load session: {path}");
+        return new Runtime(handle);
+    }
+
+    /// <summary>
+    /// Pre-flight a session file: parses, schema-checks, and verifies
+    /// every referenced file (plug-in, soundfont, MIDI clip) exists.
+    /// Returns the failure reason, or null when the file is loadable.
+    /// </summary>
+    public static string? ValidateSessionFile(string path)
+    {
+        NativeLibLoader.EnsureLoaded();
+        if (NativeApi.moonlitt_session_validate_file(path) == MoonlittStatus.Ok) return null;
+        return Engine.GetError() ?? "session validation failed";
+    }
+
+    /// <summary>
+    /// Build a 16-channel GM runtime from a SoundFont — each MIDI
+    /// channel honours its own Program Change, so channel 9 is drums
+    /// and melodic channels pick their own instruments. Pre-started:
+    /// call <see cref="Start"/> for sound.
+    /// </summary>
+    /// <exception cref="MoonlittException">SoundFont missing or unparseable.</exception>
+    public static Runtime CreateMultitrackSf2(string sf2Path, int sampleRate = 48_000, int bufferSize = 256)
+    {
+        NativeLibLoader.EnsureLoaded();
+        var handle = NativeApi.moonlitt_runtime_create_multitrack_sf2(sf2Path, sampleRate, bufferSize);
+        if (handle == IntPtr.Zero)
+            throw new MoonlittException(Engine.GetError() ?? $"Failed to create SF2 runtime: {sf2Path}");
+        return new Runtime(handle);
+    }
+
     // -------------------------------------------------------------------
     // Audio output
     // -------------------------------------------------------------------
@@ -70,6 +119,24 @@ public sealed class Runtime : IDisposable
     {
         ThrowIfDisposed();
         NativeApi.moonlitt_runtime_note_off(_handle, channel, note);
+    }
+
+    /// <summary>Strike a note after <paramref name="delaySamples"/> frames (sample-accurate scheduling).</summary>
+    public void NoteOnDelayed(int channel, int note, int velocity, int delaySamples)
+    {
+        ThrowIfDisposed();
+        NativeApi.moonlitt_runtime_note_on_delayed(_handle, channel, note, velocity, delaySamples);
+    }
+
+    /// <summary>
+    /// Release a note after <paramref name="delaySamples"/> frames —
+    /// lets fire-and-forget callers schedule the whole envelope in one
+    /// shot (e.g. game events with no natural note-off moment).
+    /// </summary>
+    public void NoteOffDelayed(int channel, int note, int delaySamples)
+    {
+        ThrowIfDisposed();
+        NativeApi.moonlitt_runtime_note_off_delayed(_handle, channel, note, delaySamples);
     }
 
     public void CC(int channel, int cc, int value)

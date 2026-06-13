@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>MoonlittPiano</AssemblyName>
+    <Version>0.1.0</Version>
+    <TargetFramework>net6.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <EnableHarmony>true</EnableHarmony>
+    <!-- ModBuildConfig auto-detects the Steam install, references the
+         game + SMAPI DLLs, and deploys build output into Mods/. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.1.1" />
+  </ItemGroup>
+
+  <!-- The moonlitt C# binding compiles straight into the mod assembly:
+       no extra DLL to ship, and the DllImport resolver in ModEntry can
+       bind it to the dylib sitting next to the mod. -->
+  <ItemGroup>
+    <Compile Include="..\..\..\bindings\dotnet\src\Moonlitt\*.cs" LinkBase="Moonlitt" />
+  </ItemGroup>
+
+  <!-- Ship the engine itself as a UNIVERSAL binary: the Steam build of
+       the game runs x86_64 under Rosetta on Apple Silicon, so an
+       arm64-only dylib would fail to load. See README for the lipo
+       recipe that produces target/universal. -->
+  <ItemGroup>
+    <None Include="..\..\..\target\universal\libmoonlitt.dylib"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="libmoonlitt.dylib" />
+  </ItemGroup>
+
+</Project>
