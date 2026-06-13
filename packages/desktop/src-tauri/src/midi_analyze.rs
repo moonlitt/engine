@@ -151,3 +151,114 @@ pub fn analyze(path: &str) -> Result<MidiInfo, String> {
         time_signature: time_signature.map(|(n, d)| [n, d]),
     })
 }
+
+/// One note for the piano-roll preview, as a flat tuple to keep the
+/// wire format small (a dense MIDI can hold tens of thousands):
+/// `[channel, key, start_tick, duration_ticks, velocity]`.
+pub type NoteTuple = [u64; 5];
+
+/// Extract every note (paired note-on/note-off) from a MIDI file, in
+/// start order. Unclosed notes are clamped to their track's end;
+/// same-key retriggers pair FIFO.
+pub fn extract_notes(path: &str) -> Result<Vec<NoteTuple>, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("read {path}: {e}"))?;
+    let smf = Smf::parse(&bytes).map_err(|e| format!("parse {path}: {e}"))?;
+
+    let mut notes: Vec<NoteTuple> = Vec::new();
+    for track in &smf.tracks {
+        // Open notes per (channel, key): FIFO of (start_tick, velocity).
+        let mut open: BTreeMap<(u8, u8), Vec<(u64, u8)>> = BTreeMap::new();
+        let mut t: u64 = 0;
+        for event in track {
+            t += event.delta.as_int() as u64;
+            let TrackEventKind::Midi { channel, message } = event.kind else {
+                continue;
+            };
+            let ch = channel.as_int();
+            match message {
+                MidiMessage::NoteOn { key, vel } if vel.as_int() > 0 => {
+                    open.entry((ch, key.as_int()))
+                        .or_default()
+                        .push((t, vel.as_int()));
+                }
+                MidiMessage::NoteOn { key, .. } | MidiMessage::NoteOff { key, .. } => {
+                    if let Some(stack) = open.get_mut(&(ch, key.as_int())) {
+                        if !stack.is_empty() {
+                            let (start, vel) = stack.remove(0);
+                            notes.push([
+                                ch as u64,
+                                key.as_int() as u64,
+                                start,
+                                t.saturating_sub(start).max(1),
+                                vel as u64,
+                            ]);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        // Clamp whatever never received a note-off to the track end.
+        for ((ch, key), stack) in open {
+            for (start, vel) in stack {
+                notes.push([
+                    ch as u64,
+                    key as u64,
+                    start,
+                    t.saturating_sub(start).max(1),
+                    vel as u64,
+                ]);
+            }
+        }
+    }
+    notes.sort_by_key(|n| n[2]);
+    Ok(notes)
+}
+
+#[cfg(test)]
+mod note_tests {
+    use super::*;
+
+    /// One track, 480 tpb: ch0 note 60 [0, 240), ch1 note 64 [240, 480),
+    /// and a note 72 on ch0 that never gets a note-off (clamps to end).
+    fn fixture() -> Vec<u8> {
+        let mut track: Vec<u8> = Vec::new();
+        track.extend_from_slice(&[0x00, 0x90, 60, 100]); // ch0 on 60
+        track.extend_from_slice(&[0x81, 0x70, 0x80, 60, 0]); // +240 ch0 off 60
+        track.extend_from_slice(&[0x00, 0x91, 64, 90]); // ch1 on 64
+        track.extend_from_slice(&[0x00, 0x90, 72, 80]); // ch0 on 72 (never off)
+        track.extend_from_slice(&[0x81, 0x70, 0x81, 64, 0]); // +240 ch1 off 64
+        track.extend_from_slice(&[0x00, 0xFF, 0x2F, 0x00]); // end of track
+        let mut data: Vec<u8> = Vec::new();
+        data.extend_from_slice(b"MThd");
+        data.extend_from_slice(&6u32.to_be_bytes());
+        data.extend_from_slice(&0u16.to_be_bytes());
+        data.extend_from_slice(&1u16.to_be_bytes());
+        data.extend_from_slice(&480u16.to_be_bytes());
+        data.extend_from_slice(b"MTrk");
+        data.extend_from_slice(&(track.len() as u32).to_be_bytes());
+        data.extend_from_slice(&track);
+        data
+    }
+
+    #[test]
+    fn pairs_on_off_and_clamps_unclosed_notes() {
+        let tmp = std::env::temp_dir().join(format!(
+            "moonlitt-notes-{}-{:?}.mid",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::write(&tmp, fixture()).unwrap();
+        let notes = extract_notes(tmp.to_str().unwrap()).unwrap();
+        std::fs::remove_file(&tmp).ok();
+
+        assert_eq!(
+            notes,
+            vec![
+                [0, 60, 0, 240, 100],   // paired
+                [1, 64, 240, 240, 90],  // paired, cross-channel
+                [0, 72, 240, 240, 80],  // unclosed → clamped to track end (480)
+            ]
+        );
+    }
+}

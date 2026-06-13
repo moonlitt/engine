@@ -978,6 +978,17 @@ pub fn cmd_transport_seek(state: State<AppState>, ticks: f64) -> Result<(), Stri
     state.engine.seek(ticks)
 }
 
+/// All notes of the loaded MIDI as flat `[channel, key, start_tick,
+/// duration_ticks, velocity]` tuples — the piano-roll preview's data.
+#[tauri::command]
+pub fn cmd_midi_notes(state: State<AppState>) -> Result<Vec<crate::midi_analyze::NoteTuple>, String> {
+    let path = state
+        .engine
+        .midi_path()
+        .ok_or("没有已载入的 MIDI")?;
+    crate::midi_analyze::extract_notes(&path)
+}
+
 /// Set (or clear, with `None`s) the practice-loop region in ticks.
 /// Implicitly enables looping when a region is set — drawing a cycle
 /// region and then wondering why nothing loops is a classic trap.

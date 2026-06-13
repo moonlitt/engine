@@ -2,6 +2,7 @@ import { useProjectStore } from '../stores/project';
 import { useSessionStore } from '../stores/session';
 import { Transport } from './Transport';
 import { Ruler } from './Ruler';
+import { NoteRoll } from './NoteRoll';
 import { MidiPanel } from './MidiPanel';
 import { DefaultInstrumentBar } from './DefaultInstrumentBar';
 import { ChannelRow } from './ChannelRow';
@@ -20,6 +21,7 @@ export function PlayerView() {
     <div className="h-screen flex flex-col bg-daw-bg text-[#e6e2dc] font-ui">
       <Transport />
       <Ruler />
+      <NoteRoll />
       <PatchPendingBanner />
 
       <main className="flex-1 overflow-y-auto">
